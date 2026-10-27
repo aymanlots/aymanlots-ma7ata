@@ -54,6 +54,27 @@ export interface CloudUserAccount {
   updated_at?: string;
 }
 
+/**
+ * Recursively converts any `undefined` values in objects or arrays to `null`
+ * so Firestore `setDoc` never fails with `Unsupported field value: undefined`.
+ */
+export function sanitizeForFirestore<T>(input: T): T {
+  if (input === undefined) {
+    return null as unknown as T;
+  }
+  if (input === null || typeof input !== 'object') {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input.map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  const result: Record<string, any> = {};
+  for (const [key, val] of Object.entries(input as Record<string, any>)) {
+    result[key] = val === undefined ? null : sanitizeForFirestore(val);
+  }
+  return result as T;
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -85,10 +106,14 @@ export const firebaseSyncService = {
     if (!this.isAvailable() || !docId) return;
     const path = `users/${docId}`;
     try {
-      await setDoc(doc(db, 'users', docId), {
-        ...account,
-        updated_at: new Date().toISOString(),
-      }, { merge: true });
+      await setDoc(
+        doc(db, 'users', docId),
+        sanitizeForFirestore({
+          ...account,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -96,7 +121,6 @@ export const firebaseSyncService = {
 
   async getUserAccount(docId: string): Promise<CloudUserAccount | null> {
     if (!this.isAvailable() || !docId) return null;
-    const path = `users/${docId}`;
     try {
       const snap = await getDoc(doc(db, 'users', docId));
       if (!snap.exists()) return null;
@@ -112,27 +136,31 @@ export const firebaseSyncService = {
     if (!this.isAvailable()) return;
     const path = `workspaces/${ws.id}`;
     try {
-      await setDoc(doc(db, 'workspaces', ws.id), {
-        id: ws.id,
-        short_id: ws.short_id || '',
-        invite_code: ws.invite_code || '',
-        name: ws.name,
-        created_by: ws.created_by || null,
-        owner_id: ws.created_by || null,
-        owner_phone: ws.owner_phone || null,
-        owner_whatsapp: ws.owner_whatsapp || null,
-        custom_brand_name: ws.custom_brand_name || null,
-        custom_brand_subtitle: ws.custom_brand_subtitle || null,
-        custom_brand_phone: ws.custom_brand_phone || null,
-        custom_brand_logo_url: ws.custom_brand_logo_url || null,
-        plan_tier: ws.plan_tier || 'plan_1_full',
-        plan_name: ws.plan_name || 'الباقة القياسية',
-        max_workers: ws.max_workers ?? 10,
-        max_stations: ws.max_stations ?? 5,
-        max_collaborations: ws.max_collaborations ?? 5,
-        created_at: ws.created_at || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }, { merge: true });
+      await setDoc(
+        doc(db, 'workspaces', ws.id),
+        sanitizeForFirestore({
+          id: ws.id,
+          short_id: ws.short_id || '',
+          invite_code: ws.invite_code || '',
+          name: ws.name,
+          created_by: ws.created_by || null,
+          owner_id: ws.created_by || null,
+          owner_phone: ws.owner_phone || null,
+          owner_whatsapp: ws.owner_whatsapp || null,
+          custom_brand_name: ws.custom_brand_name || null,
+          custom_brand_subtitle: ws.custom_brand_subtitle || null,
+          custom_brand_phone: ws.custom_brand_phone || null,
+          custom_brand_logo_url: ws.custom_brand_logo_url || null,
+          plan_tier: ws.plan_tier || 'plan_1_full',
+          plan_name: ws.plan_name || 'الباقة القياسية',
+          max_workers: ws.max_workers ?? 10,
+          max_stations: ws.max_stations ?? 5,
+          max_collaborations: ws.max_collaborations ?? 5,
+          created_at: ws.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -142,10 +170,14 @@ export const firebaseSyncService = {
     if (!this.isAvailable() || !wsId || !member.user_id) return;
     const path = `workspaces/${wsId}/members/${member.user_id}`;
     try {
-      await setDoc(doc(db, 'workspaces', wsId, 'members', member.user_id), {
-        ...member,
-        updated_at: new Date().toISOString(),
-      }, { merge: true });
+      await setDoc(
+        doc(db, 'workspaces', wsId, 'members', member.user_id),
+        sanitizeForFirestore({
+          ...member,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -211,20 +243,26 @@ export const firebaseSyncService = {
 
   // 2. STATIONS SYNC
   async syncStation(wsId: string, station: Station): Promise<void> {
-    if (!this.isAvailable()) return;
+    if (!this.isAvailable() || !wsId || !station?.id) return;
     const path = `workspaces/${wsId}/stations/${station.id}`;
     try {
-      await setDoc(doc(db, 'workspaces', wsId, 'stations', station.id), {
-        ...station,
-        updated_at: new Date().toISOString(),
-      }, { merge: true });
+      await setDoc(
+        doc(db, 'workspaces', wsId, 'stations', station.id),
+        sanitizeForFirestore({
+          ...station,
+          workspace_id: wsId,
+          team_id: wsId,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
   },
 
   async deleteStation(wsId: string, stationId: string): Promise<void> {
-    if (!this.isAvailable()) return;
+    if (!this.isAvailable() || !wsId || !stationId) return;
     const path = `workspaces/${wsId}/stations/${stationId}`;
     try {
       await deleteDoc(doc(db, 'workspaces', wsId, 'stations', stationId));
@@ -235,13 +273,19 @@ export const firebaseSyncService = {
 
   // 3. PARCELS SYNC
   async syncParcel(wsId: string, parcel: Parcel): Promise<void> {
-    if (!this.isAvailable()) return;
+    if (!this.isAvailable() || !wsId || !parcel?.id) return;
     const path = `workspaces/${wsId}/parcels/${parcel.id}`;
     try {
-      await setDoc(doc(db, 'workspaces', wsId, 'parcels', parcel.id), {
-        ...parcel,
-        updated_at: new Date().toISOString(),
-      }, { merge: true });
+      await setDoc(
+        doc(db, 'workspaces', wsId, 'parcels', parcel.id),
+        sanitizeForFirestore({
+          ...parcel,
+          workspace_id: wsId,
+          team_id: wsId,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -249,13 +293,19 @@ export const firebaseSyncService = {
 
   // 4. TRANSACTIONS SYNC
   async syncTransaction(wsId: string, tx: Transaction): Promise<void> {
-    if (!this.isAvailable()) return;
+    if (!this.isAvailable() || !wsId || !tx?.id) return;
     const path = `workspaces/${wsId}/transactions/${tx.id}`;
     try {
-      await setDoc(doc(db, 'workspaces', wsId, 'transactions', tx.id), {
-        ...tx,
-        updated_at: new Date().toISOString(),
-      }, { merge: true });
+      await setDoc(
+        doc(db, 'workspaces', wsId, 'transactions', tx.id),
+        sanitizeForFirestore({
+          ...tx,
+          workspace_id: wsId,
+          team_id: wsId,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -263,13 +313,18 @@ export const firebaseSyncService = {
 
   // 5. TRIPS SYNC
   async syncTrip(wsId: string, trip: Trip): Promise<void> {
-    if (!this.isAvailable()) return;
+    if (!this.isAvailable() || !wsId || !trip?.id) return;
     const path = `workspaces/${wsId}/trips/${trip.id}`;
     try {
-      await setDoc(doc(db, 'workspaces', wsId, 'trips', trip.id), {
-        ...trip,
-        updated_at: new Date().toISOString(),
-      }, { merge: true });
+      await setDoc(
+        doc(db, 'workspaces', wsId, 'trips', trip.id),
+        sanitizeForFirestore({
+          ...trip,
+          workspace_id: wsId,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -286,7 +341,7 @@ export const firebaseSyncService = {
       onMembers?: (members: WorkspaceMember[]) => void;
     }
   ): Unsubscribe {
-    if (!this.isAvailable()) return () => {};
+    if (!this.isAvailable() || !wsId) return () => {};
 
     const unsubs: Unsubscribe[] = [];
 

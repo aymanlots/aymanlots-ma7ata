@@ -112,7 +112,7 @@ export const StationScopeBar: React.FC<StationScopeBarProps> = ({
               }`}
             >
               <span>{st.country === 'MA' ? '🇲🇦' : '🇲🇷'}</span>
-              <span className="truncate max-w-[110px]">{st.city || st.name}</span>
+              <span className="truncate max-w-[110px]">{st.name || st.city}</span>
               <span
                 className={`text-[9px] font-mono px-1 py-0.2 rounded-md ${
                   isSelected ? 'bg-black/25 text-[#111111]' : 'bg-[#D4AF37]/20 text-[#F5C84C]'

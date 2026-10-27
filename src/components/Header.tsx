@@ -79,7 +79,7 @@ export const Header: React.FC<HeaderProps> = ({
                 title="القائمة والمحطات"
               >
                 <span className="w-2 h-2 rounded-full bg-[#2ECC71]" />
-                <span className="max-w-[75px] truncate">{currentStation ? currentStation.city : 'المحطة'}</span>
+                <span className="max-w-[75px] truncate">{currentStation ? (currentStation.name || currentStation.city) : 'كافة المحطات'}</span>
                 <Menu className="w-3 h-3 text-[#F5C84C] mr-0.5" />
               </button>
 
@@ -236,7 +236,7 @@ export const Header: React.FC<HeaderProps> = ({
                         : 'btn-cancel'
                     }`}
                   >
-                    <div className="text-xs font-black truncate">{station.city}</div>
+                    <div className="text-xs font-black truncate">{station.name || station.city}</div>
                     <div className="text-[10px] mt-0.5 opacity-85">
                       {station.country === 'MA' ? '🇲🇦 المغرب' : '🇲🇷 موريتانيا'}
                     </div>

@@ -377,34 +377,21 @@ export const GuidedSetupTourModal: React.FC<GuidedSetupTourModalProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] text-white/85 font-bold mb-1">
-                    اسم المحطة / الفرع *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={stName}
-                    onChange={(e) => setStName(e.target.value)}
-                    placeholder="اكتب اسم المحطة..."
-                    className="w-full bg-black/75 border border-white/20 focus:border-[#F5C84C] rounded-xl px-2.5 py-2 text-white text-xs font-bold focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] text-white/85 font-bold mb-1">
-                    المدينة / الموقع *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={stCity}
-                    onChange={(e) => setStCity(e.target.value)}
-                    placeholder="اكتب اسم المدينة..."
-                    className="w-full bg-black/75 border border-white/20 focus:border-[#F5C84C] rounded-xl px-2.5 py-2 text-white text-xs font-bold focus:outline-none"
-                  />
-                </div>
+              <div>
+                <label className="block text-[10px] text-white/85 font-bold mb-1">
+                  اسم المحطة أو المدينة *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={stName}
+                  onChange={(e) => {
+                    setStName(e.target.value);
+                    setStCity(e.target.value);
+                  }}
+                  placeholder="مثال: تازة، الداخلة، نواذيبو..."
+                  className="w-full bg-black/75 border border-white/20 focus:border-[#F5C84C] rounded-xl px-2.5 py-2 text-white text-xs font-bold focus:outline-none"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-2">

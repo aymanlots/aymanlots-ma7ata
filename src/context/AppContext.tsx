@@ -1055,31 +1055,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   }, [currentWorkspace]);
 
-  // Visible Stations: If on الباك الثاني (محطتين فقط), limit active open stations to 2 stations
+  // Visible Stations: Filter by currentWorkspace.id, and if on الباك الثاني (محطتين فقط), limit active open stations to 2 stations
   const visibleStations: Station[] = useMemo(() => {
-    if (!isPlan2TwoStations) return stations;
-    if (stations.length <= 2) return stations;
-    // Prefer real stations first, then primary origin/destination (e.g. Dakhla & Nouadhibou)
-    const realSt = stations.filter(s => !s.is_demo);
+    const wsId = currentWorkspace?.id;
+    const wsStations = wsId
+      ? stations.filter(s => !s.workspace_id || s.workspace_id === wsId || s.team_id === wsId)
+      : stations;
+    if (!isPlan2TwoStations) return wsStations;
+    if (wsStations.length <= 2) return wsStations;
+    const realSt = wsStations.filter(s => !s.is_demo);
     if (realSt.length >= 2) return realSt.slice(0, 2);
-    const dakhla = stations.find(s => s.id.includes('dakhla') || s.city.includes('الداخلة'));
-    const nouadhibou = stations.find(s => s.id.includes('nouadhibou') || s.city.includes('نواذيبو'));
-    if (renderPairValid(realSt, dakhla, nouadhibou)) {
-      const picked: Station[] = [...realSt];
-      if (dakhla && !picked.some(p => p.id === dakhla.id) && picked.length < 2) picked.push(dakhla);
-      if (nouadhibou && !picked.some(p => p.id === nouadhibou.id) && picked.length < 2) picked.push(nouadhibou);
-      for (const s of stations) {
-        if (picked.length >= 2) break;
-        if (!picked.some(p => p.id === s.id)) picked.push(s);
-      }
-      return picked.slice(0, 2);
-    }
-    return stations.slice(0, 2);
-  }, [stations, isPlan2TwoStations]);
-
-  function renderPairValid(realSt: Station[], dakhla?: Station, nouadhibou?: Station) {
-    return Boolean(realSt.length > 0 || dakhla || nouadhibou);
-  }
+    return wsStations.slice(0, 2);
+  }, [stations, isPlan2TwoStations, currentWorkspace?.id]);
 
   // Determine user's assigned station if worker
   const userAssignedStationId = useMemo(() => {
@@ -1100,49 +1087,160 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [userRole, userAssignedStationId, visibleStations, selectedStationId]);
 
-  // Auto-clean any pre-seeded default "الداخلة / نواذيبو" stations for newly created workspaces
-  // that haven't created their own stations yet and have 0 real parcels/transactions.
+  // Auto-recover any missing stations or parcels referenced by synced transactions
+  // (e.g. if transactions synced before stations/parcels were pushed from the phone)
   useEffect(() => {
-    if (!currentWorkspace || !currentUser) return;
-    if (userRole === 'worker') return;
+    if (!currentWorkspace?.id) return;
     const wsId = currentWorkspace.id;
-    const hasUserCreatedStation = localStorage.getItem(`alittihadia_user_created_station_${wsId}`) === 'true';
-    const tourCompleted = localStorage.getItem(`alittihadia_guided_tour_completed_${wsId}`) === 'true';
-    if (hasUserCreatedStation || tourCompleted) return;
+    const wsTxs = allTransactions.filter(tx => (tx.workspace_id === wsId || tx.team_id === wsId) && !tx.deleted_at);
+    if (wsTxs.length === 0) return;
 
-    const realParcels = allParcels.filter(p => (p.workspace_id === wsId || p.team_id === wsId) && !p.is_demo);
-    const realTxs = allTransactions.filter(tx => (tx.workspace_id === wsId || tx.team_id === wsId) && !tx.is_demo);
-    if (realParcels.length > 0 || realTxs.length > 0) return;
+    const existingStationIds = new Set(stations.map(s => s.id));
+    const recoveredStations: Station[] = [];
 
-    const isAllDefaultOrDemoStations =
-      stations.length > 0 &&
-      stations.every(
-        s =>
-          s.is_demo ||
-          s.id.includes('-dakhla') ||
-          s.id.includes('-nouadhibou') ||
-          s.name === 'محطة الداخلة الرئيسية' ||
-          s.name === 'محطة نواذيبو الدولية' ||
-          (stations.length === 2 && (s.city === 'الداخلة' || s.city === 'نواذيبو'))
-      );
+    for (const tx of wsTxs) {
+      if (!tx.station_id || existingStationIds.has(tx.station_id)) continue;
+      existingStationIds.add(tx.station_id);
 
-    if (isAllDefaultOrDemoStations) {
-      localStorage.setItem(`ittihadiya_demo_deleted_${wsId}`, 'true');
-      localStorage.setItem(`alittihadia_guided_tour_pending_${wsId}`, 'true');
-      setStations([]);
-      setSelectedStationId(null);
-      setWorkspaceMembers(prev => prev.filter(m => !m.is_demo));
-      setStationWorkers(prev => prev.filter(sw => !sw.is_demo));
-      setAllParcels(prev => prev.filter(p => !p.is_demo && p.workspace_id !== wsId));
-      setAllTrips(prev => prev.filter(t => !t.is_demo && t.workspace_id !== wsId));
-      setAllTransactions(prev => prev.filter(tx => !tx.is_demo && tx.workspace_id !== wsId));
+      // Extract station name from tx.station_name or tx.note / tx.reason
+      let stName = tx.station_name && tx.station_name !== 'محطة الاتحادية' ? tx.station_name : '';
+      if (!stName && tx.note) {
+        const matchNote = tx.note.match(/محطة\s+([^\s(]+)/);
+        if (matchNote?.[1]) stName = matchNote[1];
+      }
+      if (!stName && tx.reason) {
+        const matchParen = tx.reason.match(/\(([^)]+)\)/);
+        if (matchParen?.[1]) stName = matchParen[1];
+      }
+      if (!stName) stName = tx.currency === 'MRU' ? 'محطة موريتانيا' : 'محطة المغرب';
 
-      const supabase = getSupabaseClient();
-      if (supabase && isSupabaseConfigured() && isValidUUID(wsId)) {
-        supabase.from('stations').delete().eq('workspace_id', wsId).then(() => {});
+      const curr = (tx.currency || 'MAD').toUpperCase();
+      const country: 'MA' | 'MR' = curr === 'MRU' ? 'MR' : 'MA';
+
+      const recoveredSt: Station = {
+        id: tx.station_id,
+        workspace_id: wsId,
+        team_id: wsId,
+        name: stName,
+        city: stName,
+        country,
+        currency: curr,
+        owner_id: currentWorkspace.created_by || currentUser?.id || null,
+        is_active: true,
+        created_at: tx.created_at || new Date().toISOString(),
+      };
+      recoveredStations.push(recoveredSt);
+    }
+
+    if (recoveredStations.length > 0) {
+      localStorage.setItem(`alittihadia_user_created_station_${wsId}`, 'true');
+      localStorage.setItem(`alittihadia_guided_tour_completed_${wsId}`, 'true');
+      setStations(prev => {
+        const map = new Map<string, Station>();
+        prev.forEach(s => map.set(s.id, s));
+        recoveredStations.forEach(s => map.set(s.id, s));
+        return Array.from(map.values());
+      });
+      if (firebaseSyncService.isAvailable()) {
+        recoveredStations.forEach(st => {
+          firebaseSyncService.syncStation(wsId, st).catch(() => {});
+        });
       }
     }
-  }, [currentWorkspace?.id, currentUser?.id, userRole, stations, allParcels, allTransactions]);
+
+    // Also recover any parcel referenced in a shipping fee transaction if missing in allParcels
+    const existingParcelIds = new Set(allParcels.map(p => p.id));
+    const recoveredParcels: Parcel[] = [];
+    const allKnownStations = [...stations, ...recoveredStations];
+
+    for (const tx of wsTxs) {
+      if (tx.type !== 'parcel_shipping_fee' || !tx.parcel_id || existingParcelIds.has(tx.parcel_id)) continue;
+      existingParcelIds.add(tx.parcel_id);
+
+      const codeMatch = tx.reason?.match(/\[(ITT-[^\]]+)\]/);
+      const destMatch = tx.reason?.match(/إلى\s+(.+)$/);
+      const trackingCode = codeMatch?.[1] || `ITT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const originSt = allKnownStations.find(s => s.id === tx.station_id);
+      const destSt =
+        allKnownStations.find(s => s.id !== tx.station_id && (destMatch?.[1] ? s.name.includes(destMatch[1].trim()) || s.city.includes(destMatch[1].trim()) : true)) ||
+        allKnownStations.find(s => s.id !== tx.station_id) ||
+        originSt;
+
+      const descClean = tx.note ? tx.note.replace(/^شحن\s+\d+\s+طرد\s*-\s*/, '').trim() : 'طرد بضائع';
+
+      const recoveredParcel: Parcel = {
+        id: tx.parcel_id,
+        tracking_code: trackingCode,
+        parcel_number: allParcels.length + recoveredParcels.length + 1,
+        workspace_id: wsId,
+        team_id: wsId,
+        origin_station_id: tx.station_id,
+        destination_station_id: destSt?.id || tx.station_id,
+        origin_station_name: originSt?.name || tx.station_name || 'محطة الانطلاق',
+        destination_station_name: destSt?.name || destMatch?.[1]?.trim() || 'محطة الوصول',
+        sender_name: 'مرسل الكولي',
+        sender_phone: tx.phone_number || '',
+        receiver_name: 'مستلم الكولي',
+        receiver_phone: tx.phone_number || '',
+        route: `${originSt?.name || 'محطة الانطلاق'} ➔ الكركرات ➔ ${destSt?.name || 'محطة الوصول'}`,
+        description: descClean || 'طرد بضائع',
+        category: 'طرد بضائع',
+        items_count: 1,
+        amount_due: Number(tx.amount) || 0,
+        shipping_fee: Number(tx.amount) || 0,
+        payer: 'sender',
+        amount_paid: Number(tx.amount) || 0,
+        cod_amount: 0,
+        currency: tx.currency || 'MAD',
+        status: 'registered',
+        condition: 'normal',
+        condition_notes: null,
+        payment_status: 'paid',
+        status_history: [
+          {
+            status: 'registered',
+            timestamp: tx.created_at || new Date().toISOString(),
+            changed_by_id: tx.created_by || 'sys',
+            changed_by_name: tx.creator_name || 'المدير',
+            notes: 'تسجيل الكولي في المحطة',
+            condition: 'normal',
+          },
+        ],
+        payment_history: [
+          {
+            id: `pay-${tx.id}`,
+            amount: Number(tx.amount) || 0,
+            currency: tx.currency || 'MAD',
+            paid_by: 'المرسل',
+            recorded_by_id: tx.created_by || 'sys',
+            recorded_by_name: tx.creator_name || 'المدير',
+            recorded_at: tx.created_at || new Date().toISOString(),
+            note: 'الدفعة الأولى عند التسجيل',
+          },
+        ],
+        created_by: tx.created_by || 'sys',
+        creator_name: tx.creator_name || 'المدير',
+        created_at: tx.created_at || new Date().toISOString(),
+        updated_at: tx.updated_at || new Date().toISOString(),
+        notes: null,
+      };
+      recoveredParcels.push(recoveredParcel);
+    }
+
+    if (recoveredParcels.length > 0) {
+      setAllParcels(prev => {
+        const map = new Map<string, Parcel>();
+        prev.forEach(p => map.set(p.id, p));
+        recoveredParcels.forEach(p => map.set(p.id, p));
+        return Array.from(map.values());
+      });
+      if (firebaseSyncService.isAvailable()) {
+        recoveredParcels.forEach(p => {
+          firebaseSyncService.syncParcel(wsId, p).catch(() => {});
+        });
+      }
+    }
+  }, [currentWorkspace?.id, allTransactions, stations, allParcels]);
 
   // ============================================================================
   // MULTI-ADMIN ISOLATION & OPTIONAL COLLABORATION FILTERING
@@ -1378,21 +1476,54 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('aman_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
-  // Real-time Firebase Sync Listener
+  // Real-time Firebase Sync Listener + Automatic Push of Local Workspace Records
   useEffect(() => {
     if (!currentWorkspace?.id || !firebaseSyncService.isAvailable()) return;
     const wsId = currentWorkspace.id;
 
-    // Initial sync of current workspace to cloud
+    // 1. Initial sync of current workspace and any existing local items (stations, parcels, transactions, trips, members) to Firebase
     firebaseSyncService.syncWorkspace(currentWorkspace).catch(() => {});
 
+    stations
+      .filter(s => (!s.workspace_id || s.workspace_id === wsId || s.team_id === wsId) && !s.is_demo)
+      .forEach(s => {
+        firebaseSyncService.syncStation(wsId, s).catch(() => {});
+      });
+
+    allParcels
+      .filter(p => (p.workspace_id === wsId || p.team_id === wsId) && !p.is_demo)
+      .forEach(p => {
+        firebaseSyncService.syncParcel(wsId, p).catch(() => {});
+      });
+
+    allTransactions
+      .filter(tx => (tx.workspace_id === wsId || tx.team_id === wsId) && !tx.is_demo)
+      .forEach(tx => {
+        firebaseSyncService.syncTransaction(wsId, tx).catch(() => {});
+      });
+
+    allTrips
+      .filter(t => t.workspace_id === wsId && !t.is_demo)
+      .forEach(t => {
+        firebaseSyncService.syncTrip(wsId, t).catch(() => {});
+      });
+
+    workspaceMembers
+      .filter(m => (!m.workspace_id || m.workspace_id === wsId) && !m.is_demo)
+      .forEach(m => {
+        firebaseSyncService.syncWorkspaceMember(wsId, m).catch(() => {});
+      });
+
+    // 2. Real-time subscription from Firebase Firestore
     const unsubscribe = firebaseSyncService.subscribeToWorkspace(wsId, {
       onStations: (remoteStations) => {
         if (remoteStations && remoteStations.length > 0) {
+          localStorage.setItem(`alittihadia_user_created_station_${wsId}`, 'true');
+          localStorage.setItem(`alittihadia_guided_tour_completed_${wsId}`, 'true');
           setStations(prev => {
             const map = new Map<string, Station>();
             prev.forEach(s => map.set(s.id, s));
-            remoteStations.forEach(s => map.set(s.id, s));
+            remoteStations.forEach(s => map.set(s.id, { ...s, workspace_id: wsId, team_id: wsId }));
             return Array.from(map.values());
           });
         }
@@ -1402,7 +1533,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setAllParcels(prev => {
             const map = new Map<string, Parcel>();
             prev.forEach(p => map.set(p.id, p));
-            remoteParcels.forEach(p => map.set(p.id, p));
+            remoteParcels.forEach(p => map.set(p.id, { ...p, workspace_id: wsId, team_id: wsId }));
             return Array.from(map.values()).sort(
               (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
             );
@@ -1414,7 +1545,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setAllTransactions(prev => {
             const map = new Map<string, Transaction>();
             prev.forEach(t => map.set(t.id, t));
-            remoteTxs.forEach(t => map.set(t.id, t));
+            remoteTxs.forEach(t => map.set(t.id, { ...t, workspace_id: wsId, team_id: wsId }));
             return Array.from(map.values()).sort(
               (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
             );
@@ -1426,10 +1557,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setAllTrips(prev => {
             const map = new Map<string, Trip>();
             prev.forEach(t => map.set(t.id, t));
-            remoteTrips.forEach(t => map.set(t.id, t));
+            remoteTrips.forEach(t => map.set(t.id, { ...t, workspace_id: wsId }));
             return Array.from(map.values()).sort(
               (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
             );
+          });
+        }
+      },
+      onMembers: (remoteMembers) => {
+        if (remoteMembers && remoteMembers.length > 0) {
+          setWorkspaceMembers(prev => {
+            const map = new Map<string, WorkspaceMember>();
+            prev.forEach(m => map.set(m.user_id, m));
+            remoteMembers.forEach(m => map.set(m.user_id, { ...m, workspace_id: wsId }));
+            return Array.from(map.values());
           });
         }
       },
@@ -2714,6 +2855,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.syncTransaction(updated.workspace_id, updated).catch(() => {});
+    }
+
     showToast('تم تعديل السند وتوثيق سجل المراجعة بنجاح', 'success');
     return { success: true };
   };
@@ -2781,6 +2926,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const bal = balances[updated.station_id]?.[curr] ?? 0;
         await cashService.syncStationBalanceToCloud(updated.station_id, updated.workspace_id, curr, bal);
       }
+    }
+
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.syncTransaction(updated.workspace_id, updated).catch(() => {});
     }
 
     showToast('تم إلغاء السند وتحديث رصيد الصندوق وتوثيق السبب', 'info');
@@ -3077,6 +3226,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.syncParcel(updated.workspace_id, updated).catch(() => {});
+    }
+
     await createTransaction({
       station_id: parcel.origin_station_id,
       type: 'parcel_shipping_fee',
@@ -3151,6 +3304,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setAllParcels(prev => prev.map(p => p.id === id ? { ...p, pending_sync: true } : p));
       }
       await cashService.syncAuditToCloud(audit);
+    }
+
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.syncParcel(updated.workspace_id, updated).catch(() => {});
     }
 
     showToast('تم تعديل بيانات الإرسالية وتوثيق التعديل في سجل المراجعة', 'success');
@@ -3241,6 +3398,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       await cashService.syncAuditToCloud(audit);
     }
 
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.syncParcel(updatedParcel.workspace_id, updatedParcel).catch(() => {});
+    }
+
     showToast(`تم تحويل الطرد [${parcel.tracking_code}] إلى مسار الإرجاع للمرسل`, 'info');
     return { success: true };
   };
@@ -3324,6 +3485,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setAllParcels(prev => prev.map(p => (p.id === parcelId ? { ...p, pending_sync: true } : p)));
       }
       await cashService.syncAuditToCloud(audit);
+    }
+
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.syncParcel(updatedParcel.workspace_id, updatedParcel).catch(() => {});
     }
 
     // If a return fee was paid by the sender at handover, record a normal cash_in/parcel_shipping_fee voucher (no automatic refund of original payment)
@@ -3638,6 +3803,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           note: parts.join(' | '),
         });
       }
+      if (firebaseSyncService.isAvailable() && res.trip) {
+        firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
+      }
 
       showToast(`تم حفظ وتحديث مصاريف الرحلة [${existingTrip.trip_code}] بنجاح`, 'success');
     }
@@ -3666,6 +3834,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (res.success) {
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
+      if (firebaseSyncService.isAvailable()) {
+        if (res.trip) firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
+        if (res.parcel) firebaseSyncService.syncParcel(res.parcel.workspace_id, res.parcel).catch(() => {});
+      }
     }
     return {
       success: res.success,
@@ -3695,6 +3867,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (res.success) {
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
+      if (firebaseSyncService.isAvailable()) {
+        if (res.trip) firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
+        const updatedP = res.updatedParcels.find(p => p.id === parcelId);
+        if (updatedP) firebaseSyncService.syncParcel(updatedP.workspace_id, updatedP).catch(() => {});
+      }
     }
     return { success: res.success, error: res.error, trip: res.trip };
   };
@@ -3715,6 +3892,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
     if (res.success) {
       setAllTrips(res.updatedTrips);
+      if (firebaseSyncService.isAvailable() && res.trip) {
+        firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
+      }
     }
     return { success: res.success, error: res.error, trip: res.trip };
   };
@@ -3742,6 +3922,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (res.success) {
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
+      if (firebaseSyncService.isAvailable()) {
+        if (res.trip) firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
+        if (res.parcel) firebaseSyncService.syncParcel(res.parcel.workspace_id, res.parcel).catch(() => {});
+      }
     }
     return {
       success: res.success,
@@ -3769,6 +3953,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
     if (res.success) {
       setAllTrips(res.updatedTrips);
+      if (firebaseSyncService.isAvailable() && res.trip) {
+        firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
+      }
     }
     return { success: res.success, error: res.error, trip: res.trip };
   };
