@@ -316,7 +316,7 @@ function buildSingleStickerHtml(
     : '50%';
   const part2Height = options.showStampBox ? '40%' : '50%';
 
-  const logoSrc = branding.logoUrl?.trim() ? branding.logoUrl.trim() : '/logo.png';
+  const logoSrc = branding.logoUrl?.trim() || '';
   const agencyName = branding.agencyName?.trim() || 'محطة الاتحادية';
   const agencyPhone = branding.agencyPhone?.trim() || '';
 
@@ -331,7 +331,7 @@ function buildSingleStickerHtml(
           ${
             options.showStationBranding !== false
               ? `<div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.4mm;">
-                  <img src="${escapeHtml(logoSrc)}" alt="${escapeHtml(agencyName)}" style="width:42px;height:42px;border-radius:50% !important;object-fit:cover;background:transparent !important;display:block;" />
+                  ${logoSrc ? `<img src="${escapeHtml(logoSrc)}" alt="${escapeHtml(agencyName)}" style="width:42px;height:42px;border-radius:50% !important;object-fit:cover;background:transparent !important;display:block;" />` : ''}
                   <div style="font-size:8.5pt;font-weight:900;line-height:1.1;text-align:center;color:#000000;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                     ${escapeHtml(agencyName)}
                   </div>
@@ -709,14 +709,14 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
 
   // حفظ هوية المحطة المخصصة تلقائياً عند التعديل من داخل نافذة الطابعة
   const updateBrandingField = (field: keyof StickerBrandingConfig, value: string) => {
-    setBranding(prev => {
-      const next = { ...prev, [field]: value };
-      try {
-        localStorage.setItem('alittihadia_sticker_branding_v1', JSON.stringify(next));
+    const next = { ...branding, [field]: value };
+    setBranding(next);
+    try {
+      localStorage.setItem('alittihadia_sticker_branding_v1', JSON.stringify(next));
+      setTimeout(() => {
         window.dispatchEvent(new Event('sticker-branding-updated'));
-      } catch {}
-      return next;
-    });
+      }, 0);
+    } catch {}
   };
 
   const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

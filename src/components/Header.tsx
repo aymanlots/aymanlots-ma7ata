@@ -59,28 +59,17 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Right Section (RTL): Large Golden Title + Quick Pills */}
           <div className="flex flex-col items-start text-right min-w-0 flex-1">
             <h1 className="text-[20px] sm:text-[22px] font-black tracking-tight text-[#E6C37A] leading-tight truncate max-w-full drop-shadow-[0_2px_8px_rgba(212,175,55,0.25)]">
-              {currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'محطة الاتحادية'}
+              {currentWorkspace?.name || 'محطة الاتحادية'}
             </h1>
-            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              <button
-                type="button"
-                onClick={() => onOpenPublicTracking && onOpenPublicTracking()}
-                className="nav-tab-btn flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#1a0f00]/90 border border-[#D4AF37]/50 text-[10px] font-extrabold text-[#F5C84C] hover:border-[#F5C84C] transition active:scale-95 cursor-pointer"
-                title="تتبع الشحنة للزبون"
-              >
-                <span className="w-2 h-2 rounded-full bg-[#F5C84C]" />
-                <span>تتبع الشحنة</span>
-              </button>
-
+            <div className="flex items-center gap-1.5 mt-1">
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="nav-tab-btn flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#006233]/35 border border-[#2ECC71]/45 text-[10px] font-extrabold text-[#FFF8EB] hover:border-[#2ECC71] transition active:scale-95 cursor-pointer"
-                title="القائمة والمحطات"
+                className="nav-tab-btn flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1a0f00]/90 border border-[#D4AF37]/45 text-[11px] font-extrabold text-[#F5C84C] hover:border-[#F5C84C] transition active:scale-95 cursor-pointer"
+                title="القائمة والأدوات"
               >
-                <span className="w-2 h-2 rounded-full bg-[#2ECC71]" />
-                <span className="max-w-[85px] truncate">{currentStation ? (currentStation.name || currentStation.city) : 'كافة المحطات'}</span>
-                <Menu className="w-3 h-3 text-[#F5C84C] mr-0.5" />
+                <Menu className="w-3.5 h-3.5 text-[#F5C84C]" />
+                <span>القائمة</span>
               </button>
 
               <button
@@ -94,7 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Left Section (RTL): Circular 3D Official Logo */}
+          {/* Left Section (RTL): Circular 3D Official App Logo (Fixed - Cannot be changed by user) */}
           <div 
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="shrink-0 overflow-hidden rounded-full p-0 flex items-center justify-center cursor-pointer shadow-[0_0_20px_rgba(212,175,55,0.25)] active:scale-95 transition"
@@ -102,11 +91,8 @@ export const Header: React.FC<HeaderProps> = ({
             title="القائمة الرئيسية"
           >
             <img 
-              src={currentWorkspace?.custom_brand_logo_url || '/logo.png'} 
+              src="/logo.png" 
               alt="شعار محطة الاتحادية" 
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src = '/logo.png';
-              }}
               style={{ borderRadius: '50%', width: '68px', height: '68px', objectFit: 'cover', background: 'transparent', display: 'block' }}
             />
           </div>
@@ -245,6 +231,20 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   </button>
                 ))}
+                {(userRole === 'owner' || userRole === 'platform_owner') && stations.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setSelectedStationId('all');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`p-2.5 rounded-xl border text-right transition ${
+                      selectedStationId === 'all' ? 'btn-gold' : 'btn-cancel'
+                    }`}
+                  >
+                    <div className="text-xs font-black truncate">🌐 كافة المحطات</div>
+                    <div className="text-[10px] mt-0.5 opacity-85">عرض شامل ({stations.length})</div>
+                  </button>
+                )}
               </div>
             </div>
 

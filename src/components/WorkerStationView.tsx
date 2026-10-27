@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Parcel, Transaction, TransactionType } from '../types/database';
+import { Parcel, Transaction, TransactionType, MoneyTransfer } from '../types/database';
 import { ParcelStickerModal } from './ParcelStickerModal';
 import { ParcelDetailModal } from './ParcelDetailModal';
 import { TransactionDetailModal } from './TransactionDetailModal';
@@ -51,6 +51,8 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     exchangeRate,
     convertCurrency,
     executeCurrencyExchange,
+    moneyTransfers,
+    payoutMoneyTransfer,
     hideAmounts,
     showToast,
   } = useApp();
@@ -64,6 +66,8 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   const [exAmountStr, setExAmountStr] = useState<string>('1000');
   const [exCustomerName, setExCustomerName] = useState<string>('');
   const [isExchanging, setIsExchanging] = useState<boolean>(false);
+  const [showFxNegativeWarning, setShowFxNegativeWarning] = useState<boolean>(false);
+  const [pendingPayoutWarningTransfer, setPendingPayoutWarningTransfer] = useState<MoneyTransfer | null>(null);
   const [activeBottomSheet, setActiveBottomSheet] = useState<'in' | 'out' | 'return' | null>(null);
   const [selectedParcelForReceipt, setSelectedParcelForReceipt] = useState<Parcel | null>(null);
   const [selectedParcelDetail, setSelectedParcelDetail] = useState<Parcel | null>(null);
@@ -417,18 +421,15 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
               className="w-full bg-black/60 border border-white/15 rounded-xl px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#F5C84C]"
             />
 
-            <button
-              type="button"
-              disabled={isExchanging || !currentStation}
-              onClick={async () => {
+            {(() => {
+              const fromAmt = parseFloat(exAmountStr) || 0;
+              const toCurr: 'MAD' | 'MRU' = exFromCurr === 'MAD' ? 'MRU' : 'MAD';
+              const toAmt = convertCurrency(fromAmt, exFromCurr, toCurr);
+              const currentOutBal = currentStation ? (stationBalances[currentStation.id]?.[toCurr] || 0) : 0;
+              const resultingOutBal = currentOutBal - toAmt;
+
+              const runWorkerExchange = async () => {
                 if (!currentStation) return;
-                const fromAmt = parseFloat(exAmountStr) || 0;
-                const toCurr = exFromCurr === 'MAD' ? 'MRU' : 'MAD';
-                const toAmt = convertCurrency(fromAmt, exFromCurr, toCurr);
-                if (fromAmt <= 0 || toAmt <= 0) {
-                  showToast('يرجى إدخال مبلغ صحيح للصرف', 'error');
-                  return;
-                }
                 setIsExchanging(true);
                 try {
                   const res = await executeCurrencyExchange({
@@ -442,27 +443,147 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                   });
                   if (res.success) {
                     setExCustomerName('');
+                    setShowFxNegativeWarning(false);
                     setShowWorkerExchange(false);
                   }
                 } finally {
                   setIsExchanging(false);
                 }
-              }}
-              className="btn-gold w-full py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>
-                {isExchanging
-                  ? 'جاري تسجيل الصرف...'
-                  : `تأكيد الصرف فلاكيس (+${parseFloat(exAmountStr) || 0} ${exFromCurr} / -${convertCurrency(
-                      parseFloat(exAmountStr) || 0,
-                      exFromCurr,
-                      exFromCurr === 'MAD' ? 'MRU' : 'MAD'
-                    )} ${exFromCurr === 'MAD' ? 'MRU' : 'MAD'})`}
-              </span>
-            </button>
+              };
+
+              if (showFxNegativeWarning) {
+                return (
+                  <div className="p-3 rounded-xl bg-rose-950/80 border-2 border-rose-500/50 space-y-2 text-xs">
+                    <div className="flex items-center gap-2 text-rose-300 font-black">
+                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span>تنبيه: لاكيس {toCurr} في المحطة خاوية أو غير كافية!</span>
+                    </div>
+                    <p className="text-white/90 font-bold">
+                      الرصيد الحالي:{' '}
+                      <span dir="ltr" className="font-mono text-[#F5C84C]">
+                        {currentOutBal.toLocaleString('en-US')} {toCurr}
+                      </span>{' '}
+                      ➔ سيصبح بعد الصرف:{' '}
+                      <span dir="ltr" className="font-mono text-rose-400 font-black">
+                        {resultingOutBal.toLocaleString('en-US')} {toCurr}
+                      </span>
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isExchanging}
+                        onClick={runWorkerExchange}
+                        className="flex-1 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-black text-xs cursor-pointer"
+                      >
+                        نعم، نفذ الصرف (رصيد سالب)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowFxNegativeWarning(false)}
+                        className="btn-cancel px-3 py-2 rounded-xl text-xs font-bold cursor-pointer"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <button
+                  type="button"
+                  disabled={isExchanging || !currentStation}
+                  onClick={async () => {
+                    if (!currentStation) return;
+                    if (fromAmt <= 0 || toAmt <= 0) {
+                      showToast('يرجى إدخال مبلغ صحيح للصرف', 'error');
+                      return;
+                    }
+                    if (currentOutBal <= 0 || resultingOutBal < 0) {
+                      setShowFxNegativeWarning(true);
+                      return;
+                    }
+                    await runWorkerExchange();
+                  }}
+                  className="btn-gold w-full py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>
+                    {isExchanging
+                      ? 'جاري تسجيل الصرف...'
+                      : `تأكيد الصرف فلاكيس (+${fromAmt} ${exFromCurr} / -${toAmt} ${toCurr})`}
+                  </span>
+                </button>
+              );
+            })()}
           </div>
         )}
+
+        {/* Pending Hawalas for Worker Station */}
+        {(() => {
+          const pendingHawalas = moneyTransfers.filter(
+            t =>
+              t.status === 'pending' &&
+              currentStation &&
+              (t.destination_station_id === currentStation.id || t.origin_station_id === currentStation.id)
+          );
+          if (pendingHawalas.length === 0) return null;
+          return (
+            <div className="pt-2 border-t border-white/15 space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-black text-[#F5C84C]">
+                <span>💸 حوالات المحطة الجارية ({pendingHawalas.length}):</span>
+                <button
+                  type="button"
+                  onClick={() => setShowMoneyTransferModal(true)}
+                  className="text-[10px] underline cursor-pointer"
+                >
+                  كل الحوالات
+                </button>
+              </div>
+              {pendingHawalas.map(t => (
+                <div
+                  key={t.id}
+                  className="p-2.5 rounded-xl bg-black/60 border border-amber-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs"
+                >
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span dir="ltr" className="font-mono font-black text-[#F5C84C]">
+                        {t.transfer_code}
+                      </span>
+                      <span className="text-[10px] text-white/80">
+                        من {t.origin_station_name} ➔ إلى {t.destination_station_name}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-white/75 mt-0.5">
+                      المرسل: {t.sender_name} • المستلم: {t.receiver_name} • المبلغ:{' '}
+                      <strong dir="ltr" className="font-mono text-[#F5C84C]">
+                        {t.payout_amount.toLocaleString('en-US')} {t.payout_currency}
+                      </strong>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const destBal =
+                        stationBalances[t.destination_station_id]?.[t.payout_currency] || 0;
+                      if (destBal <= 0 || destBal - t.payout_amount < 0) {
+                        setPendingPayoutWarningTransfer(t);
+                        return;
+                      }
+                      await payoutMoneyTransfer(t.id);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>
+                      تم الاستلام (-{t.payout_amount} {t.payout_currency})
+                    </span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         <div className="flex items-center justify-between text-[11px] text-white/80 pt-2 border-t border-white/15 flex-wrap gap-2">
           <span>سعر الصرف المرجعي: 1 درهم = {exchangeRate} أوقية</span>
@@ -850,6 +971,68 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         isOpen={showMoneyTransferModal}
         onClose={() => setShowMoneyTransferModal(false)}
       />
+
+      {/* Empty Cashbox Warning Modal for Direct Hawala Payout */}
+      {pendingPayoutWarningTransfer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-md rounded-3xl luxury-card p-5 shadow-2xl text-right space-y-4 border-2 border-rose-500/50">
+            <div className="flex items-center gap-2.5 text-rose-400">
+              <AlertTriangle className="w-7 h-7 shrink-0" />
+              <div>
+                <h3 className="text-sm font-black text-white">تنبيه: لاكيس محطة الاستلام خاوية أو غير كافية!</h3>
+                <p className="text-xs text-white/75">المحطة: {pendingPayoutWarningTransfer.destination_station_name}</p>
+              </div>
+            </div>
+            {(() => {
+              const curr = pendingPayoutWarningTransfer.payout_currency;
+              const currentBal = stationBalances[pendingPayoutWarningTransfer.destination_station_id]?.[curr] || 0;
+              const afterBal = currentBal - pendingPayoutWarningTransfer.payout_amount;
+              return (
+                <div className="bg-black/70 border border-rose-500/35 rounded-2xl p-3.5 space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-white/75">الرصيد الحالي فلاكيس:</span>
+                    <span dir="ltr" className="font-mono font-black text-[#F5C84C]">
+                      {currentBal.toLocaleString('en-US')} {curr}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/75">مبلغ الحوالة المسلم:</span>
+                    <span dir="ltr" className="font-mono font-black text-rose-400">
+                      -{pendingPayoutWarningTransfer.payout_amount.toLocaleString('en-US')} {curr}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t border-white/15 pt-1.5">
+                    <span className="text-white font-black">رصيد الصندوق بعد التسليم:</span>
+                    <span dir="ltr" className="font-mono font-black text-sm text-rose-400">
+                      {afterBal.toLocaleString('en-US')} {curr}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = pendingPayoutWarningTransfer.id;
+                  setPendingPayoutWarningTransfer(null);
+                  await payoutMoneyTransfer(id);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-black text-xs cursor-pointer"
+              >
+                نعم، تم الاستلام (رصيد سالب)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingPayoutWarningTransfer(null)}
+                className="btn-cancel px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

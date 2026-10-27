@@ -183,7 +183,22 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     });
   }, [parcels, statusFilter, conditionFilter, paymentFilter, stationFilter, dateFilter, searchQuery]);
 
-  // Statistics
+  // Scoped parcels & trips for the currently selected station (or all when stationFilter === 'all')
+  const stationScopedParcels = useMemo(() => {
+    if (stationFilter === 'all') return parcels;
+    return parcels.filter(
+      p => p.origin_station_id === stationFilter || p.destination_station_id === stationFilter
+    );
+  }, [parcels, stationFilter]);
+
+  const stationScopedTrips = useMemo(() => {
+    if (stationFilter === 'all') return trips;
+    return trips.filter(
+      t => t.origin_station_id === stationFilter || t.destination_station_id === stationFilter
+    );
+  }, [trips, stationFilter]);
+
+  // Statistics (Scoped to the selected station or all stations)
   const stats = useMemo(() => {
     let registered = 0;
     let inTransit = 0;
@@ -198,7 +213,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     const nowMs = Date.now();
     const unclaimedList: Parcel[] = [];
 
-    parcels.forEach(p => {
+    stationScopedParcels.forEach(p => {
       if (p.status === 'registered') registered++;
       else if (p.status === 'in_transit') inTransit++;
       else if (p.status === 'arrived') {
@@ -222,7 +237,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     });
 
     return {
-      total: parcels.length,
+      total: stationScopedParcels.length,
       registered,
       inTransit,
       arrived,
@@ -234,16 +249,17 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
       totalUnpaidMad: Math.round(totalUnpaidMad * 100) / 100,
       totalUnpaidMru: Math.round(totalUnpaidMru * 100) / 100
     };
-  }, [parcels, currentWorkspace?.unclaimed_days_threshold]);
+  }, [stationScopedParcels, currentWorkspace?.unclaimed_days_threshold]);
 
-  // Incoming trips heading to my station
+  // Incoming trips heading to my station (or all incoming trips when 'all' is selected)
   const incomingTrips = useMemo(() => {
     return trips.filter(t => {
-      const isHeadingToMyStation = t.destination_station_id === activeStationId;
+      const isHeadingToStation =
+        stationFilter === 'all' ? true : t.destination_station_id === stationFilter;
       const isEnRouteOrArrived = t.status === 'departed' || t.status === 'arrived';
-      return isHeadingToMyStation && isEnRouteOrArrived;
+      return isHeadingToStation && isEnRouteOrArrived;
     });
-  }, [trips, activeStationId]);
+  }, [trips, stationFilter]);
 
   // Export CSV
   const handleExportCSV = () => {
@@ -454,7 +470,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             }`}
           >
             <Package className="w-3 h-3 shrink-0" />
-            <span className="truncate">الكوليات ({parcels.length})</span>
+            <span className="truncate">الكوليات ({stationScopedParcels.length})</span>
           </button>
 
           <button
@@ -465,7 +481,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             }`}
           >
             <Truck className="w-3 h-3 shrink-0" />
-            <span className="truncate">الرحلات ({trips.length})</span>
+            <span className="truncate">الرحلات ({stationScopedTrips.length})</span>
           </button>
 
           <button
@@ -1050,7 +1066,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
           <div className="luxury-card flex items-center justify-between p-3 rounded-[20px]">
             <h2 className="text-xs font-black text-white flex items-center gap-1.5">
               <Truck className="w-4 h-4 text-[#F5C84C]" />
-              <span>رحلات الشحن بين المحطات ({trips.length})</span>
+              <span>رحلات الشحن ({stationScopedTrips.length})</span>
             </h2>
             <button
               type="button"
@@ -1062,10 +1078,10 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             </button>
           </div>
 
-          {trips.length === 0 ? (
+          {stationScopedTrips.length === 0 ? (
             <div className="luxury-card rounded-[22px] p-6 text-center space-y-3">
               <Truck className="w-6 h-6 text-[#F5C84C] mx-auto" />
-              <h3 className="text-sm font-bold text-white">لا توجد رحلات شحن مسجلة بعد</h3>
+              <h3 className="text-sm font-bold text-white">لا توجد رحلات شحن مسجلة لهذه المحطة بعد</h3>
               <button
                 type="button"
                 onClick={() => setIsNewTripOpen(true)}
@@ -1076,7 +1092,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             </div>
           ) : (
             <div className="space-y-2">
-              {trips.map(trip => {
+              {stationScopedTrips.map(trip => {
                 const statusMeta = tripStatusNames[trip.status] || { label: trip.status, color: 'bg-black/60 text-[#F5C84C]' };
                 const loadedCount = trip.loaded_parcel_ids.length;
                 const receivedCount = trip.received_parcel_ids.length;

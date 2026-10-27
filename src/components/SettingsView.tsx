@@ -22,7 +22,10 @@ import {
   AlertTriangle,
   Smartphone,
   ChevronDown,
-  ImagePlus
+  ImagePlus,
+  Pencil,
+  Plus,
+  X
 } from 'lucide-react';
 import { exportService } from '../services/exportService';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -62,6 +65,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     transactions,
     parcels,
     stations,
+    addStation,
+    updateStation,
+    deleteStation,
     renewInviteCode, 
     logout,
     exchangeRate,
@@ -89,6 +95,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const teamSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Collapsible sections state (collapsed by default)
+  const [openStationsSection, setOpenStationsSection] = useState(true);
   const [openWorkspaceInfo, setOpenWorkspaceInfo] = useState(false);
   const [openBrandingSection, setOpenBrandingSection] = useState(false);
   const [openExportSection, setOpenExportSection] = useState(false);
@@ -96,6 +103,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [openPwaSection, setOpenPwaSection] = useState(false);
   const [openTeamSection, setOpenTeamSection] = useState<boolean>(Boolean(initialOpenTeam));
   const [openContactSection, setOpenContactSection] = useState(false);
+
+  // Station management state in Settings
+  const [editingStationId, setEditingStationId] = useState<string | null>(null);
+  const [editStName, setEditStName] = useState('');
+  const [editStCity, setEditStCity] = useState('');
+  const [editStCountry, setEditStCountry] = useState<'MA' | 'MR'>('MA');
+  const [editStCurrency, setEditStCurrency] = useState<'MAD' | 'MRU'>('MAD');
+  const [editStPhone, setEditStPhone] = useState('');
+  const [showAddStationForm, setShowAddStationForm] = useState(false);
+  const [newStName, setNewStName] = useState('');
+  const [newStCity, setNewStCity] = useState('');
+  const [newStCountry, setNewStCountry] = useState<'MA' | 'MR'>('MA');
+  const [newStCurrency, setNewStCurrency] = useState<'MAD' | 'MRU'>('MAD');
+  const [newStPhone, setNewStPhone] = useState('');
+  const [stationToDeleteId, setStationToDeleteId] = useState<string | null>(null);
+  const [isSavingStation, setIsSavingStation] = useState(false);
 
   // Custom thermal sticker branding state
   const [brandNameInput, setBrandNameInput] = useState(
@@ -258,6 +281,337 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 1.5 إدارة المحطات وتعديل الأسماء (الوكالة والمحطات في مكان واحد منظم) */}
+      {(userRole === 'owner' || userRole === 'platform_owner') && (
+        <div className="luxury-card rounded-[22px] p-4 space-y-3 border border-[#D4AF37]/40">
+          <button
+            type="button"
+            onClick={() => setOpenStationsSection(!openStationsSection)}
+            className="w-full flex items-center justify-between gap-2 text-right cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0 shadow-md">
+                <Store className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black text-white">إدارة المحطات وتعديل الأسماء ({stations.length})</h3>
+                <p className="text-[10px] text-white/75">
+                  تعديل اسم الوكالة أو أسماء المحطات، العملات، وإضافة أو حذف محطة
+                </p>
+              </div>
+            </div>
+            <ChevronDown
+              className={`w-4 h-4 text-[#F5C84C] transition-transform duration-200 shrink-0 ${
+                openStationsSection ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+
+          {openStationsSection && (
+            <div className="space-y-3 pt-3 border-t border-white/15 animate-fadeIn">
+              {/* تعديل الاسم العام للوكالة / مساحة العمل */}
+              <div className="bg-black/40 border border-white/15 rounded-xl p-3 space-y-2">
+                <label className="block text-[11px] font-black text-[#F5C84C]">
+                  اسم الوكالة / المحطة الرئيسي (أعلى التطبيق):
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={brandNameInput}
+                    onChange={e => setBrandNameInput(e.target.value)}
+                    placeholder="مثال: محطة الاتحادية"
+                    className="flex-1 px-3 py-2 rounded-xl text-xs font-bold bg-black/60 border border-white/20 text-white focus:border-[#F5C84C] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    disabled={isSavingBranding || !brandNameInput.trim()}
+                    onClick={async () => {
+                      setIsSavingBranding(true);
+                      try {
+                        await updateWorkspaceBranding({
+                          custom_brand_name: brandNameInput.trim(),
+                          custom_brand_phone: brandPhoneInput.trim(),
+                          custom_brand_logo_url: brandLogoUrlInput.trim(),
+                        });
+                      } finally {
+                        setIsSavingBranding(false);
+                      }
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-xs shrink-0 cursor-pointer"
+                  >
+                    {isSavingBranding ? 'حفظ...' : 'حفظ الاسم'}
+                  </button>
+                </div>
+              </div>
+
+              {/* قائمة المحطات مع تعديل الاسم أو الحذف */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black text-white">المحطات المسجلة ({stations.length}):</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddStationForm(!showAddStationForm);
+                      setEditingStationId(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-[#F5C84C] text-[#111111] text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ إضافة محطة</span>
+                  </button>
+                </div>
+
+                {showAddStationForm && (
+                  <form
+                    onSubmit={async e => {
+                      e.preventDefault();
+                      if (!newStName.trim() || !newStCity.trim()) return;
+                      setIsSavingStation(true);
+                      try {
+                        const res = await addStation({
+                          name: newStName.trim(),
+                          city: newStCity.trim(),
+                          country: newStCountry,
+                          default_currency: newStCurrency,
+                          phone: newStPhone.trim(),
+                        });
+                        if (res.success) {
+                          setShowAddStationForm(false);
+                          setNewStName('');
+                          setNewStCity('');
+                          setNewStPhone('');
+                        }
+                      } finally {
+                        setIsSavingStation(false);
+                      }
+                    }}
+                    className="bg-black/60 border border-[#F5C84C]/50 rounded-xl p-3 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-[#F5C84C]">إضافة محطة جديدة</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddStationForm(false)}
+                        className="btn-cancel p-1 rounded-lg"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={newStName}
+                        onChange={e => setNewStName(e.target.value)}
+                        placeholder="اسم المحطة *"
+                        className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-white"
+                      />
+                      <input
+                        type="text"
+                        required
+                        value={newStCity}
+                        onChange={e => setNewStCity(e.target.value)}
+                        placeholder="المدينة *"
+                        className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-white"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={newStCountry}
+                        onChange={e => {
+                          const c = e.target.value as 'MA' | 'MR';
+                          setNewStCountry(c);
+                          setNewStCurrency(c === 'MR' ? 'MRU' : 'MAD');
+                        }}
+                        className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-white"
+                      >
+                        <option value="MA">🇲🇦 المغرب (MA)</option>
+                        <option value="MR">🇲🇷 موريتانيا (MR)</option>
+                      </select>
+                      <select
+                        value={newStCurrency}
+                        onChange={e => setNewStCurrency(e.target.value as 'MAD' | 'MRU')}
+                        className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-[#F5C84C]"
+                      >
+                        <option value="MAD">درهم (MAD)</option>
+                        <option value="MRU">أوقية (MRU)</option>
+                      </select>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isSavingStation}
+                      className="w-full py-2 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-xs cursor-pointer"
+                    >
+                      {isSavingStation ? 'جاري الإضافة...' : 'تأكيد إضافة المحطة'}
+                    </button>
+                  </form>
+                )}
+
+                {stations.map(st => {
+                  const isEditingThis = editingStationId === st.id;
+                  const isConfirmingDelete = stationToDeleteId === st.id;
+                  return (
+                    <div
+                      key={st.id}
+                      className="bg-black/45 border border-white/15 rounded-xl p-3 space-y-2"
+                    >
+                      {!isEditingThis ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-white truncate">
+                              {st.country === 'MA' ? '🇲🇦' : '🇲🇷'} {st.name}
+                            </p>
+                            <p className="text-[10px] text-white/70">
+                              المدينة: {st.city} • العملة: {st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD')}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingStationId(st.id);
+                                setEditStName(st.name);
+                                setEditStCity(st.city);
+                                setEditStCountry(st.country);
+                                setEditStCurrency(st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
+                                setEditStPhone(st.phone || '');
+                                setStationToDeleteId(null);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#F5C84C] text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                            >
+                              <Pencil className="w-3 h-3" />
+                              <span>تعديل الاسم</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStationToDeleteId(isConfirmingDelete ? null : st.id)}
+                              className="btn-danger px-2.5 py-1.5 rounded-lg text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <form
+                          onSubmit={async e => {
+                            e.preventDefault();
+                            if (!editStName.trim() || !editStCity.trim()) return;
+                            setIsSavingStation(true);
+                            try {
+                              const res = await updateStation(st.id, {
+                                name: editStName.trim(),
+                                city: editStCity.trim(),
+                                country: editStCountry,
+                                default_currency: editStCurrency,
+                                phone: editStPhone.trim(),
+                              });
+                              if (res.success) {
+                                setEditingStationId(null);
+                              }
+                            } finally {
+                              setIsSavingStation(false);
+                            }
+                          }}
+                          className="space-y-2"
+                        >
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-white/75 mb-1">اسم المحطة *</label>
+                              <input
+                                type="text"
+                                required
+                                value={editStName}
+                                onChange={e => setEditStName(e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-lg text-xs font-bold bg-black/70 border border-white/25 text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-white/75 mb-1">المدينة *</label>
+                              <input
+                                type="text"
+                                required
+                                value={editStCity}
+                                onChange={e => setEditStCity(e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-lg text-xs font-bold bg-black/70 border border-white/25 text-white"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <select
+                              value={editStCountry}
+                              onChange={e => {
+                                const c = e.target.value as 'MA' | 'MR';
+                                setEditStCountry(c);
+                                setEditStCurrency(c === 'MR' ? 'MRU' : 'MAD');
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-black/70 border border-white/25 text-white"
+                            >
+                              <option value="MA">🇲🇦 المغرب (MA)</option>
+                              <option value="MR">🇲🇷 موريتانيا (MR)</option>
+                            </select>
+                            <select
+                              value={editStCurrency}
+                              onChange={e => setEditStCurrency(e.target.value as 'MAD' | 'MRU')}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-black/70 border border-white/25 text-[#F5C84C]"
+                            >
+                              <option value="MAD">درهم (MAD)</option>
+                              <option value="MRU">أوقية (MRU)</option>
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="submit"
+                              disabled={isSavingStation}
+                              className="flex-1 py-1.5 rounded-lg bg-[#F5C84C] text-[#111111] font-black text-xs cursor-pointer"
+                            >
+                              حفظ التعديلات
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingStationId(null)}
+                              className="btn-cancel px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        </form>
+                      )}
+
+                      {isConfirmingDelete && (
+                        <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-500/40 flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold text-rose-200">
+                            تأكيد حذف محطة &quot;{st.name}&quot;؟
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await deleteStation(st.id);
+                                setStationToDeleteId(null);
+                              }}
+                              className="btn-danger px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer"
+                            >
+                              نعم، احذف
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStationToDeleteId(null)}
+                              className="btn-cancel px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer"
+                            >
+                              تراجع
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 2. Platform Owner Panel Launcher */}
       {userRole === 'platform_owner' && onOpenPlatformOwner && (
@@ -931,26 +1285,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <div className="space-y-2">
               <label className="block text-white/90 font-bold">
-                شعار الوكالة / المحطة على الملصق (اختياري):
+                شعار خاص لملصقات QR Code وبونات الـ PDF والمانيفست فقط (اختياري):
               </label>
 
-              {/* معاينة الشعار الحالي + زر رفع صورة من الهاتف */}
+              {/* معاينة الشعار المخصص للمطبوعات فقط بدون المساس بصورة التطبيق الرسمية */}
               <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/60 border border-white/15">
-                <div className="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 overflow-hidden border border-white/20">
-                  <img
-                    src={brandLogoUrlInput || '/logo.png'}
-                    alt="شعار الملصق"
-                    className="max-w-full max-h-full object-contain"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = '/logo.png';
-                    }}
-                  />
-                </div>
+                {brandLogoUrlInput ? (
+                  <div className="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 overflow-hidden border border-[#F5C84C]/50">
+                    <img
+                      src={brandLogoUrlInput}
+                      alt="شعار الملصق والبونات"
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-14 h-14 rounded-xl bg-black/70 border border-dashed border-[#F5C84C]/50 flex items-center justify-center shrink-0 text-[#F5C84C]">
+                    <ImagePlus className="w-6 h-6" />
+                  </div>
+                )}
 
                 <div className="flex-1 space-y-1.5">
                   <label className="w-full py-2 px-3 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition">
                     <ImagePlus className="w-4 h-4 shrink-0" />
-                    <span>اختر صورة الشعار من الهاتف / الجهاز</span>
+                    <span>اختر شعاراً خاصاً للملصقات والبونات</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -982,7 +1339,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               ctx.drawImage(img, 0, 0, w, h);
                               const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
                               setBrandLogoUrlInput(compressedDataUrl);
-                              showToast('تم تحميل صورة الشعار بنجاح — اضغط حفظ لتثبيتها', 'success');
+                              showToast('تم تحميل شعار الملصقات والبونات بنجاح — اضغط حفظ لتثبيته', 'success');
                             }
                           };
                           img.src = dataUrl;
@@ -1000,11 +1357,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       className="btn-delete w-full py-1.5 px-2.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition"
                     >
                       <Trash2 className="w-3 h-3" />
-                      <span>إزالة الشعار المخصص والرجوع للشعار الافتراضي</span>
+                      <span>حذف الشعار المخصص للمطبوعات</span>
                     </button>
                   ) : (
-                    <span className="block text-[10px] text-white/65 text-center">
-                      يتم حالياً استخدام الشعار الافتراضي للتطبيق
+                    <span className="block text-[10px] text-white/70 text-center">
+                      يظهر فقط في ملصقات QR Code والبونات والمانيفست (صورة التطبيق ثابتة)
                     </span>
                   )}
                 </div>

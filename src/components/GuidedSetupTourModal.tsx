@@ -709,7 +709,7 @@ export const GuidedSetupTourModal: React.FC<GuidedSetupTourModalProps> = ({
               </div>
 
               <div className="p-2.5 rounded-xl bg-black/60 border border-white/15 flex items-start gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-sky-500/20 border border-sky-500/40 text-sky-400 flex items-center justify-center shrink-0 mt-0.5">
+                <div className="w-8 h-8 rounded-xl bg-[#F5C84C]/20 border border-[#F5C84C]/40 text-[#F5C84C] flex items-center justify-center shrink-0 mt-0.5">
                   <MessageCircle className="w-4 h-4" />
                 </div>
                 <div>
@@ -739,7 +739,7 @@ export const GuidedSetupTourModal: React.FC<GuidedSetupTourModalProps> = ({
                 onClick={() => setStep(4)}
                 className="btn-gold flex-1 py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition cursor-pointer"
               >
-                <span>الخطوة الأخيرة: صورة الملصقات وبونات الـ PDF</span>
+                <span>الخطوة الأخيرة: شعار الملصقات وبونات الـ PDF</span>
                 <ArrowLeft className="w-4 h-4 stroke-[2.5]" />
               </button>
             </div>
@@ -754,31 +754,34 @@ export const GuidedSetupTourModal: React.FC<GuidedSetupTourModalProps> = ({
             <div className="p-3 rounded-2xl bg-gradient-to-br from-[#8c6d2c]/40 to-black/80 border border-[#F5C84C]/60 space-y-1">
               <div className="flex items-center gap-1.5 text-[#F5C84C] font-black text-xs">
                 <ImagePlus className="w-4 h-4 shrink-0" />
-                <span>الخطوة الأخيرة: ضع صورة شعارك للملصقات وبونات الـ PDF</span>
+                <span>الخطوة الأخيرة: شعار خاص لملصقات QR وبونات الـ PDF فقط</span>
               </div>
               <p className="text-[11px] text-white/90 leading-relaxed">
-                اختر صورة الشعار (اللوجو) واسم وكالتك ليظهرا أوتوماتيكياً في <strong>الملصقات الحرارية (10×10)</strong> وفي <strong>جميع بونات الـ PDF</strong> (بون الكولي، بون الصندوق، الحوالة، ومانيفست الطريق).
+                اختر شعار وكالتك ليظهر فقط في <strong>ملصقات QR Code (10×10)</strong> وفي <strong>بونات الـ PDF والمانيفست</strong> (صورة التطبيق الرسمية ثابتة ولا تتغير).
               </p>
             </div>
 
             {/* Upload Logo + Inputs */}
             <div className="p-3 rounded-2xl bg-black/65 border border-white/15 space-y-2.5">
               <div className="flex items-center gap-3">
-                <div className="w-16 h-16 rounded-2xl bg-white p-1.5 flex items-center justify-center shrink-0 overflow-hidden border-2 border-[#F5C84C]">
-                  <img
-                    src={brandLogoUrl || '/logo.png'}
-                    alt="شعار الوكالة"
-                    className="max-w-full max-h-full object-contain"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = '/logo.png';
-                    }}
-                  />
-                </div>
+                {brandLogoUrl ? (
+                  <div className="w-16 h-16 rounded-2xl bg-white p-1.5 flex items-center justify-center shrink-0 overflow-hidden border-2 border-[#F5C84C]">
+                    <img
+                      src={brandLogoUrl}
+                      alt="شعار الملصقات"
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 rounded-2xl bg-black/70 border border-dashed border-[#F5C84C]/50 flex items-center justify-center shrink-0 text-[#F5C84C]">
+                    <QrCode className="w-7 h-7" />
+                  </div>
+                )}
 
                 <div className="flex-1 space-y-1.5">
                   <label className="btn-gold w-full py-2 px-3 rounded-xl font-black text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition">
                     <ImagePlus className="w-4 h-4 shrink-0" />
-                    <span>اختر صورة الملصقات وبونات الـ PDF</span>
+                    <span>اختر شعاراً للملصقات وبونات الـ PDF</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -793,7 +796,7 @@ export const GuidedSetupTourModal: React.FC<GuidedSetupTourModalProps> = ({
                       onClick={() => setBrandLogoUrl('')}
                       className="btn-cancel w-full py-1 rounded-lg text-[10px] font-bold"
                     >
-                      استرجاع الشعار الافتراضي
+                      حذف الشعار المخصص
                     </button>
                   )}
                 </div>
@@ -853,14 +856,13 @@ export const GuidedSetupTourModal: React.FC<GuidedSetupTourModalProps> = ({
                   <Printer className="w-3 h-3 text-black" />
                 </div>
                 <div className="flex items-center gap-1.5 pt-0.5">
-                  <img
-                    src={brandLogoUrl || '/logo.png'}
-                    alt="Logo"
-                    className="w-7 h-7 object-contain border border-black/20 rounded p-0.5 shrink-0"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = '/logo.png';
-                    }}
-                  />
+                  {brandLogoUrl && (
+                    <img
+                      src={brandLogoUrl}
+                      alt="Logo"
+                      className="w-7 h-7 object-contain border border-black/20 rounded p-0.5 shrink-0"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="text-[10px] font-black truncate">
                       {brandName || 'اسم الوكالة'}
@@ -876,22 +878,21 @@ export const GuidedSetupTourModal: React.FC<GuidedSetupTourModalProps> = ({
               </div>
 
               {/* Preview 2: Official PDF Bon */}
-              <div className="rounded-xl bg-white text-black p-2 border-2 border-[#0f172a] shadow-md space-y-1">
+              <div className="rounded-xl bg-white text-black p-2 border-2 border-black shadow-md space-y-1">
                 <div className="flex items-center justify-between border-b border-gray-300 pb-1">
-                  <span className="text-[9px] font-black bg-[#0f172a] text-[#F5C84C] px-1.5 py-0.5 rounded">
+                  <span className="text-[9px] font-black bg-black text-[#F5C84C] px-1.5 py-0.5 rounded">
                     بون PDF رسمي
                   </span>
-                  <FileText className="w-3 h-3 text-[#0f172a]" />
+                  <FileText className="w-3 h-3 text-black" />
                 </div>
                 <div className="flex items-center gap-1.5 pt-0.5">
-                  <img
-                    src={brandLogoUrl || '/logo.png'}
-                    alt="Logo"
-                    className="w-7 h-7 object-contain border border-gray-300 rounded p-0.5 shrink-0"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = '/logo.png';
-                    }}
-                  />
+                  {brandLogoUrl && (
+                    <img
+                      src={brandLogoUrl}
+                      alt="Logo"
+                      className="w-7 h-7 object-contain border border-gray-300 rounded p-0.5 shrink-0"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="text-[10px] font-black truncate">
                       {brandName || 'اسم الوكالة'}

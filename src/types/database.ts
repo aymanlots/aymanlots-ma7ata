@@ -249,6 +249,8 @@ export interface Transaction {
   collaborator_workspace_short_id?: string;
   is_demo?: boolean;
   pending_sync?: boolean;
+  hawala_meta?: MoneyTransfer | null;
+  hawala_transfer_id?: string | null;
 }
 
 // سجل حركة وتغيرات حالة الكولي

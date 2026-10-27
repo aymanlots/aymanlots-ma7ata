@@ -1,102 +1,54 @@
 import React, { useState } from 'react';
+import { Store, Globe2, Plus, X, Check } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { Store, Globe, Pencil, Trash2, Plus, X } from 'lucide-react';
-import { Station } from '../types/database';
 
-interface StationScopeBarProps {
-  compact?: boolean;
-  onOpenNewStation?: () => void;
-}
-
-export const StationScopeBar: React.FC<StationScopeBarProps> = ({
-  onOpenNewStation
-}) => {
+export const StationScopeBar: React.FC = () => {
   const {
+    userRole,
     stations,
     selectedStationId,
     setSelectedStationId,
-    stationBalances,
-    currencies,
-    userRole,
-    hideAmounts,
-    updateStation,
-    deleteStation,
     addStation,
   } = useApp();
 
-  const isManager = userRole === 'owner' || userRole === 'platform_owner' || userRole === 'admin';
-
-  // Edit Station Modal State
-  const [editingStation, setEditingStation] = useState<Station | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editCity, setEditCity] = useState('');
-  const [editCountry, setEditCountry] = useState<'MA' | 'MR'>('MA');
-  const [editCurrency, setEditCurrency] = useState('MAD');
-  const [editPhone, setEditPhone] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-
-  // Quick Add Station Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCity, setNewCity] = useState('');
   const [newCountry, setNewCountry] = useState<'MA' | 'MR'>('MA');
-  const [newCurrency, setNewCurrency] = useState('MAD');
+  const [newDefaultCurrency, setNewDefaultCurrency] = useState<'MAD' | 'MRU'>('MAD');
   const [newPhone, setNewPhone] = useState('');
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
-  const openEditStation = (st: Station) => {
-    setEditingStation(st);
-    setEditName(st.name || st.city || '');
-    setEditCity(st.city || st.name || '');
-    setEditCountry(st.country || 'MA');
-    setEditCurrency(st.currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
-    setEditPhone(st.phone || '');
-  };
+  // يظهر فقط للمدير أو مشرف المنصة للتنقل السريع بين المحطات
+  if (userRole !== 'owner' && userRole !== 'platform_owner' && userRole !== 'admin') {
+    return null;
+  }
 
-  const handleSaveEdit = async (e: React.FormEvent) => {
+  const isAllSelected = selectedStationId === 'all' || (!selectedStationId && stations.length > 1);
+  const activeStation = !isAllSelected
+    ? stations.find(s => s.id === selectedStationId) || stations[0] || null
+    : null;
+
+  const handleCreateStation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingStation || !editName.trim()) return;
+    setFormError('');
+    if (!newName.trim() || !newCity.trim()) {
+      setFormError('يرجى إدخال اسم المحطة والمدينة');
+      return;
+    }
     setIsSaving(true);
     try {
-      const res = await updateStation(editingStation.id, {
-        name: editName.trim(),
-        city: editCity.trim() || editName.trim(),
-        country: editCountry,
-        currency: editCurrency,
-        phone: editPhone.trim(),
+      const res = await addStation({
+        name: newName.trim(),
+        city: newCity.trim(),
+        country: newCountry,
+        default_currency: newDefaultCurrency,
+        phone: newPhone.trim(),
       });
-      if (res.success) {
-        setEditingStation(null);
-      }
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDeleteStation = async () => {
-    if (!editingStation) return;
-    setIsSaving(true);
-    try {
-      await deleteStation(editingStation.id);
-      setEditingStation(null);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleQuickAddStation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    setIsSaving(true);
-    try {
-      const res = await addStation(
-        newName.trim(),
-        newCity.trim() || newName.trim(),
-        newCountry,
-        newPhone.trim() || undefined,
-        undefined,
-        newCurrency
-      );
-      if (res.success) {
+      if (!res.success) {
+        setFormError(res.error || 'تعذر إنشاء المحطة');
+      } else {
         setShowAddModal(false);
         setNewName('');
         setNewCity('');
@@ -107,396 +59,190 @@ export const StationScopeBar: React.FC<StationScopeBarProps> = ({
     }
   };
 
-  // If there are no stations yet, do not render
-  if (stations.length === 0) return null;
-
-  // If worker is restricted to one station, show an informative locked badge
-  if (userRole === 'worker' && stations.length <= 1) {
-    const current = stations[0];
-    const curr = current.currency || (current.country === 'MR' ? 'MRU' : 'MAD');
-    const bal = Math.round(((stationBalances[current.id] || {})[curr] || 0) * 100) / 100;
-    return (
-      <div className="mb-2.5 p-2 rounded-2xl bg-black/60 border border-[#F5C84C]/40 flex items-center justify-between text-xs" dir="rtl">
-        <div className="flex items-center gap-2">
-          <span className="text-base">{current.country === 'MA' ? '🇲🇦' : '🇲🇷'}</span>
-          <div>
-            <div className="font-black text-white">{current.name || current.city}</div>
-            <div className="text-[10px] text-white/70">محطتك المعتمدة للعمل</div>
-          </div>
-        </div>
-        <div className="text-left font-mono font-bold text-[#F5C84C] text-xs">
-          {hideAmounts ? '••••' : `${bal.toLocaleString()} ${curr}`}
-        </div>
-      </div>
-    );
-  }
-
-  const activeStation = stations.find((s) => s.id === selectedStationId);
-  const isAllSelected = selectedStationId === null || selectedStationId === 'all';
-
   return (
-    <>
-      <div
-        className="mb-2.5 rounded-2xl p-2.5 bg-[#120b02]/90 border border-[#D4AF37]/50 shadow-[0_4px_20px_rgba(0,0,0,0.6)] backdrop-blur-md animate-fadeIn"
-        dir="rtl"
-      >
-        {/* Top Status Line: Clearly informs the user where they are + Direct Edit Station Name Button */}
-        <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-white/10 text-xs">
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <div className="w-6 h-6 rounded-lg bg-[#D4AF37]/20 border border-[#D4AF37]/60 flex items-center justify-center shrink-0 text-[#F5C84C]">
-              {isAllSelected ? <Globe className="w-3.5 h-3.5" /> : <Store className="w-3.5 h-3.5" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[10px] text-[#C8B08A] font-bold">المعطيات والصناديق المعروضة:</div>
-              <div className="text-xs font-black text-white truncate flex items-center gap-1.5">
-                {isAllSelected ? (
-                  <span className="text-[#F5C84C]">🌐 نظرة شاملة (كافة المحطات معاً)</span>
-                ) : (
-                  <>
-                    <span className="text-white truncate">
-                      📍 {activeStation?.name || activeStation?.city}{' '}
-                      <span className="text-[10px] text-white/70 font-mono">
-                        ({activeStation?.country === 'MA' ? '🇲🇦 المغرب' : '🇲🇷 موريتانيا'})
-                      </span>
-                    </span>
-                    {isManager && activeStation && (
-                      <button
-                        type="button"
-                        onClick={() => openEditStation(activeStation)}
-                        className="px-1.5 py-0.5 rounded-lg bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] text-[10px] font-black inline-flex items-center gap-1 shrink-0 hover:bg-[#F5C84C]/30 cursor-pointer"
-                        title="تعديل اسم المحطة أو عملتها أو حذفها"
-                      >
-                        <Pencil className="w-2.5 h-2.5" />
-                        <span>تعديل الاسم</span>
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+    <div className="luxury-card rounded-[22px] p-2.5 mb-3">
+      {stations.length === 0 ? (
+        <div className="flex items-center justify-between gap-2 px-1 py-0.5">
+          <div className="flex items-center gap-2 text-xs text-white/90 font-bold">
+            <Store className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <span>لا توجد محطات مسجلة — أضف محطتك الأولى للبدء</span>
           </div>
-
-          {/* Current Active Station Box Balance */}
-          {!isAllSelected && activeStation && (
-            <div className="text-left shrink-0 font-mono">
-              <span className="text-[9px] text-[#C8B08A] block">صندوق المحطة:</span>
-              <span className="text-xs font-black text-[#F5C84C]">
-                {hideAmounts
-                  ? '••••'
-                  : `${(
-                      (stationBalances[activeStation.id] || {})[
-                        activeStation.currency || (activeStation.country === 'MR' ? 'MRU' : 'MAD')
-                      ] || 0
-                    ).toLocaleString()} ${
-                      activeStation.currency || (activeStation.country === 'MR' ? 'MRU' : 'MAD')
-                    }`}
-              </span>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              setFormError('');
+              setNewName('');
+              setNewCity('');
+              setNewCountry('MA');
+              setNewDefaultCurrency('MAD');
+              setNewPhone('');
+              setShowAddModal(true);
+            }}
+            className="btn-gold px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1 shrink-0 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ إضافة محطة</span>
+          </button>
         </div>
+      ) : (
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          {stations.map(station => {
+            const isSelected = !isAllSelected && activeStation?.id === station.id;
 
-        {/* Station Selector Buttons (Horizontal Scrollable Chips) */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-          {stations.map((st) => {
-            const isSelected = selectedStationId === st.id;
-            const curr = st.currency || (st.country === 'MR' ? 'MRU' : 'MAD');
-            const bal = Math.round(((stationBalances[st.id] || {})[curr] || 0) * 100) / 100;
             return (
-              <div key={st.id} className="inline-flex items-center gap-0.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setSelectedStationId(st.id)}
-                  className={`px-2.5 py-1.5 rounded-xl border text-xs font-black shrink-0 transition flex items-center gap-1.5 cursor-pointer active:scale-95 ${
-                    isSelected
-                      ? 'bg-gradient-to-r from-[#F7D674] to-[#D4A238] text-[#111111] border-[#F5C84C] shadow-md ring-2 ring-[#F5C84C]/50'
-                      : 'bg-black/60 text-white/85 border-white/20 hover:border-[#D4AF37]/60 hover:bg-black/80'
-                  }`}
-                >
-                  <span>{st.country === 'MA' ? '🇲🇦' : '🇲🇷'}</span>
-                  <span className="truncate max-w-[110px]">{st.name || st.city}</span>
-                  <span
-                    className={`text-[9px] font-mono px-1 py-0.2 rounded-md ${
-                      isSelected ? 'bg-black/25 text-[#111111]' : 'bg-[#D4AF37]/20 text-[#F5C84C]'
-                    }`}
-                    dir="ltr"
-                  >
-                    {hideAmounts ? '••' : `${bal.toLocaleString()}`}
-                  </span>
-                </button>
-                {isManager && (
-                  <button
-                    type="button"
-                    onClick={() => openEditStation(st)}
-                    className="p-1.5 rounded-lg bg-black/70 border border-[#F5C84C]/40 text-[#F5C84C] hover:bg-[#F5C84C]/25 transition cursor-pointer shrink-0"
-                    title={`تعديل اسم أو حذف محطة ${st.name}`}
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
+              <button
+                key={station.id}
+                type="button"
+                onClick={() => setSelectedStationId(station.id)}
+                className={`flex-1 min-w-fit px-3.5 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  isSelected ? 'btn-gold' : 'btn-cancel'
+                }`}
+              >
+                <span className="text-sm">{station.country === 'MA' ? '🇲🇦' : '🇲🇷'}</span>
+                <span>{station.name}</span>
+              </button>
             );
           })}
 
-          {/* Dedicated "All Stations" Button */}
+          {/* زر الكل لعرض جميع المحطات معاً */}
           <button
             type="button"
-            onClick={() => setSelectedStationId(null)}
-            className={`px-2.5 py-1.5 rounded-xl border text-xs font-black shrink-0 transition flex items-center gap-1.5 cursor-pointer active:scale-95 ${
-              isAllSelected
-                ? 'bg-gradient-to-r from-[#F7D674] to-[#D4A238] text-[#111111] border-[#F5C84C] shadow-md ring-2 ring-[#F5C84C]/50'
-                : 'bg-black/60 text-white/85 border-white/20 hover:border-[#D4AF37]/60 hover:bg-black/80'
+            onClick={() => setSelectedStationId('all')}
+            className={`min-w-fit px-3.5 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
+              isAllSelected ? 'btn-gold' : 'btn-cancel'
             }`}
-            title="عرض جميع المحطات والصناديق معاً (نظرة شاملة)"
           >
-            <Globe className="w-3.5 h-3.5" />
-            <span>كافة المحطات معاً</span>
+            <Globe2 className="w-3.5 h-3.5" />
+            <span>الكل ({stations.length})</span>
           </button>
-
-          {/* Quick "+ محطة" Button for Manager */}
-          {isManager && (
-            <button
-              type="button"
-              onClick={() => {
-                if (onOpenNewStation) onOpenNewStation();
-                else setShowAddModal(true);
-              }}
-              className="px-2.5 py-1.5 rounded-xl border border-[#F5C84C]/50 bg-[#F5C84C]/15 text-[#F5C84C] text-xs font-black shrink-0 flex items-center gap-1 cursor-pointer hover:bg-[#F5C84C]/25 active:scale-95"
-              title="إضافة محطة جديدة"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>محطة جديدة</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Edit / Rename / Delete Station Modal */}
-      {editingStation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 animate-fadeIn" dir="rtl">
-          <div className="w-full max-w-[360px] luxury-card rounded-3xl p-5 shadow-2xl space-y-4 text-right border border-[#F5C84C]/50">
-            <div className="flex items-center justify-between border-b border-white/15 pb-2">
-              <h3 className="text-sm font-black text-white flex items-center gap-1.5">
-                <Pencil className="w-4 h-4 text-[#F5C84C]" />
-                <span>تعديل اسم وبيانات المحطة</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setEditingStation(null)}
-                className="btn-cancel p-1.5 rounded-xl"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
-              <div>
-                <label className="text-white/90 font-bold block mb-1">اسم المحطة الجديد *</label>
-                <input
-                  type="text"
-                  required
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  placeholder="مثال: محطة الداخلة أو محطة نواكشوط"
-                  className="w-full bg-black/60 border border-[#F5C84C]/50 rounded-xl px-3 py-2 text-white font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="text-white/90 font-bold block mb-1">المدينة *</label>
-                <input
-                  type="text"
-                  required
-                  value={editCity}
-                  onChange={(e) => setEditCity(e.target.value)}
-                  placeholder="مثال: الداخلة"
-                  className="w-full bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-white/90 font-bold block mb-1">الدولة:</label>
-                  <select
-                    value={editCountry}
-                    onChange={(e) => {
-                      const c = e.target.value as 'MA' | 'MR';
-                      setEditCountry(c);
-                      setEditCurrency(c === 'MR' ? 'MRU' : 'MAD');
-                    }}
-                    className="w-full bg-black/60 border border-white/20 rounded-xl px-2.5 py-2 text-white font-bold"
-                  >
-                    <option value="MA">المغرب 🇲🇦</option>
-                    <option value="MR">موريتانيا 🇲🇷</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-white/90 font-bold block mb-1">العملة:</label>
-                  <select
-                    value={editCurrency}
-                    onChange={(e) => setEditCurrency(e.target.value)}
-                    className="w-full bg-black/60 border border-white/20 rounded-xl px-2.5 py-2 text-white font-bold"
-                  >
-                    {currencies.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.code} ({c.label_ar})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-white/90 font-bold block mb-1">رقم هاتف المحطة (اختياري):</label>
-                <input
-                  type="tel"
-                  dir="ltr"
-                  value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
-                  placeholder="+212..."
-                  className="w-full bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white font-mono text-right"
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/15">
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={handleDeleteStation}
-                  className="btn-delete px-3 py-2 rounded-xl font-black flex items-center gap-1"
-                  title="حذف هذه المحطة نهائياً"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>حذف المحطة</span>
-                </button>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setEditingStation(null)}
-                    className="btn-cancel px-3 py-2 rounded-xl font-bold"
-                  >
-                    إلغاء
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSaving}
-                    className="btn-gold px-4 py-2 rounded-xl font-black"
-                  >
-                    {isSaving ? 'جاري الحفظ...' : 'حفظ التعديل'}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
         </div>
       )}
 
-      {/* Quick Add New Station Modal */}
+      {/* نافذة إضافة محطة أولى عند عدم وجود محطات */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 animate-fadeIn" dir="rtl">
-          <div className="w-full max-w-[360px] luxury-card rounded-3xl p-5 shadow-2xl space-y-4 text-right border border-[#F5C84C]/50">
-            <div className="flex items-center justify-between border-b border-white/15 pb-2">
-              <h3 className="text-sm font-black text-white">إضافة محطة جديدة</h3>
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setShowAddModal(false)}
+        >
+          <div
+            className="luxury-card border border-[#F5C84C]/40 rounded-[26px] w-full max-w-[410px] p-5 shadow-2xl space-y-4 text-right"
+            onClick={e => e.stopPropagation()}
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/15">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">إضافة محطة جديدة</h3>
+                  <p className="text-[11px] text-white/75">أدخل اسم المحطة والمدينة والعملة الأساسية</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="btn-cancel p-1.5 rounded-xl"
+                className="btn-cancel p-1.5 rounded-xl cursor-pointer"
+                aria-label="إغلاق"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleQuickAddStation} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateStation} className="space-y-3">
+              {formError && (
+                <div className="p-2.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-xs font-bold text-rose-200">
+                  {formError}
+                </div>
+              )}
+
               <div>
-                <label className="text-white/90 font-bold block mb-1">اسم المحطة *</label>
+                <label className="block text-xs font-bold text-white/90 mb-1">اسم المحطة *</label>
                 <input
                   type="text"
                   required
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="مثال: محطة العيون أو محطة نواذيبو"
-                  className="w-full bg-black/60 border border-[#F5C84C]/50 rounded-xl px-3 py-2 text-white font-bold"
+                  onChange={e => setNewName(e.target.value)}
+                  placeholder="مثال: محطة الداخلة"
+                  className="w-full bg-black/60 border border-white/20 focus:border-[#F5C84C] rounded-xl px-3.5 py-2.5 text-xs text-white font-bold focus:outline-none"
                 />
               </div>
 
-              <div>
-                <label className="text-white/90 font-bold block mb-1">المدينة *</label>
-                <input
-                  type="text"
-                  required
-                  value={newCity}
-                  onChange={(e) => setNewCity(e.target.value)}
-                  placeholder="مثال: العيون"
-                  className="w-full bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="text-white/90 font-bold block mb-1">الدولة:</label>
+                  <label className="block text-xs font-bold text-white/90 mb-1">المدينة *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newCity}
+                    onChange={e => setNewCity(e.target.value)}
+                    placeholder="الداخلة / نواذيبو"
+                    className="w-full bg-black/60 border border-white/20 focus:border-[#F5C84C] rounded-xl px-3 py-2.5 text-xs text-white font-bold focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-white/90 mb-1">الدولة *</label>
                   <select
                     value={newCountry}
-                    onChange={(e) => {
+                    onChange={e => {
                       const c = e.target.value as 'MA' | 'MR';
                       setNewCountry(c);
-                      setNewCurrency(c === 'MR' ? 'MRU' : 'MAD');
+                      setNewDefaultCurrency(c === 'MR' ? 'MRU' : 'MAD');
                     }}
-                    className="w-full bg-black/60 border border-white/20 rounded-xl px-2.5 py-2 text-white font-bold"
+                    className="w-full bg-black/60 border border-white/20 focus:border-[#F5C84C] rounded-xl px-3 py-2.5 text-xs text-white font-bold focus:outline-none"
                   >
-                    <option value="MA">المغرب 🇲🇦</option>
-                    <option value="MR">موريتانيا 🇲🇷</option>
+                    <option value="MA">🇲🇦 المغرب (MA)</option>
+                    <option value="MR">🇲🇷 موريتانيا (MR)</option>
                   </select>
                 </div>
+              </div>
 
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="text-white/90 font-bold block mb-1">العملة:</label>
+                  <label className="block text-xs font-bold text-white/90 mb-1">العملة الأساسية للصندوق</label>
                   <select
-                    value={newCurrency}
-                    onChange={(e) => setNewCurrency(e.target.value)}
-                    className="w-full bg-black/60 border border-white/20 rounded-xl px-2.5 py-2 text-white font-bold"
+                    value={newDefaultCurrency}
+                    onChange={e => setNewDefaultCurrency(e.target.value as 'MAD' | 'MRU')}
+                    className="w-full bg-black/60 border border-white/20 focus:border-[#F5C84C] rounded-xl px-3 py-2.5 text-xs text-[#F5C84C] font-bold focus:outline-none"
                   >
-                    {currencies.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.code} ({c.label_ar})
-                      </option>
-                    ))}
+                    <option value="MAD">درهم مغربي (MAD)</option>
+                    <option value="MRU">أوقية موريتانية (MRU)</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-white/90 mb-1">هاتف المحطة (اختياري)</label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    value={newPhone}
+                    onChange={e => setNewPhone(e.target.value)}
+                    placeholder="+212..."
+                    className="w-full bg-black/60 border border-white/20 focus:border-[#F5C84C] rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none"
+                  />
                 </div>
               </div>
 
-              <div>
-                <label className="text-white/90 font-bold block mb-1">رقم هاتف المحطة (اختياري):</label>
-                <input
-                  type="tel"
-                  dir="ltr"
-                  value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
-                  placeholder="+212..."
-                  className="w-full bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white font-mono text-right"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-white/15">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="btn-cancel px-4 py-2 rounded-xl font-bold"
-                >
-                  إلغاء
-                </button>
+              <div className="flex items-center gap-2 pt-2">
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="btn-gold px-5 py-2 rounded-xl font-black"
+                  className="btn-gold flex-1 py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  {isSaving ? 'جاري الإضافة...' : 'إضافة المحطة'}
+                  <Check className="w-4 h-4" />
+                  <span>{isSaving ? 'جاري الإضافة...' : 'إنشاء المحطة'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="btn-cancel px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  إلغاء
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };

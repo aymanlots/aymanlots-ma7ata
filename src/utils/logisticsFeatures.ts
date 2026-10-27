@@ -269,9 +269,7 @@ export async function printOfficialTripManifestPDF(
     });
   } catch {}
 
-  const logoSrc = brandLogoUrl?.trim()
-    ? brandLogoUrl.trim()
-    : `${typeof window !== 'undefined' ? window.location.origin : ''}/logo.png`;
+  const logoSrc = brandLogoUrl?.trim() || '';
   const subtitleText =
     brandSubtitle?.trim() || 'النقل الدولي للبضائع والأمانات (المغرب ➔ الكركرات ➔ موريتانيا)';
 
@@ -351,7 +349,7 @@ export async function printOfficialTripManifestPDF(
 
   <div class="header">
     <div class="brand-wrap">
-      <img src="${logoSrc}" alt="${workspaceName}" class="brand-logo" onerror="this.style.display='none'" />
+      ${logoSrc ? `<img src="${logoSrc}" alt="${workspaceName}" class="brand-logo" onerror="this.style.display='none'" />` : ''}
       <div class="brand">
         <h1>${workspaceName}</h1>
         <p>${subtitleText}</p>
@@ -468,9 +466,7 @@ export async function printOfficialParcelBonPDF(
   const agencySubtitle =
     branding?.subtitle?.trim() || 'خدمات الشحن السريع ونقل البضائع والأمانات بين المحطات';
   const agencyPhone = branding?.phone?.trim() || '';
-  const logoSrc = branding?.logoUrl?.trim()
-    ? branding.logoUrl.trim()
-    : `${typeof window !== 'undefined' ? window.location.origin : ''}/logo.png`;
+  const logoSrc = branding?.logoUrl?.trim() || '';
 
   const remaining = Math.max(0, Math.round(((parcel.amount_due || 0) - (parcel.amount_paid || 0)) * 100) / 100);
   const isSettled = remaining <= 0 || parcel.payment_status === 'paid';
@@ -515,7 +511,7 @@ export async function printOfficialParcelBonPDF(
   <div class="bon-card">
     <div class="hdr">
       <div class="brand-wrap">
-        <img src="${logoSrc}" alt="${agencyName}" class="brand-logo" onerror="this.style.display='none'" />
+        ${logoSrc ? `<img src="${logoSrc}" alt="${agencyName}" class="brand-logo" onerror="this.style.display='none'" />` : ''}
         <div>
           <h1 class="brand-title">${agencyName}</h1>
           <p class="brand-sub">${agencySubtitle}</p>
@@ -633,9 +629,7 @@ export async function printOfficialCashVoucherBonPDF(
   const agencySubtitle =
     branding?.subtitle?.trim() || 'الإدارة المالية وصندوق المحطات النقدية (LA CAISSE)';
   const agencyPhone = branding?.phone?.trim() || '';
-  const logoSrc = branding?.logoUrl?.trim()
-    ? branding.logoUrl.trim()
-    : `${typeof window !== 'undefined' ? window.location.origin : ''}/logo.png`;
+  const logoSrc = branding?.logoUrl?.trim() || '';
 
   const isInflow = ['cash_in', 'parcel_shipping_fee', 'parcel_cod_collection'].includes(tx.type);
   const typeTitle = isInflow
@@ -672,7 +666,7 @@ export async function printOfficialCashVoucherBonPDF(
   <div class="bon-card">
     <div class="hdr">
       <div class="brand-wrap">
-        <img src="${logoSrc}" alt="${agencyName}" class="brand-logo" onerror="this.style.display='none'" />
+        ${logoSrc ? `<img src="${logoSrc}" alt="${agencyName}" class="brand-logo" onerror="this.style.display='none'" />` : ''}
         <div>
           <h1 style="margin:0;font-size:19px;font-weight:900;">${agencyName}</h1>
           <p style="margin:3px 0 0;font-size:11px;font-weight:700;color:#333;">${agencySubtitle}</p>

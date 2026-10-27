@@ -36,7 +36,8 @@ import {
   Subscription, 
   AuditLogEntry, 
   UserRole,
-  Language
+  Language,
+  MoneyTransfer
 } from '../types/database';
 import { translations } from '../lib/i18n';
 import { parcelService, mapSupabaseRowToParcel } from '../services/parcelService';
@@ -199,6 +200,8 @@ interface AppContextType {
     photo_url?: string;
     note?: string;
     parcel_id?: string;
+    hawala_meta?: MoneyTransfer | null;
+    hawala_transfer_id?: string | null;
   }) => Promise<{ success: boolean; error?: string; transaction?: Transaction }>;
   updateTransaction: (id: string, updates: Partial<Transaction>, editReason?: string) => Promise<{ success: boolean; error?: string }>;
   cancelTransaction: (id: string, reason: string) => Promise<{ success: boolean; error?: string }>;
@@ -216,6 +219,23 @@ interface AppContextType {
     customerPhone?: string;
     note?: string;
   }) => Promise<{ success: boolean; error?: string }>;
+  moneyTransfers: MoneyTransfer[];
+  createMoneyTransfer: (params: {
+    origin_station_id: string;
+    destination_station_id: string;
+    sender_name: string;
+    sender_phone: string;
+    receiver_name: string;
+    receiver_phone: string;
+    send_amount: number;
+    send_currency: 'MAD' | 'MRU';
+    payout_amount: number;
+    payout_currency: 'MAD' | 'MRU';
+    exchange_rate: number;
+    commission_amount: number;
+    notes?: string;
+  }) => Promise<{ success: boolean; error?: string; transfer?: MoneyTransfer }>;
+  payoutMoneyTransfer: (transferId: string) => Promise<{ success: boolean; error?: string }>;
   
   // Parcels Module (Strictly 0 Initial Fake Data)
   parcels: Parcel[];
@@ -1102,12 +1122,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     if (userRole === 'worker' && userAssignedStationId) {
       setSelectedStationId(userAssignedStationId);
-    } else if (!selectedStationId && visibleStations.length > 0) {
+    } else if (visibleStations.length === 0) {
+      if (selectedStationId !== null) setSelectedStationId(null);
+    } else if (selectedStationId === 'all') {
+      // الحفاظ على اختيار "كافة المحطات" للمدير بدون إعادة التعيين التلقائي للمحطة الأولى
+      return;
+    } else if (!selectedStationId || !visibleStations.some(s => s.id === selectedStationId)) {
       setSelectedStationId(visibleStations[0].id);
-    } else if (visibleStations.length > 0 && selectedStationId && !visibleStations.some(s => s.id === selectedStationId)) {
-      setSelectedStationId(visibleStations[0].id);
-    } else if (visibleStations.length === 0 && selectedStationId !== null) {
-      setSelectedStationId(null);
     }
   }, [userRole, userAssignedStationId, visibleStations, selectedStationId]);
 
@@ -2632,6 +2653,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       photo_url: finalPhotoUrl,
       note: data.note?.trim() || null,
       parcel_id: data.parcel_id || null,
+      hawala_meta: data.hawala_meta || null,
+      hawala_transfer_id: data.hawala_transfer_id || null,
       status: 'confirmed',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -2946,6 +2969,244 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     showToast(
       `تمت عملية الصرف فلاكيس بنجاح: (+${cleanFrom} ${params.fromCurrency}) و (-${cleanTo} ${params.toCurrency})`,
+      'success'
+    );
+    return { success: true };
+  };
+
+  // ============================================================================
+  // HAWALA / MONEY TRANSFERS BETWEEN STATIONS (حوالات مالية بين المحطات)
+  // ============================================================================
+  const moneyTransfers: MoneyTransfer[] = useMemo(() => {
+    if (!currentWorkspace) return [];
+    const myWsId = currentWorkspace.id;
+
+    // 1. Collect all payout transactions to know which transfers were paid out at destination
+    const payoutMap = new Map<string, Transaction>();
+    for (const tx of allTransactions) {
+      const txWs = tx.workspace_id || tx.team_id || '';
+      if (txWs === myWsId && tx.status === 'confirmed' && tx.type === 'cash_out' && tx.hawala_transfer_id) {
+        payoutMap.set(tx.hawala_transfer_id, tx);
+      }
+    }
+
+    // 2. Extract transfers from origin transactions (which sync via Firebase Firestore across Phone & PC)
+    const mapById = new Map<string, MoneyTransfer>();
+    for (const tx of allTransactions) {
+      const txWs = tx.workspace_id || tx.team_id || '';
+      if (txWs !== myWsId) continue;
+      if (tx.status === 'cancelled') continue;
+      if (tx.hawala_meta && tx.hawala_meta.id) {
+        const meta = tx.hawala_meta;
+        const payoutTx = payoutMap.get(meta.id);
+        const resolvedStatus = payoutTx ? 'paid_out' : meta.status;
+        const originSt = stations.find(s => s.id === meta.origin_station_id);
+        const destSt = stations.find(s => s.id === meta.destination_station_id);
+        mapById.set(meta.id, {
+          ...meta,
+          origin_station_name: originSt?.name || meta.origin_station_name,
+          destination_station_name: destSt?.name || meta.destination_station_name,
+          status: resolvedStatus,
+          paid_out_at: payoutTx?.created_at || meta.paid_out_at || null,
+          paid_out_by: payoutTx?.creator_name || meta.paid_out_by || null,
+        });
+      }
+    }
+
+    // 3. Also merge any legacy local transfers in localStorage for backward compatibility
+    try {
+      const raw = localStorage.getItem('alittihadia_hawala_transfers_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as MoneyTransfer[];
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (item && item.id && item.workspace_id === myWsId && !mapById.has(item.id)) {
+              const payoutTx = payoutMap.get(item.id);
+              mapById.set(item.id, {
+                ...item,
+                status: payoutTx ? 'paid_out' : item.status,
+                paid_out_at: payoutTx?.created_at || item.paid_out_at || null,
+                paid_out_by: payoutTx?.creator_name || item.paid_out_by || null,
+              });
+            }
+          }
+        }
+      }
+    } catch {}
+
+    const list = Array.from(mapById.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    if (userRole === 'worker' && userAssignedStationId) {
+      return list.filter(
+        t => t.origin_station_id === userAssignedStationId || t.destination_station_id === userAssignedStationId
+      );
+    }
+
+    return list;
+  }, [currentWorkspace, allTransactions, stations, userRole, userAssignedStationId]);
+
+  const createMoneyTransfer = async (params: {
+    origin_station_id: string;
+    destination_station_id: string;
+    sender_name: string;
+    sender_phone: string;
+    receiver_name: string;
+    receiver_phone: string;
+    send_amount: number;
+    send_currency: 'MAD' | 'MRU';
+    payout_amount: number;
+    payout_currency: 'MAD' | 'MRU';
+    exchange_rate: number;
+    commission_amount: number;
+    notes?: string;
+  }): Promise<{ success: boolean; error?: string; transfer?: MoneyTransfer }> => {
+    if (!currentUser) return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const sendAmt = Math.round(Number(params.send_amount) * 100) / 100;
+    const payoutAmt = Math.round(Number(params.payout_amount) * 100) / 100;
+    const commAmt = Math.max(0, Math.round((Number(params.commission_amount) || 0) * 100) / 100);
+
+    if (!params.origin_station_id || !params.destination_station_id) {
+      return { success: false, error: 'يرجى تحديد محطة الإرسال ومحطة الاستلام' };
+    }
+    if (params.origin_station_id === params.destination_station_id) {
+      return { success: false, error: 'يرجى اختيار محطة استلام مختلفة عن محطة الإرسال' };
+    }
+    if (!params.sender_name.trim() || !params.receiver_name.trim() || sendAmt <= 0 || payoutAmt <= 0) {
+      return { success: false, error: 'يرجى إدخال اسم المرسل والمستلم والمبلغ بشكل صحيح' };
+    }
+
+    const originSt = stations.find(s => s.id === params.origin_station_id);
+    const destSt = stations.find(s => s.id === params.destination_station_id);
+    const wsId = currentWorkspace?.id || 'ws-default';
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    const secretPin = String(Math.floor(1000 + Math.random() * 9000));
+    const transferCode = `HWL-${new Date().getFullYear()}-${randomNum}`;
+    const transferId = `hwl-${Date.now()}-${randomNum}`;
+
+    const newTransfer: MoneyTransfer = {
+      id: transferId,
+      transfer_code: transferCode,
+      secret_pin: secretPin,
+      workspace_id: wsId,
+      origin_station_id: params.origin_station_id,
+      destination_station_id: params.destination_station_id,
+      origin_station_name: originSt?.name || 'محطة الإرسال',
+      destination_station_name: destSt?.name || 'محطة الاستلام',
+      sender_name: params.sender_name.trim(),
+      sender_phone: params.sender_phone.trim(),
+      receiver_name: params.receiver_name.trim(),
+      receiver_phone: params.receiver_phone.trim(),
+      send_amount: sendAmt,
+      send_currency: params.send_currency,
+      payout_amount: payoutAmt,
+      payout_currency: params.payout_currency,
+      exchange_rate: params.exchange_rate,
+      commission_amount: commAmt,
+      status: 'pending',
+      created_by: currentUser.id,
+      creator_name: currentUser.name,
+      created_at: new Date().toISOString(),
+      notes: params.notes?.trim() || null,
+    };
+
+    const totalCashIn = Math.round((sendAmt + commAmt) * 100) / 100;
+    const commLabel = commAmt > 0 ? ` (شامل عمولة ${commAmt} ${params.send_currency})` : '';
+
+    // 1. زيادة المبلغ فلاكيس محطة الإرسال (+) مع حفظ بيانات الحوالة للمزامنة الفورية مع محطة الاستلام
+    const txRes = await createTransaction({
+      station_id: params.origin_station_id,
+      type: 'cash_in',
+      amount: totalCashIn,
+      currency: params.send_currency,
+      phone_number: params.sender_phone.trim(),
+      reason: `حوالة صادرة [${transferCode}] من ${originSt?.name || 'المحطة'} إلى ${destSt?.name || 'المحطة'} — المرسل: ${params.sender_name.trim()} للمستلم: ${params.receiver_name.trim()}${commLabel}`,
+      note: `يسلم في محطة الوصول (${destSt?.name || ''}): ${payoutAmt} ${params.payout_currency} | كود التسليم: ${secretPin}`,
+      hawala_meta: newTransfer,
+      hawala_transfer_id: transferId,
+    });
+
+    if (!txRes.success) {
+      return { success: false, error: txRes.error || 'تعذر تسجيل إيداع الحوالة في صندوق المحطة' };
+    }
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('alittihadia_hawala_transfers_v1') || '[]');
+      localStorage.setItem('alittihadia_hawala_transfers_v1', JSON.stringify([newTransfer, ...existing]));
+    } catch {}
+
+    showToast(
+      `تم تسجيل الحوالة [${transferCode}] وإضافة +${totalCashIn} ${params.send_currency} في لاكيس ${originSt?.name || 'المحطة'}`,
+      'success'
+    );
+    return { success: true, transfer: newTransfer };
+  };
+
+  const payoutMoneyTransfer = async (transferId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser) return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const target = moneyTransfers.find(t => t.id === transferId);
+    if (!target) return { success: false, error: 'الحوالة غير موجودة' };
+    if (target.status === 'paid_out') return { success: false, error: 'تم تسليم وصرف هذه الحوالة مسبقاً' };
+
+    const paidAt = new Date().toISOString();
+    const updatedTransfer: MoneyTransfer = {
+      ...target,
+      status: 'paid_out',
+      paid_out_at: paidAt,
+      paid_out_by: currentUser.name,
+    };
+
+    // 1. خصم المبلغ من لاكيس محطة الاستلام (-)
+    const outRes = await createTransaction({
+      station_id: target.destination_station_id,
+      type: 'cash_out',
+      amount: target.payout_amount,
+      currency: target.payout_currency,
+      phone_number: target.receiver_phone || target.sender_phone,
+      reason: `تسليم حوالة واردة [${target.transfer_code}] للمستلم: ${target.receiver_name} (مرسلة من ${target.origin_station_name})`,
+      note: `تم التسليم بواسطة ${currentUser.name} — المرسل: ${target.sender_name}`,
+      hawala_transfer_id: target.id,
+    });
+
+    if (!outRes.success) {
+      return { success: false, error: outRes.error || 'تعذر تسجيل صرف الحوالة من صندوق المحطة' };
+    }
+
+    // 2. تحديث حالة الحوالة في سند الإرسال الأصلي ومزامنته عبر Firebase
+    setAllTransactions(prev =>
+      prev.map(tx => {
+        if (tx.hawala_meta && tx.hawala_meta.id === transferId) {
+          const updatedOriginTx: Transaction = {
+            ...tx,
+            hawala_meta: updatedTransfer,
+            updated_at: paidAt,
+          };
+          if (firebaseSyncService.isAvailable()) {
+            firebaseSyncService.syncTransaction(updatedOriginTx.workspace_id, updatedOriginTx).catch(() => {});
+          }
+          return updatedOriginTx;
+        }
+        return tx;
+      })
+    );
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('alittihadia_hawala_transfers_v1') || '[]') as MoneyTransfer[];
+      if (Array.isArray(existing)) {
+        const next = existing.map(item => (item.id === transferId ? updatedTransfer : item));
+        localStorage.setItem('alittihadia_hawala_transfers_v1', JSON.stringify(next));
+      }
+    } catch {}
+
+    showToast(
+      `تم تسليم الحوالة [${target.transfer_code}] وخصم -${target.payout_amount} ${target.payout_currency} من لاكيس ${target.destination_station_name}`,
       'success'
     );
     return { success: true };
@@ -5081,6 +5342,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deleteAuditLog,
         clearAuditLogs,
         executeCurrencyExchange,
+        moneyTransfers,
+        createMoneyTransfer,
+        payoutMoneyTransfer,
         parcels,
         createParcel,
         updateParcelStatus,
