@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-:@.]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Test connection document
+    match /test/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // User accounts (Phone+Password & Google Auth cross-device profiles)
+    match /users/{userId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(userId) && incoming().id is string && incoming().id.size() <= 128;
+      allow delete: if false;
+    }
+
+    // Workspaces and their subcollections
+    match /workspaces/{workspaceId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(workspaceId) && incoming().id is string && incoming().name is string && incoming().name.size() <= 200;
+      allow delete: if false;
+
+      // Stations
+      match /stations/{stationId} {
+        allow read: if true;
+        allow create, update: if isValidId(stationId) && incoming().id is string && incoming().name is string;
+        allow delete: if isValidId(stationId);
+      }
+
+      // Parcels (including public tracking)
+      match /parcels/{parcelId} {
+        allow read: if true;
+        allow create, update: if isValidId(parcelId) && incoming().id is string && incoming().tracking_code is string;
+        allow delete: if isValidId(parcelId);
+      }
+
+      // Transactions
+      match /transactions/{transactionId} {
+        allow read: if true;
+        allow create, update: if isValidId(transactionId) && incoming().id is string;
+        allow delete: if isValidId(transactionId);
+      }
+
+      // Trips
+      match /trips/{tripId} {
+        allow read: if true;
+        allow create, update: if isValidId(tripId) && incoming().id is string;
+        allow delete: if isValidId(tripId);
+      }
+
+      // Workspace Members (Workers & Managers)
+      match /members/{memberId} {
+        allow read: if true;
+        allow create, update: if isValidId(memberId);
+        allow delete: if isValidId(memberId);
+      }
+    }
+  }
+}

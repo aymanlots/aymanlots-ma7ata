@@ -1,0 +1,6 @@
+{
+  "name": "محطة الاتحادية",
+  "description": "تطبيق محطة الاتحادية لإدارة الإرساليات والتحويلات المالية والصناديق النقدية بالرصيد الفوري وصلاحيات فرق العمل.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

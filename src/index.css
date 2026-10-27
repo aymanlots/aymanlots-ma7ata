@@ -1,0 +1,251 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-main: #080c14;
+    --bg-card: rgba(13, 20, 36, 0.65);
+    --border-color: rgba(255, 255, 255, 0.12);
+    --emerald-in: #006233;
+    --red-out: #C1272D;
+    --btn-gold: #F5C84C;
+    --btn-text-dark: #111111;
+    --btn-danger: #C1272D;
+  }
+
+  html,
+  body {
+    background-color: #080c14;
+    color: #FFFFFF;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+}
+
+/* Guerguerat Cross-Border Desert Background Frame */
+.app-desert-frame {
+  background-color: #140d06;
+  background-image:
+    linear-gradient(to bottom, rgba(10, 6, 2, 0.18) 0%, rgba(10, 6, 2, 0.35) 100%),
+    url('/assets/aistudio/WhatsApp_Image_2026-10-22_at_04.15.27_e3559304.jpeg');
+  background-size: 100% 100%;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
+
+/* Shared Design Tokens: Dark Semi-Transparent Cards with Thin Borders & Crisp Readability */
+.luxury-card {
+  background: rgba(0, 0, 0, 0.52) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+/* Hide horizontal scrollbar for station filter strip */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.gold-pill,
+.btn-gold {
+  background: var(--btn-gold) !important;
+  background-image: none !important;
+  color: var(--btn-text-dark) !important;
+  border: 1px solid var(--btn-gold) !important;
+  border-radius: 0.75rem !important;
+  font-weight: 800 !important;
+  text-shadow: none !important;
+}
+
+/* Unified Button System Across Entire App (All Pages & Modals) */
+button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.collapsible-header-btn) {
+  background: var(--btn-gold) !important;
+  background-image: none !important;
+  color: var(--btn-text-dark) !important;
+  border: 1px solid var(--btn-gold) !important;
+  border-radius: 0.75rem !important;
+  font-weight: 800 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.collapsible-header-btn) *,
+button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.collapsible-header-btn) svg,
+.btn-gold *,
+.btn-gold svg {
+  color: var(--btn-text-dark) !important;
+  text-shadow: none !important;
+}
+
+/* Close & Cancel Buttons: Same Gold Color, No Background, Gold Border & Gold Text */
+button.btn-cancel,
+button[aria-label="إغلاق"],
+button[aria-label="مسح البحث"] {
+  background: transparent !important;
+  background-image: none !important;
+  color: var(--btn-gold) !important;
+  border: 1px solid var(--btn-gold) !important;
+  border-radius: 0.75rem !important;
+  font-weight: 800 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+button.btn-cancel *,
+button.btn-cancel svg,
+button[aria-label="إغلاق"] *,
+button[aria-label="إغلاق"] svg,
+button[aria-label="مسح البحث"] *,
+button[aria-label="مسح البحث"] svg {
+  color: var(--btn-gold) !important;
+  text-shadow: none !important;
+}
+
+/* Delete Buttons Only: Remain Red */
+button.btn-delete,
+button[title*="حذف"],
+button[title*="إزالة"] {
+  background: var(--btn-danger) !important;
+  background-image: none !important;
+  color: #FFFFFF !important;
+  border: 1px solid #FF5A5F !important;
+  border-radius: 0.75rem !important;
+  font-weight: 800 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+button.btn-delete *,
+button.btn-delete svg,
+button[title*="حذف"] *,
+button[title*="حذف"] svg,
+button[title*="إزالة"] *,
+button[title*="إزالة"] svg {
+  color: #FFFFFF !important;
+  text-shadow: none !important;
+}
+
+/* Disabled Buttons: Same Color at 40% Opacity */
+button:disabled,
+button[disabled] {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+
+.gold-text {
+  color: #FFFFFF;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95);
+}
+
+/* Cards, Tables, Forms and Amounts on Semi-Transparent Surfaces */
+.bg-\[\#1a0f00\]\/80,
+.bg-\[\#1a0f00\]\/85,
+.bg-\[\#1a0f00\]\/90,
+.bg-\[\#1a0f00\]\/95,
+.bg-\[\#1a0f00\]\/75,
+.bg-\[\#1a0f00\]\/70,
+.bg-\[\#1a0f00\]\/60 {
+  background: rgba(0, 0, 0, 0.52) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+}
+
+.bg-\[\#120a00\]\/90,
+.bg-\[\#120a00\]\/80,
+.bg-\[\#120a00\]\/70 {
+  background: rgba(0, 0, 0, 0.50) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Modals and Bottom Sheets with Clean Backdrop and No Heavy Blur */
+div.fixed.inset-0.bg-black,
+div.fixed.inset-0.bg-black\/95,
+div.fixed.inset-0.bg-black\/90,
+div.fixed.inset-0.bg-black\/85,
+div.fixed.inset-0.bg-black\/80,
+div.fixed.inset-0.bg-black\/70,
+div.fixed.inset-0.bg-black\/60,
+div.fixed.inset-0.bg-\[\#060A14\]\/90,
+div.fixed.inset-0.bg-slate-950\/85 {
+  background-color: rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Safe area support for iOS / PWA full screen */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 16px);
+}
+
+/* Custom sleek green scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0805;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 98, 51, 0.5);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(46, 204, 113, 0.7);
+}
+
+/* Numerical monospace font & strict LTR BiDi isolation to prevent flipped signs/dates/IDs */
+.font-mono-numbers {
+  font-family: 'JetBrains Mono', monospace;
+  font-feature-settings: 'tnum' on, 'lnum' on;
+}
+
+[dir="ltr"],
+.ltr-isolate {
+  direction: ltr !important;
+  unicode-bidi: isolate !important;
+}
+
+/* Crisp black-on-white live preview for thermal stickers (no inherited text-shadow or blur) */
+.parcel-sticker-box,
+.parcel-sticker-box * {
+  text-shadow: none !important;
+  filter: none !important;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Print Stylesheet for thermal and A4 receipts */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header, nav, .print\:hidden, button {
+    display: none !important;
+  }
+
+  #printable-receipt {
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}

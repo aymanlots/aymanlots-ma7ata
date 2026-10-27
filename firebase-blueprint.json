@@ -1,0 +1,158 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and authentication details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "role": { "type": "string", "enum": ["owner", "admin", "worker", "platform_owner"] },
+        "workspace_id": { "type": "string", "maxLength": 128 },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "phone", "role"]
+    },
+    "Workspace": {
+      "title": "Workspace",
+      "description": "Cross-border logistics workspace / company entity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "owner_id": { "type": "string", "maxLength": 128 },
+        "custom_brand_name": { "type": "string", "maxLength": 128 },
+        "custom_brand_subtitle": { "type": "string", "maxLength": 200 },
+        "custom_brand_phone": { "type": "string", "maxLength": 32 },
+        "custom_brand_logo_url": { "type": "string", "maxLength": 1000 },
+        "plan_tier": { "type": "string", "maxLength": 64 },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "owner_id"]
+    },
+    "Station": {
+      "title": "Station",
+      "description": "Branch logistics station (Morocco / Mauritania)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "workspace_id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "city": { "type": "string", "maxLength": 100 },
+        "country": { "type": "string", "enum": ["MA", "MR"] },
+        "phone": { "type": "string", "maxLength": 32 },
+        "currency": { "type": "string", "maxLength": 10 },
+        "is_active": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "workspace_id", "name", "city", "country"]
+    },
+    "Parcel": {
+      "title": "Parcel",
+      "description": "Tracked cargo parcel shipment across border",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "workspace_id": { "type": "string", "maxLength": 128 },
+        "parcel_number": { "type": "integer" },
+        "tracking_code": { "type": "string", "maxLength": 64 },
+        "origin_station_id": { "type": "string", "maxLength": 128 },
+        "destination_station_id": { "type": "string", "maxLength": 128 },
+        "sender_name": { "type": "string", "maxLength": 128 },
+        "sender_phone": { "type": "string", "maxLength": 32 },
+        "receiver_name": { "type": "string", "maxLength": 128 },
+        "receiver_phone": { "type": "string", "maxLength": 32 },
+        "description": { "type": "string", "maxLength": 500 },
+        "category": { "type": "string", "maxLength": 100 },
+        "items_count": { "type": "integer" },
+        "amount_due": { "type": "number" },
+        "amount_paid": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 10 },
+        "payer": { "type": "string", "enum": ["sender", "receiver"] },
+        "status": { "type": "string", "maxLength": 64 },
+        "condition": { "type": "string", "enum": ["normal", "abnormal"] },
+        "condition_notes": { "type": "string", "maxLength": 500 },
+        "current_trip_id": { "type": "string", "maxLength": 128 },
+        "created_by": { "type": "string", "maxLength": 128 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "workspace_id", "tracking_code", "origin_station_id", "destination_station_id", "sender_name", "receiver_name", "status"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial cashbox entry (inflow or outflow voucher)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "workspace_id": { "type": "string", "maxLength": 128 },
+        "station_id": { "type": "string", "maxLength": 128 },
+        "created_by": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "maxLength": 64 },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 10 },
+        "person_name": { "type": "string", "maxLength": 128 },
+        "phone_number": { "type": "string", "maxLength": 32 },
+        "reason": { "type": "string", "maxLength": 300 },
+        "photo_url": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "maxLength": 32 },
+        "note": { "type": "string", "maxLength": 500 },
+        "parcel_id": { "type": "string", "maxLength": 128 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "workspace_id", "station_id", "type", "amount", "currency", "status"]
+    },
+    "Trip": {
+      "title": "Trip",
+      "description": "Cargo transport trip manifest between stations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "workspace_id": { "type": "string", "maxLength": 128 },
+        "trip_code": { "type": "string", "maxLength": 64 },
+        "driver_name": { "type": "string", "maxLength": 128 },
+        "driver_phone": { "type": "string", "maxLength": 32 },
+        "vehicle_plate": { "type": "string", "maxLength": 64 },
+        "origin_station_id": { "type": "string", "maxLength": 128 },
+        "destination_station_id": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "maxLength": 64 },
+        "fuel_expense": { "type": "number" },
+        "toll_expense": { "type": "number" },
+        "driver_commission": { "type": "number" },
+        "other_expense": { "type": "number" },
+        "expense_currency": { "type": "string", "maxLength": 10 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "workspace_id", "trip_code", "driver_name", "vehicle_plate", "origin_station_id", "destination_station_id", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Authenticated user profiles"
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": "Workspace",
+      "description": "Cross-border logistics organizations"
+    },
+    "/workspaces/{workspaceId}/stations/{stationId}": {
+      "schema": "Station",
+      "description": "Operating transport stations per workspace"
+    },
+    "/workspaces/{workspaceId}/parcels/{parcelId}": {
+      "schema": "Parcel",
+      "description": "Shipments and packages managed by the workspace"
+    },
+    "/workspaces/{workspaceId}/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Station cash register vouchers and receipts"
+    },
+    "/workspaces/{workspaceId}/trips/{tripId}": {
+      "schema": "Trip",
+      "description": "Inter-station transport trips and vehicle dispatch"
+    }
+  }
+}

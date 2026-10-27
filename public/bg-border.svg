@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="borderSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#080E1C"/>
+      <stop offset="40%" stop-color="#13243E"/>
+      <stop offset="70%" stop-color="#385B82"/>
+      <stop offset="100%" stop-color="#93B5D6"/>
+    </linearGradient>
+    <linearGradient id="roadGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="50%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="desertSand" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#78350F"/>
+      <stop offset="40%" stop-color="#B45309"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <filter id="shadowDrop" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Clear Desert Sky -->
+  <rect width="1600" height="900" fill="url(#borderSky)"/>
+
+  <!-- Distant Desert Mountains & Hills -->
+  <polygon points="-50,380 200,320 450,360 800,335 1150,360 1400,310 1650,370 1650,450 -50,450" fill="#6D3A20" opacity="0.6"/>
+  <polygon points="-50,400 300,350 650,390 800,365 1050,390 1450,345 1650,400 1650,490 -50,490" fill="#9A481E" opacity="0.75"/>
+
+  <!-- Vast Desert Sand Ground -->
+  <rect x="0" y="370" width="1600" height="530" fill="url(#desertSand)"/>
+  <!-- Sand highlights -->
+  <path d="M0 450 Q 400 420 800 460 T 1600 440 L 1600 900 L 0 900 Z" fill="#C2782A" opacity="0.5"/>
+
+  <!-- ================= THE HIGHWAY TO HORIZON ================= -->
+  <!-- Road tarmac extending from wide foreground to perspective vanishing point at center (x: 800, y: 350) -->
+  <polygon points="792,350 808,350 1150,900 450,900" fill="url(#roadGrad)"/>
+
+  <!-- Yellow shoulder lines -->
+  <polygon points="790,350 793,350 495,900 480,900" fill="#EAB308" opacity="0.85"/>
+  <polygon points="807,350 810,350 1120,900 1105,900" fill="#EAB308" opacity="0.85"/>
+
+  <!-- White dashed center lines -->
+  <g stroke="#F8FAFC" stroke-width="4" opacity="0.8">
+    <line x1="800" y1="360" x2="800" y2="380" stroke-width="1.5"/>
+    <line x1="800" y1="400" x2="800" y2="430" stroke-width="2.5"/>
+    <line x1="800" y1="460" x2="800" y2="505" stroke-width="4"/>
+    <line x1="800" y1="545" x2="800" y2="610" stroke-width="6"/>
+    <line x1="800" y1="660" x2="800" y2="750" stroke-width="8"/>
+    <line x1="800" y1="810" x2="800" y2="920" stroke-width="11"/>
+  </g>
+
+  <!-- ================= LEFT BORDER POST (MOROCCO) ================= -->
+  <!-- Moroccan Outpost Building -->
+  <g transform="translate(180, 390)" filter="url(#shadowDrop)">
+    <!-- Main Station Building -->
+    <rect x="0" y="0" width="280" height="170" rx="6" fill="#C8A882" stroke="#8C673D" stroke-width="3"/>
+    <rect x="0" y="-15" width="300" height="18" rx="3" fill="#8C673D"/>
+    <!-- Station Window / Door -->
+    <rect x="40" y="45" width="70" height="65" rx="4" fill="#0F172A" stroke="#64748B" stroke-width="2"/>
+    <rect x="170" y="35" width="85" height="135" fill="#1E293B" stroke="#475569" stroke-width="2"/>
+    <!-- Signboard: MAROC - GUERGUERAT -->
+    <rect x="25" y="15" width="230" height="24" rx="3" fill="#F8FAFC" stroke="#334155" stroke-width="1"/>
+    <text x="140" y="32" font-family="'Cairo', sans-serif" font-size="13" font-weight="900" fill="#0F172A" text-anchor="middle">المملكة المغربية — الكركارات</text>
+
+    <!-- Concrete barrier & boom gate -->
+    <rect x="260" y="140" width="90" height="30" rx="4" fill="#94A3B8" stroke="#475569" stroke-width="2"/>
+    <line x1="290" y1="145" x2="440" y2="145" stroke="#DC2626" stroke-width="8" stroke-dasharray="20 15"/>
+  </g>
+
+  <!-- Flagpole Left: MOROCCAN FLAG -->
+  <g transform="translate(300, 130)">
+    <!-- Metal Pole -->
+    <rect x="-3" y="0" width="6" height="350" fill="#CBD5E1" stroke="#64748B" stroke-width="1"/>
+    <circle cx="0" cy="0" r="8" fill="#E2E8F0" stroke="#64748B"/>
+    
+    <!-- Moroccan Flag waving -->
+    <g transform="translate(3, 10)" filter="url(#shadowDrop)">
+      <!-- Red Cloth with waving curve -->
+      <path d="M0 0 Q 100 -12 200 4 L 195 134 Q 95 120 0 130 Z" fill="#C1272D"/>
+      <!-- Moroccan Green Pentagram in center -->
+      <g transform="translate(98, 65) scale(1.1)">
+        <path d="M 0 -30 L 9 -3 L 38 -3 L 14 14 L 23 42 L 0 25 L -23 42 L -14 14 L -38 -3 L -9 -3 Z" 
+              fill="none" stroke="#006233" stroke-width="5" stroke-linejoin="round"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ================= RIGHT BORDER POST (MAURITANIA) ================= -->
+  <!-- Mauritanian Outpost Building & Tower -->
+  <g transform="translate(1140, 390)" filter="url(#shadowDrop)">
+    <!-- Main Station Building -->
+    <rect x="0" y="0" width="280" height="170" rx="6" fill="#C8A882" stroke="#8C673D" stroke-width="3"/>
+    <rect x="-10" y="-15" width="300" height="18" rx="3" fill="#8C673D"/>
+    <!-- Station Window / Door -->
+    <rect x="170" y="45" width="70" height="65" rx="4" fill="#0F172A" stroke="#64748B" stroke-width="2"/>
+    <rect x="30" y="35" width="85" height="135" fill="#1E293B" stroke="#475569" stroke-width="2"/>
+    <!-- Signboard: MAURITANIE - GUERGUERAT -->
+    <rect x="25" y="15" width="230" height="24" rx="3" fill="#F8FAFC" stroke="#334155" stroke-width="1"/>
+    <text x="140" y="32" font-family="'Cairo', sans-serif" font-size="13" font-weight="900" fill="#0F172A" text-anchor="middle">موريتانيا — الكركارات / نواذيبو</text>
+
+    <!-- Concrete barrier & boom gate -->
+    <rect x="-70" y="140" width="90" height="30" rx="4" fill="#94A3B8" stroke="#475569" stroke-width="2"/>
+    <line x1="-150" y1="145" x2="0" y2="145" stroke="#DC2626" stroke-width="8" stroke-dasharray="20 15"/>
+  </g>
+
+  <!-- Flagpole Right: MAURITANIAN FLAG -->
+  <g transform="translate(1300, 130)">
+    <rect x="-3" y="0" width="6" height="350" fill="#CBD5E1" stroke="#64748B" stroke-width="1"/>
+    <circle cx="0" cy="0" r="8" fill="#E2E8F0" stroke="#64748B"/>
+    
+    <!-- Mauritanian Flag waving -->
+    <g transform="translate(3, 10)" filter="url(#shadowDrop)">
+      <path d="M0 0 Q 100 -12 200 4 L 195 134 Q 95 120 0 130 Z" fill="#006233" id="mauFlag"/>
+      <!-- Red stripes top & bottom -->
+      <path d="M0 0 Q 100 -12 200 4 L 199 26 Q 100 12 0 24 Z" fill="#D01C1C"/>
+      <path d="M0 106 Q 100 95 196 110 L 195 134 Q 95 120 0 130 Z" fill="#D01C1C"/>
+      <!-- Golden Crescent & Star in center -->
+      <g transform="translate(100, 68)">
+        <path d="M -24 3 C -24 24, 24 24, 24 3 C 18 16, -18 16, -24 3 Z" fill="#FFD700"/>
+        <path d="M 0 -15 L 3 -6 L 12 -6 L 4.5 0 L 7.5 9 L 0 3 L -7.5 9 L -4.5 0 L -12 -6 L -3 -6 Z" fill="#FFD700"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Commercial transport van heading on the highway towards Mauritania -->
+  <g transform="translate(780, 540) scale(0.42)" filter="url(#shadowDrop)">
+    <ellipse cx="50" cy="90" rx="90" ry="16" fill="#020617" opacity="0.8"/>
+    <!-- Van rear view -->
+    <rect x="-40" y="-20" width="180" height="110" rx="16" fill="#E2E8F0" stroke="#64748B" stroke-width="3"/>
+    <!-- Roof rack luggage -->
+    <rect x="-25" y="-60" width="75" height="38" rx="4" fill="#B45309" stroke="#78350F" stroke-width="2"/>
+    <rect x="55" y="-50" width="65" height="28" rx="3" fill="#A16207" stroke="#713F12" stroke-width="2"/>
+    <!-- Rear Windows -->
+    <rect x="-25" y="-5" width="65" height="45" rx="6" fill="#0F172A" stroke="#475569" stroke-width="2"/>
+    <rect x="58" y="-5" width="65" height="45" rx="6" fill="#0F172A" stroke="#475569" stroke-width="2"/>
+    <!-- Rear Taillights (Red) -->
+    <rect x="-38" y="45" width="12" height="30" rx="2" fill="#DC2626"/>
+    <rect x="126" y="45" width="12" height="30" rx="2" fill="#DC2626"/>
+    <!-- License plate -->
+    <rect x="35" y="58" width="32" height="16" rx="2" fill="#FFFFFF" stroke="#0F172A" stroke-width="1"/>
+  </g>
+</svg>

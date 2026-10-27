@@ -1,0 +1,35 @@
+{
+  "id": "/",
+  "name": "محطة الاتحادية",
+  "short_name": "محطة الاتحادية",
+  "description": "تطبيق محطة الاتحادية لإدارة الإرساليات والتحويلات المالية والصناديق النقدية",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B1220",
+  "theme_color": "#0B1220",
+  "dir": "rtl",
+  "lang": "ar",
+  "categories": ["finance", "business"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

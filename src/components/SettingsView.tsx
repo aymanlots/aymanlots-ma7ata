@@ -1,0 +1,1303 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useApp } from '../context/AppContext';
+import { 
+  Settings, 
+  Key, 
+  RotateCw, 
+  Copy, 
+  Check, 
+  LogOut, 
+  Crown, 
+  User, 
+  ShieldCheck, 
+  Languages,
+  Store,
+  MessageCircle,
+  Download,
+  FileSpreadsheet,
+  FileJson,
+  Wifi,
+  WifiOff,
+  Trash2,
+  AlertTriangle,
+  Smartphone,
+  ChevronDown,
+  ImagePlus
+} from 'lucide-react';
+import { exportService } from '../services/exportService';
+import { PWAInstallButton } from './PWAInstallButton';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
+
+interface SettingsViewProps {
+  onOpenSQLModal: () => void;
+  onOpenPaywall: () => void;
+  onOpenPrivacyModal?: () => void;
+  onOpenPlatformOwner?: () => void;
+  onOpenCollabRoom?: () => void;
+  onOpenCustomerAccounts?: () => void;
+  onOpenGuidedTour?: () => void;
+  initialOpenTeam?: boolean;
+  onTeamOpened?: () => void;
+}
+
+export const SettingsView: React.FC<SettingsViewProps> = ({ 
+  onOpenPaywall,
+  onOpenPrivacyModal,
+  onOpenPlatformOwner,
+  onOpenGuidedTour,
+  initialOpenTeam = false,
+  onTeamOpened
+}) => {
+  const { 
+    currentUser, 
+    userRole, 
+    currentWorkspace,
+    workspaceMembers,
+    addWorkerByOwner,
+    assignWorkerToStation,
+    resetMemberPassword,
+    passwordResetRequests,
+    removeWorkerFromTeam,
+    transactions,
+    parcels,
+    stations,
+    renewInviteCode, 
+    logout,
+    exchangeRate,
+    setExchangeRate,
+    updateUnclaimedDaysThreshold,
+    updateUserContactNumbers,
+    updateWorkspaceBranding,
+    switchWorkspacePlan,
+    joinRequests,
+    deleteDemoData,
+    showToast
+  } = useApp();
+
+  const isPlan2TwoStations =
+    currentWorkspace?.plan_tier === 'plan_2_two_stations' ||
+    currentWorkspace?.max_stations === 2 ||
+    currentWorkspace?.max_workers_per_station === 1;
+  const activeWorkersList = workspaceMembers.filter(m => m.role === 'worker');
+
+  const isOnline = useOnlineStatus();
+  const teamSectionRef = useRef<HTMLDivElement | null>(null);
+
+  // Collapsible sections state (collapsed by default)
+  const [openWorkspaceInfo, setOpenWorkspaceInfo] = useState(false);
+  const [openBrandingSection, setOpenBrandingSection] = useState(false);
+  const [openExportSection, setOpenExportSection] = useState(false);
+  const [openLangSection, setOpenLangSection] = useState(false);
+  const [openPwaSection, setOpenPwaSection] = useState(false);
+  const [openTeamSection, setOpenTeamSection] = useState<boolean>(Boolean(initialOpenTeam));
+  const [openContactSection, setOpenContactSection] = useState(false);
+
+  // Custom thermal sticker branding state
+  const [brandNameInput, setBrandNameInput] = useState(
+    currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'محطة الاتحادية'
+  );
+  const [brandPhoneInput, setBrandPhoneInput] = useState(
+    currentWorkspace?.custom_brand_phone || currentUser?.phone || ''
+  );
+  const [brandLogoUrlInput, setBrandLogoUrlInput] = useState(
+    currentWorkspace?.custom_brand_logo_url || ''
+  );
+  const [isSavingBranding, setIsSavingBranding] = useState(false);
+
+  useEffect(() => {
+    if (currentWorkspace) {
+      setBrandNameInput(currentWorkspace.custom_brand_name || currentWorkspace.name || 'محطة الاتحادية');
+      setBrandPhoneInput(currentWorkspace.custom_brand_phone || currentUser?.phone || '');
+      setBrandLogoUrlInput(currentWorkspace.custom_brand_logo_url || '');
+    }
+  }, [
+    currentWorkspace?.custom_brand_name,
+    currentWorkspace?.custom_brand_phone,
+    currentWorkspace?.custom_brand_logo_url,
+    currentWorkspace?.name,
+  ]);
+
+  // Contact numbers update state
+  const [contactPhoneInput, setContactPhoneInput] = useState(currentUser?.phone || '');
+  const [contactWhatsappInput, setContactWhatsappInput] = useState(
+    currentUser?.whatsapp_number || currentUser?.phone || ''
+  );
+  const [isUpdatingContact, setIsUpdatingContact] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setContactPhoneInput(currentUser.phone || '');
+      setContactWhatsappInput(currentUser.whatsapp_number || currentUser.phone || '');
+    }
+  }, [currentUser?.phone, currentUser?.whatsapp_number]);
+
+  useEffect(() => {
+    if (initialOpenTeam) {
+      setOpenTeamSection(true);
+      setTimeout(() => {
+        teamSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+      if (onTeamOpened) onTeamOpened();
+    }
+  }, [initialOpenTeam, onTeamOpened]);
+
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedWsId, setCopiedWsId] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [showPasswordResetAdmin, setShowPasswordResetAdmin] = useState(false);
+
+  // Add Worker form state
+  const [showAddWorkerForm, setShowAddWorkerForm] = useState(false);
+  const [newWorkerName, setNewWorkerName] = useState('');
+  const [newWorkerPhone, setNewWorkerPhone] = useState('');
+  const [newWorkerStationId, setNewWorkerStationId] = useState(stations[0]?.id || 'st-dakhla');
+  const [isAddingWorker, setIsAddingWorker] = useState(false);
+
+  // One-time temporary password alert box
+  const [oneTimeCredential, setOneTimeCredential] = useState<{
+    name: string;
+    phone: string;
+    temporaryPassword: string;
+  } | null>(null);
+  const [copiedTempPass, setCopiedTempPass] = useState(false);
+
+  // Unclaimed days form state
+  const [unclaimedDaysInput, setUnclaimedDaysInput] = useState(
+    String(currentWorkspace?.unclaimed_days_threshold ?? 7)
+  );
+
+  // Worker removal confirmation modal state
+  const [workerToDelete, setWorkerToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingWorker, setIsDeletingWorker] = useState(false);
+
+  // Demo data deletion confirmation modal state
+  const [showDeleteDemoConfirm, setShowDeleteDemoConfirm] = useState(false);
+
+  const handleCopyInviteCode = () => {
+    if (!currentWorkspace?.invite_code) return;
+    navigator.clipboard.writeText(currentWorkspace.invite_code);
+    setCopiedCode(true);
+    showToast('تم نسخ رمز دعوة مساحة العمل بنجاح', 'success');
+    setTimeout(() => setCopiedCode(false), 2500);
+  };
+
+  const handleCopyShortId = () => {
+    if (!currentWorkspace?.short_id) return;
+    navigator.clipboard.writeText(currentWorkspace.short_id);
+    setCopiedWsId(true);
+    showToast(`تم نسخ المعرف القصير [${currentWorkspace.short_id}] بنجاح`, 'success');
+    setTimeout(() => setCopiedWsId(false), 2500);
+  };
+
+  const handleRegenerateCode = async () => {
+    setIsRegenerating(true);
+    try {
+      const newCode = await renewInviteCode();
+      showToast(`تم تجديد رمز الدعوة بنجاح: ${newCode}`, 'success');
+    } catch {
+      showToast('تعذر تجديد رمز الدعوة', 'error');
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  const handleConfirmDeleteWorker = async () => {
+    if (!workerToDelete) return;
+    setIsDeletingWorker(true);
+    try {
+      await removeWorkerFromTeam(workerToDelete.id);
+      showToast(`تم حذف الموظف [${workerToDelete.name}] من مساحة العمل بنجاح`, 'success');
+      setWorkerToDelete(null);
+    } catch {
+      showToast('تعذر حذف الموظف', 'error');
+    } finally {
+      setIsDeletingWorker(false);
+    }
+  };
+
+  const pendingJoinRequestsCount = (joinRequests || []).filter(r => r.status === 'pending').length;
+
+  return (
+    <div className="space-y-3.5 pb-36 text-right animate-fadeIn" dir="rtl">
+      
+      {/* 1. Header Card */}
+      <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0 shadow-md">
+              <Settings className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-white">إعدادات النظام ومساحة العمل</h2>
+              <p className="text-[11px] text-white/80 font-medium">
+                {currentWorkspace?.name || 'محطة الاتحادية'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Connection status badge */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+            isOnline 
+              ? 'bg-[#006233]/30 text-[#2ECC71] border-[#006233]/50' 
+              : 'bg-rose-950/60 text-rose-300 border-rose-500/40 animate-pulse'
+          }`}>
+            {isOnline ? <Wifi className="w-3 h-3 text-[#2ECC71]" /> : <WifiOff className="w-3 h-3" />}
+            <span>{isOnline ? 'متصل بالإنترنت' : 'وضع غير متصل (أوفلاين)'}</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border bg-[#D4AF37]/20 text-[#F5C84C] border-[#D4AF37]/50 shadow-sm">
+            <ShieldCheck className="w-3 h-3 text-[#F5C84C]" />
+            <span>قاعدة بيانات Firebase السحابية: متصلة ونشطة ⚡</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Platform Owner Panel Launcher */}
+      {userRole === 'platform_owner' && onOpenPlatformOwner && (
+        <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-[#006233] text-white flex items-center justify-center font-black shrink-0">
+              <Crown className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-white">
+                لوحة تحكم مالك المنصة
+              </h3>
+              <p className="text-[10px] text-white/75">
+                إدارة وتفعيل اشتراكات جميع مدراء مساحات العمل
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={onOpenPlatformOwner}
+            className="w-full py-2 rounded-xl font-black text-xs shadow-md active:scale-95 transition"
+          >
+            فتح لوحة المشرف
+          </button>
+        </div>
+      )}
+
+      {/* 3. Who Can See My Data - Privacy and Collaboration Button Card */}
+      <div 
+        onClick={onOpenPrivacyModal}
+        className="luxury-card rounded-[22px] hover:border-white/30 p-4 transition cursor-pointer group active:scale-[0.99]"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-[#006233]/30 border border-[#006233]/50 text-[#2ECC71] flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3 className="text-xs font-black text-white">
+                  من يمكنه رؤية بياناتي؟ (التحكم بالخصوصية)
+                </h3>
+                {pendingJoinRequestsCount > 0 && (
+                  <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-rose-600 text-white animate-pulse">
+                    {pendingJoinRequestsCount} طلب معلق
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-white/75 mt-0.5">
+                إدارة المعرف القصير، طلبات انضمام العمال، والخصوصية
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3.b Collapsible: رقم الهاتف والواتساب المعتمد للحساب (تغيير الرقم لحماية الحساب) */}
+      <div className="luxury-card rounded-[22px] p-4">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenContactSection(prev => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpenContactSection(prev => !prev);
+            }
+          }}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+        >
+          <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+            <MessageCircle className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <span>رقم الهاتف والواتساب المعتمد للحساب</span>
+          </h3>
+          <ChevronDown
+            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
+              openContactSection ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+
+        {openContactSection && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setIsUpdatingContact(true);
+              try {
+                await updateUserContactNumbers(contactPhoneInput, contactWhatsappInput);
+              } finally {
+                setIsUpdatingContact(false);
+              }
+            }}
+            className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs"
+          >
+            <p className="text-[11px] text-white/80 leading-relaxed">
+              هذا الرقم هو المعتمد لتسجيل الدخول واستعادة كلمة المرور تلقائياً عبر الواتساب. في حال غيرت شريحتك أو رقم الواتساب الخاص بك، قم بتحديثه هنا حتى لا تفقد حسابك أبداً.
+            </p>
+
+            <div>
+              <label className="block text-white/90 font-bold mb-1">
+                رقم الهاتف المعتمد لتسجيل الدخول *
+              </label>
+              <input
+                type="tel"
+                required
+                value={contactPhoneInput}
+                onChange={e => setContactPhoneInput(e.target.value)}
+                placeholder="مثال: 0612345678 أو 222..."
+                className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs"
+                dir="ltr"
+              />
+            </div>
+
+            <div>
+              <label className="block text-white/90 font-bold mb-1">
+                رقم الواتساب المعتمد لاستقبال كلمة المرور عند النسيان *
+              </label>
+              <input
+                type="tel"
+                required
+                value={contactWhatsappInput}
+                onChange={e => setContactWhatsappInput(e.target.value)}
+                placeholder="مثال: 212612345678"
+                className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs"
+                dir="ltr"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isUpdatingContact}
+              className="w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50"
+            >
+              {isUpdatingContact ? 'جاري التحديث والحفظ...' : 'حفظ وتحديث رقم الهاتف والواتساب'}
+            </button>
+          </form>
+        )}
+      </div>
+
+      {/* 4. Collapsible: فـريق العمل المعتمد */}
+      <div ref={teamSectionRef} className="luxury-card rounded-[22px] p-4">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenTeamSection(prev => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpenTeamSection(prev => !prev);
+            }
+          }}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+        >
+          <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+            <User className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <span>فريق العمل المعتمد ({workspaceMembers.length})</span>
+          </h3>
+          <ChevronDown
+            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
+              openTeamSection ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+
+        {openTeamSection && (
+          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-3">
+            {/* Package Quota & Station/Worker Limit Banner */}
+            <div className="p-3 rounded-2xl bg-black/55 border border-[#F5C84C]/35 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <Crown className="w-4 h-4 text-[#F5C84C] shrink-0" />
+                  <span className="font-black text-white text-[11px]">
+                    {isPlan2TwoStations
+                      ? 'الباك الثاني: محطتين فقط + عامل واحد في كل محطة'
+                      : 'الباك الأول: الباقة الشاملة (كل المحطات والعمال مفتوحين)'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenPaywall}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
+                >
+                  عرض الباقات
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="bg-black/60 p-2 rounded-xl border border-white/15 flex items-center justify-between">
+                  <span className="text-white/75">المحطات المفتوحة:</span>
+                  <span className="font-mono font-black text-[#F5C84C]">
+                    {stations.length} / {isPlan2TwoStations ? '2 محطات' : 'مفتوح'}
+                  </span>
+                </div>
+                <div className="bg-black/60 p-2 rounded-xl border border-white/15 flex items-center justify-between">
+                  <span className="text-white/75">العمال بالمحطات:</span>
+                  <span className="font-mono font-black text-emerald-400">
+                    {activeWorkersList.length} / {isPlan2TwoStations ? '2 (عامل/محطة)' : 'مفتوح'}
+                  </span>
+                </div>
+              </div>
+
+              {(userRole === 'owner' || userRole === 'platform_owner') && (
+                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => switchWorkspacePlan('plan_1_full')}
+                    className={`py-1.5 px-2 rounded-xl text-[10px] font-black transition cursor-pointer ${
+                      !isPlan2TwoStations ? 'btn-gold' : 'btn-cancel'
+                    }`}
+                  >
+                    👑 الباك الأول (شامل كل شيء)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchWorkspacePlan('plan_2_two_stations')}
+                    className={`py-1.5 px-2 rounded-xl text-[10px] font-black transition cursor-pointer ${
+                      isPlan2TwoStations ? 'btn-gold' : 'btn-cancel'
+                    }`}
+                  >
+                    🏪 الباك الثاني (2 محطات + عامل/محطة)
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {(userRole === 'owner' || userRole === 'platform_owner') && (
+              <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordResetAdmin(true)}
+                  className="px-3 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  <span>طلبات الاستعادة</span>
+                  {(passwordResetRequests || []).filter(r => r.status === 'pending').length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[9px] font-black">
+                      {(passwordResetRequests || []).filter(r => r.status === 'pending').length}
+                    </span>
+                  )}
+                </button>
+                {userRole === 'owner' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!showAddWorkerForm && isPlan2TwoStations) {
+                        const freeStation = stations.find(
+                          st => !activeWorkersList.some(w => !w.is_demo && w.station_id === st.id)
+                        );
+                        if (freeStation) setNewWorkerStationId(freeStation.id);
+                      }
+                      setShowAddWorkerForm(!showAddWorkerForm);
+                    }}
+                    className={`${showAddWorkerForm ? 'btn-cancel ' : ''}px-3 py-1.5 rounded-xl text-[11px] font-black cursor-pointer`}
+                  >
+                    {showAddWorkerForm ? 'إغلاق' : '+ إضافة عامل'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* One-time Temporary Password Display Box */}
+            {oneTimeCredential && (
+              <div className="p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-500/50 space-y-2 text-xs animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-emerald-300">
+                    كلمة المرور المؤقتة لـ {oneTimeCredential.name} (تُعرض لمرة واحدة فقط):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setOneTimeCredential(null)}
+                    className="btn-cancel px-2.5 py-1 text-[10px]"
+                  >
+                    إخفاء
+                  </button>
+                </div>
+                <div className="flex items-center justify-between bg-black/60 p-2.5 rounded-xl border border-emerald-500/40">
+                  <span className="font-mono text-sm font-black text-white tracking-wider" dir="ltr">
+                    {oneTimeCredential.temporaryPassword}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(oneTimeCredential.temporaryPassword);
+                        setCopiedTempPass(true);
+                        showToast('تم نسخ كلمة المرور المؤقتة', 'success');
+                        setTimeout(() => setCopiedTempPass(false), 2000);
+                      }}
+                      className="px-2.5 py-1 rounded-lg font-black text-[11px] flex items-center gap-1"
+                    >
+                      {copiedTempPass ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedTempPass ? 'تم النسخ' : 'نسخ'}</span>
+                    </button>
+                    <a
+                      href={`https://wa.me/${oneTimeCredential.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                        `مرحباً ${oneTimeCredential.name}، بيانات الدخول المؤقتة الخاصة بك في محطة الاتحادية:\nرقم الهاتف: ${oneTimeCredential.phone}\nكلمة المرور المؤقتة (لمرة واحدة): ${oneTimeCredential.temporaryPassword}\nسيُطلب منك تغييرها فور أول تسجيل دخول.`
+                      )}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-[#F5C84C] text-[#111111] font-extrabold text-[11px] flex items-center gap-1"
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                      <span>واتساب</span>
+                    </a>
+                  </div>
+                </div>
+                <p className="text-[10px] text-emerald-200">
+                  * هذه الكلمة صالحة لأول تسجيل دخول فقط، وسيُلزم العامل بتعيين كلمة مرور جديدة من 8 خانات على الأقل.
+                </p>
+              </div>
+            )}
+
+            {/* Add Worker Form */}
+            {showAddWorkerForm && userRole === 'owner' && (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!newWorkerName.trim() || !newWorkerPhone.trim()) {
+                    showToast('يرجى إدخال اسم العامل ورقم هاتفه', 'error');
+                    return;
+                  }
+                  setIsAddingWorker(true);
+                  try {
+                    const res = await addWorkerByOwner(newWorkerName.trim(), newWorkerPhone.trim(), newWorkerStationId);
+                    if (res.success && res.temporaryPassword) {
+                      setOneTimeCredential({
+                        name: newWorkerName.trim(),
+                        phone: newWorkerPhone.trim(),
+                        temporaryPassword: res.temporaryPassword,
+                      });
+                      setNewWorkerName('');
+                      setNewWorkerPhone('');
+                      setShowAddWorkerForm(false);
+                    } else if (res.error) {
+                      showToast(res.error, 'error');
+                    }
+                  } finally {
+                    setIsAddingWorker(false);
+                  }
+                }}
+                className="p-3 rounded-xl bg-black/50 border border-white/15 space-y-2.5 text-xs"
+              >
+                <span className="font-bold text-white block">
+                  إضافة حساب عامل جديد وتوليد كلمة مرور مؤقتة لمرة واحدة:
+                </span>
+                {isPlan2TwoStations && (
+                  <p className="text-[10px] text-[#E6C37A] bg-black/50 p-2 rounded-lg border border-[#F5C84C]/30">
+                    تنبيه الباك الثاني: يُسمح بعامل واحد (1) فقط في كل محطة من المحطتين المفتوحتين.
+                  </p>
+                )}
+                <input
+                  type="text"
+                  required
+                  placeholder="الاسم الكامل للعامل"
+                  value={newWorkerName}
+                  onChange={e => setNewWorkerName(e.target.value)}
+                  className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white text-xs"
+                />
+                <input
+                  type="tel"
+                  required
+                  placeholder="رقم هاتف العامل (مثال: 0612345678 أو 222...)"
+                  value={newWorkerPhone}
+                  onChange={e => setNewWorkerPhone(e.target.value)}
+                  className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs"
+                  dir="ltr"
+                />
+                <select
+                  value={newWorkerStationId}
+                  onChange={e => setNewWorkerStationId(e.target.value)}
+                  className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white text-xs"
+                >
+                  {stations.map(st => {
+                    const occupant = activeWorkersList.find(w => !w.is_demo && w.station_id === st.id);
+                    return (
+                      <option key={st.id} value={st.id}>
+                        {st.name}
+                        {isPlan2TwoStations
+                          ? occupant
+                            ? ` (مشغولة: ${occupant.profile?.name || 'عامل'})`
+                            : ' (متاحة — 0/1 عامل)'
+                          : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                <button
+                  type="submit"
+                  disabled={isAddingWorker}
+                  className="w-full py-2 rounded-xl font-black text-xs disabled:opacity-50 shadow-md"
+                >
+                  {isAddingWorker ? 'جاري الإنشاء...' : 'إنشاء الحساب وتوليد كلمة المرور المؤقتة'}
+                </button>
+              </form>
+            )}
+
+            {workspaceMembers.length === 0 ? (
+              <div className="text-center py-5 text-white/75 text-xs bg-black/50 rounded-xl border border-white/15">
+                لا يوجد أعضاء آخرين في مساحة العمل حالياً.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {workspaceMembers.map(member => {
+                  const assignedSt = stations.find(s => s.id === member.station_id) || stations[0];
+                  return (
+                    <div 
+                      key={member.user_id}
+                      className="bg-black/50 p-3 rounded-xl border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-black/60 border border-white/15 flex items-center justify-center font-bold text-white shrink-0">
+                          {member.role === 'admin' || member.role === 'owner' ? <Crown className="w-4 h-4 text-[#F5C84C]" /> : <User className="w-4 h-4 text-[#2ECC71]" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-white break-words">{member.profile?.name || 'عضو الفريق'}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-black/60 text-[#F5C84C] border border-white/15">
+                              {member.role === 'admin' || member.role === 'owner' ? 'مدير' : 'عامل'}
+                            </span>
+                            {member.role === 'worker' && assignedSt && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-950/70 text-emerald-300 border border-emerald-500/35">
+                                📍 {assignedSt.city || assignedSt.name}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-white/80 font-mono mt-0.5">
+                            <span dir="ltr">{member.profile?.phone}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        {userRole === 'owner' && member.role === 'worker' && (
+                          <select
+                            value={member.station_id || stations[0]?.id || ''}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                assignWorkerToStation(e.target.value, member.user_id);
+                              }
+                            }}
+                            className="bg-black/60 border border-white/15 text-white text-[11px] font-bold rounded-xl px-2.5 py-1.5 focus:outline-none"
+                          >
+                            {stations.map((st) => {
+                              const otherWorker = activeWorkersList.find(
+                                w => w.user_id !== member.user_id && w.station_id === st.id && (!member.is_demo ? !w.is_demo : true)
+                              );
+                              return (
+                                <option key={st.id} value={st.id}>
+                                  {st.name}
+                                  {isPlan2TwoStations && otherWorker ? ' (مشغولة بعامل آخر)' : ''}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        )}
+
+                        {userRole === 'owner' && member.user_id !== currentUser?.id && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const res = await resetMemberPassword(member.user_id);
+                                if (res.success && res.temporaryPassword) {
+                                  setOneTimeCredential({
+                                    name: member.profile?.name || 'العامل',
+                                    phone: member.profile?.phone || '',
+                                    temporaryPassword: res.temporaryPassword,
+                                  });
+                                  showToast('تم توليد كلمة مرور مؤقتة جديدة للعامل', 'success');
+                                } else if (res.error) {
+                                  showToast(res.error, 'error');
+                                }
+                              }}
+                              className="p-1.5 rounded-lg transition cursor-pointer"
+                              title="إعادة تعيين كلمة مرور مؤقتة لمرة واحدة"
+                            >
+                              <Key className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setWorkerToDelete({ id: member.user_id, name: member.profile?.name || 'الموظف' })}
+                              className="btn-delete p-1.5 rounded-lg transition cursor-pointer"
+                              title="حذف من مساحة العمل"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 5. Collapsible: معلومات وهوية مساحة العمل */}
+      <div className="luxury-card rounded-[22px] p-4">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenWorkspaceInfo(prev => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpenWorkspaceInfo(prev => !prev);
+            }
+          }}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+        >
+          <div className="flex items-center gap-1.5">
+            <Store className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <h3 className="text-xs sm:text-sm font-black text-white">معلومات وهوية مساحة العمل (2)</h3>
+          </div>
+          <ChevronDown
+            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
+              openWorkspaceInfo ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+
+        {openWorkspaceInfo && (
+          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-2.5">
+            {/* Unique 6-character Short ID */}
+            <div className="bg-black/50 p-3 rounded-xl border border-white/15 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-white">المعرف القصير لمساحة العمل:</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/60 text-white font-bold border border-white/15">
+                  للربط مع المدراء
+                </span>
+              </div>
+              <div className="flex items-center justify-between bg-black/60 p-2.5 rounded-xl border border-white/15">
+                <span className="font-mono text-sm font-black text-white tracking-wider" dir="ltr">
+                  {currentWorkspace?.short_id || '------'}
+                </span>
+                <button
+                  onClick={handleCopyShortId}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black transition active:scale-95"
+                >
+                  {copiedWsId ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedWsId ? 'تم النسخ' : 'نسخ'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Renewable Invite Code for Workers */}
+            <div className="bg-black/50 p-3 rounded-xl border border-white/15 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-white">رمز دعوة العمال:</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/60 text-white font-bold border border-white/15">
+                  يتطلب موافقتك
+                </span>
+              </div>
+              <div className="flex items-center justify-between bg-black/60 p-2.5 rounded-xl border border-white/15">
+                <span className="font-mono text-sm font-black text-white tracking-wider" dir="ltr">
+                  {currentWorkspace?.invite_code || '--------'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleCopyInviteCode}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition active:scale-95"
+                  >
+                    {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedCode ? 'تم' : 'نسخ'}</span>
+                  </button>
+                  {userRole === 'owner' && (
+                    <button
+                      onClick={handleRegenerateCode}
+                      disabled={isRegenerating}
+                      title="تجديد الرمز عشوائياً"
+                      className="p-1.5 rounded-lg transition active:scale-95 disabled:opacity-50"
+                    >
+                      <RotateCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5.b Collapsible: تخصيص اسم وشعار المحطة في الملصق الحراري وبونات الـ PDF (Custom Branding) */}
+      <div className="luxury-card rounded-[22px] p-4">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenBrandingSection(prev => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpenBrandingSection(prev => !prev);
+            }
+          }}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+        >
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Store className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <h3 className="text-xs sm:text-sm font-black text-white">
+              تخصيص صورة الشعار والاسم في الملصقات وبونات الـ PDF
+            </h3>
+            <span className="px-2 py-0.5 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] text-[9px] font-black">
+              👑 الملصقات + PDF
+            </span>
+          </div>
+          <ChevronDown
+            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
+              openBrandingSection ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+
+        {openBrandingSection && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setIsSavingBranding(true);
+              try {
+                await updateWorkspaceBranding({
+                  customBrandName: brandNameInput.trim(),
+                  customBrandPhone: brandPhoneInput.trim(),
+                  customBrandLogoUrl: brandLogoUrlInput.trim(),
+                });
+              } finally {
+                setIsSavingBranding(false);
+              }
+            }}
+            className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs"
+          >
+            <p className="text-[11px] text-white/80 leading-relaxed">
+              تظهر هذه البيانات (الاسم، الهاتف، وصورة الشعار المخصص) مباشرة على <strong>الملصقات الحرارية (10×10)</strong> وفي <strong>جميع بونات الـ PDF</strong> (بون الكولي، بون الصندوق، المانيفست، والحوالة).
+            </p>
+            {onOpenGuidedTour && (
+              <button
+                type="button"
+                onClick={onOpenGuidedTour}
+                className="btn-cancel w-full py-2 rounded-xl text-[11px] font-black text-[#F5C84C] border border-[#F5C84C]/40"
+              >
+                🧭 فتح جولة الإعداد التلقائي (المحطات ➔ الفلوس ➔ الكوليات ➔ الشعار)
+              </button>
+            )}
+
+            <div>
+              <label className="block text-white/90 font-bold mb-1">
+                اسم الوكالة / المحطة على الملصق الحراري:
+              </label>
+              <input
+                type="text"
+                value={brandNameInput}
+                onChange={e => setBrandNameInput(e.target.value)}
+                placeholder="مثال: وكالة الاتحادية السريعة"
+                className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-white/90 font-bold mb-1">
+                رقم هاتف المحطة على الملصق (للتواصل والاستعلام):
+              </label>
+              <input
+                type="tel"
+                dir="ltr"
+                value={brandPhoneInput}
+                onChange={e => setBrandPhoneInput(e.target.value)}
+                placeholder="مثال: +212600000000"
+                className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs text-right"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-white/90 font-bold">
+                شعار الوكالة / المحطة على الملصق (اختياري):
+              </label>
+
+              {/* معاينة الشعار الحالي + زر رفع صورة من الهاتف */}
+              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/60 border border-white/15">
+                <div className="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 overflow-hidden border border-white/20">
+                  <img
+                    src={brandLogoUrlInput || '/logo.png'}
+                    alt="شعار الملصق"
+                    className="max-w-full max-h-full object-contain"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = '/logo.png';
+                    }}
+                  />
+                </div>
+
+                <div className="flex-1 space-y-1.5">
+                  <label className="w-full py-2 px-3 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition">
+                    <ImagePlus className="w-4 h-4 shrink-0" />
+                    <span>اختر صورة الشعار من الهاتف / الجهاز</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          const dataUrl = ev.target?.result as string;
+                          if (!dataUrl) return;
+                          const img = new Image();
+                          img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            const maxSize = 220;
+                            let w = img.width;
+                            let h = img.height;
+                            if (w > h && w > maxSize) {
+                              h = Math.round((h * maxSize) / w);
+                              w = maxSize;
+                            } else if (h >= w && h > maxSize) {
+                              w = Math.round((w * maxSize) / h);
+                              h = maxSize;
+                            }
+                            canvas.width = w;
+                            canvas.height = h;
+                            const ctx = canvas.getContext('2d');
+                            if (ctx) {
+                              ctx.drawImage(img, 0, 0, w, h);
+                              const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
+                              setBrandLogoUrlInput(compressedDataUrl);
+                              showToast('تم تحميل صورة الشعار بنجاح — اضغط حفظ لتثبيتها', 'success');
+                            }
+                          };
+                          img.src = dataUrl;
+                        };
+                        reader.readAsDataURL(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+
+                  {brandLogoUrlInput ? (
+                    <button
+                      type="button"
+                      onClick={() => setBrandLogoUrlInput('')}
+                      className="btn-delete w-full py-1.5 px-2.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>إزالة الشعار المخصص والرجوع للشعار الافتراضي</span>
+                    </button>
+                  ) : (
+                    <span className="block text-[10px] text-white/65 text-center">
+                      يتم حالياً استخدام الشعار الافتراضي للتطبيق
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSavingBranding}
+              className="btn-gold w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50"
+            >
+              {isSavingBranding ? 'جاري حفظ الهوية...' : 'حفظ هوية وشعار الملصق الحراري'}
+            </button>
+          </form>
+        )}
+      </div>
+
+      {/* 6. Collapsible: تصدير ونسخ بيانات مساحة العمل */}
+      <div className="luxury-card rounded-[22px] p-4">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenExportSection(prev => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpenExportSection(prev => !prev);
+            }
+          }}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+        >
+          <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+            <Download className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <span>تصدير ونسخ بيانات مساحة العمل (3)</span>
+          </h3>
+          <ChevronDown
+            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
+              openExportSection ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+
+        {openExportSection && (
+          <div className="mt-3.5 pt-3 border-t border-white/15 grid grid-cols-1 gap-2">
+            {/* Export Cash Transactions CSV */}
+            <button
+              onClick={() => {
+                if (transactions.length === 0) {
+                  showToast('لا توجد معاملات نقدية لتصديرها حالياً', 'info');
+                  return;
+                }
+                exportService.exportTransactionsToCSV(transactions, currentWorkspace?.name || 'محطة الاتحادية');
+                showToast('تم تصدير سجلات الصندوق والمعاملات بتنسيق CSV', 'success');
+              }}
+              className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
+            >
+              <FileSpreadsheet className="w-4 h-4 shrink-0" />
+              <div>
+                <span className="font-bold text-xs block">سجلات الصندوق (CSV) — متوافق مع Excel</span>
+              </div>
+            </button>
+
+            {/* Export Parcels CSV */}
+            <button
+              onClick={() => {
+                if (parcels.length === 0) {
+                  showToast('لا توجد سجلات كوليات لتصديرها حالياً', 'info');
+                  return;
+                }
+                exportService.exportParcelsToCSV(parcels, currentWorkspace?.name || 'محطة الاتحادية');
+                showToast('تم تصدير سجلات الكوليات والشحنات بتنسيق CSV', 'success');
+              }}
+              className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
+            >
+              <FileSpreadsheet className="w-4 h-4 shrink-0" />
+              <div>
+                <span className="font-bold text-xs block">سجلات الكوليات (CSV) — شامل المبالغ والمستلمين</span>
+              </div>
+            </button>
+
+            {/* Export Full Workspace Backup JSON */}
+            <button
+              onClick={() => {
+                if (!currentWorkspace) {
+                  showToast('تعذر تصدير النسخة الاحتياطية', 'error');
+                  return;
+                }
+                exportService.exportWorkspaceBackupJSON(currentWorkspace, transactions, parcels);
+                showToast('تم تصدير النسخة الاحتياطية الشاملة بتنسيق JSON', 'success');
+              }}
+              className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
+            >
+              <FileJson className="w-4 h-4 shrink-0" />
+              <div>
+                <span className="font-bold text-xs block">نسخة احتياطية كاملة (JSON)</span>
+              </div>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 7. Collapsible: لغة واجهة التطبيق */}
+      <div className="luxury-card rounded-[22px] p-4">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenLangSection(prev => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpenLangSection(prev => !prev);
+            }
+          }}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+        >
+          <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+            <Languages className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <span>لغة واجهة التطبيق</span>
+          </h3>
+          <ChevronDown
+            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
+              openLangSection ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+
+        {openLangSection && (
+          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-2.5">
+            <div className="bg-black/50 p-3 rounded-xl border border-white/15 space-y-1.5">
+              <span className="text-[11px] font-bold text-white/75 block">
+                لغة واجهة التطبيق:
+              </span>
+              <div className="flex items-center gap-2 p-2 rounded-xl bg-black/60 border border-white/15 text-xs font-bold text-white">
+                <span className="w-2 h-2 rounded-full bg-[#2ECC71] shrink-0"></span>
+                <span>العربية الفصحى (اللغة الرسمية المعتمدة)</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 8. Collapsible: PWA Install Card */}
+      <div className="luxury-card rounded-[22px] p-4">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenPwaSection(prev => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpenPwaSection(prev => !prev);
+            }
+          }}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+        >
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <h3 className="text-xs sm:text-sm font-black text-white">تثبيت التطبيق على الشاشة الرئيسية (PWA)</h3>
+          </div>
+          <ChevronDown
+            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
+              openPwaSection ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+
+        {openPwaSection && (
+          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-2.5">
+            <p className="text-[11px] text-white/80">
+              يعمل كتطبيق هاتف أصلي وسريع بدون إنترنت
+            </p>
+            <div>
+              <PWAInstallButton />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Password Reset Requests Admin Modal */}
+      <ForgotPasswordModal
+        isOpen={showPasswordResetAdmin}
+        onClose={() => setShowPasswordResetAdmin(false)}
+        isAdminView={true}
+      />
+
+      {/* 9. Delete Demo Data (Admin Only) */}
+      {(userRole === 'owner' || userRole === 'platform_owner') && (
+        <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0">
+              <Trash2 className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-white">إدارة البيانات التجريبية</h3>
+              <p className="text-[10px] text-white/75 mt-0.5">
+                حذف كافة السجلات التجريبية دون المساس بالبيانات الحقيقية
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowDeleteDemoConfirm(true)}
+            className="btn-delete w-full flex items-center justify-center gap-2 py-2 rounded-xl font-black text-xs shadow-md active:scale-95 transition"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>حذف البيانات التجريبية</span>
+          </button>
+        </div>
+      )}
+
+      {/* 10. Logout */}
+      <div className="text-center pt-1">
+        <button
+          onClick={logout}
+          className="btn-cancel w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>تسجيل الخروج من الحساب</span>
+        </button>
+      </div>
+
+      {/* Confirmation Dialog: Delete Demo Data */}
+      {showDeleteDemoConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 animate-fadeIn">
+          <div className="w-full max-w-[360px] rounded-[24px] luxury-card p-5 shadow-2xl text-right space-y-3.5">
+            <div className="flex items-center gap-2.5 text-rose-400">
+              <div className="w-9 h-9 rounded-xl bg-rose-950/60 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-white">تأكيد حذف البيانات التجريبية</h3>
+            </div>
+
+            <p className="text-xs text-white/80 leading-relaxed">
+              هل أنت متأكد من رغبتك في حذف <strong className="text-white">جميع البيانات التجريبية</strong>؟ سيتم حذف السجلات التجريبية فقط ولن يتم حذف أي سجل حقيقي.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/15">
+              <button
+                type="button"
+                onClick={() => setShowDeleteDemoConfirm(false)}
+                className="btn-cancel px-4 py-2 rounded-xl text-xs font-bold"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteDemoData();
+                  setShowDeleteDemoConfirm(false);
+                }}
+                className="btn-delete px-5 py-2 rounded-xl text-xs font-bold shadow-md"
+              >
+                تأكيد الحذف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog: Delete Worker */}
+      {workerToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 animate-fadeIn">
+          <div className="w-full max-w-[360px] rounded-[24px] luxury-card p-5 shadow-2xl text-right space-y-3.5">
+            <div className="flex items-center gap-2.5 text-rose-400">
+              <div className="w-9 h-9 rounded-xl bg-rose-950/60 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-white">تأكيد حذف الموظف</h3>
+            </div>
+
+            <p className="text-xs text-white/80 leading-relaxed">
+              هل أنت متأكد من رغبتك في حذف الموظف <strong className="text-white">[{workerToDelete.name}]</strong> من مساحة العمل؟
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/15">
+              <button
+                type="button"
+                onClick={() => setWorkerToDelete(null)}
+                disabled={isDeletingWorker}
+                className="btn-cancel px-4 py-2 rounded-xl text-xs font-bold"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteWorker}
+                disabled={isDeletingWorker}
+                className="btn-delete px-5 py-2 rounded-xl text-xs font-bold shadow-md disabled:opacity-50"
+              >
+                {isDeletingWorker ? 'جاري الحذف...' : 'تأكيد الحذف'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};

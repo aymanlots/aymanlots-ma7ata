@@ -1,0 +1,117 @@
+import { pgTable, serial, text, timestamp, numeric, integer, boolean } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  uid: text('uid').notNull().unique(),
+  email: text('email').notNull(),
+  displayName: text('display_name'),
+  photoUrl: text('photo_url'),
+  phone: text('phone'),
+  role: text('role').default('owner'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const workspaces = pgTable('workspaces', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  inviteCode: text('invite_code').notNull().unique(),
+  ownerId: text('owner_id'),
+  exchangeRate: numeric('exchange_rate', { precision: 12, scale: 4 }).default('3.9700'),
+  customBrandName: text('custom_brand_name'),
+  customBrandSubtitle: text('custom_brand_subtitle'),
+  customBrandPhone: text('custom_brand_phone'),
+  customBrandLogoUrl: text('custom_brand_logo_url'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const stations = pgTable('stations', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  name: text('name').notNull(),
+  city: text('city').notNull(),
+  country: text('country').notNull(),
+  phone: text('phone'),
+  address: text('address'),
+  ownerId: text('owner_id'),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const parcels = pgTable('parcels', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  trackingCode: text('tracking_code').notNull(),
+  senderName: text('sender_name').notNull(),
+  senderPhone: text('sender_phone').notNull(),
+  receiverName: text('receiver_name').notNull(),
+  receiverPhone: text('receiver_phone').notNull(),
+  originStationId: text('origin_station_id').notNull(),
+  destinationStationId: text('destination_station_id').notNull(),
+  originStationName: text('origin_station_name'),
+  destinationStationName: text('destination_station_name'),
+  weightKg: numeric('weight_kg', { precision: 10, scale: 2 }).default('1.00'),
+  piecesCount: integer('pieces_count').default(1),
+  description: text('description'),
+  amountDue: numeric('amount_due', { precision: 12, scale: 2 }).default('0.00'),
+  amountPaid: numeric('amount_paid', { precision: 12, scale: 2 }).default('0.00'),
+  currency: text('currency').default('MAD'),
+  paymentStatus: text('payment_status').default('unpaid'),
+  status: text('status').default('registered'),
+  tripId: text('trip_id'),
+  driverName: text('driver_name'),
+  driverPhone: text('driver_phone'),
+  vehiclePlate: text('vehicle_plate'),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const trips = pgTable('trips', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  tripCode: text('trip_code').notNull(),
+  driverName: text('driver_name').notNull(),
+  driverPhone: text('driver_phone').notNull(),
+  vehiclePlate: text('vehicle_plate').notNull(),
+  originStationId: text('origin_station_id').notNull(),
+  destinationStationId: text('destination_station_id').notNull(),
+  originStationName: text('origin_station_name'),
+  destinationStationName: text('destination_station_name'),
+  departureTime: timestamp('departure_time'),
+  status: text('status').default('scheduled'),
+  parcelsCount: integer('parcels_count').default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const transactions = pgTable('transactions', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  stationId: text('station_id').notNull(),
+  stationName: text('station_name'),
+  type: text('type').notNull(),
+  category: text('category').notNull(),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  currency: text('currency').notNull(),
+  exchangeRateUsed: numeric('exchange_rate_used', { precision: 12, scale: 4 }),
+  convertedAmount: numeric('converted_amount', { precision: 14, scale: 2 }),
+  convertedCurrency: text('converted_currency'),
+  relatedParcelId: text('related_parcel_id'),
+  description: text('description').notNull(),
+  createdByUserId: text('created_by_user_id'),
+  createdByName: text('created_by_name'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const auditLogs = pgTable('audit_logs', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  userId: text('user_id').notNull(),
+  userName: text('user_name').notNull(),
+  userRole: text('user_role').notNull(),
+  action: text('action').notNull(),
+  entityType: text('entity_type').notNull(),
+  entityId: text('entity_id').notNull(),
+  details: text('details').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});

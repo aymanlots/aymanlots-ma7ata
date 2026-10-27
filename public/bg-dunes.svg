@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080C16"/>
+      <stop offset="50%" stop-color="#171B26"/>
+      <stop offset="100%" stop-color="#2B1B10"/>
+    </linearGradient>
+    <linearGradient id="sunDune1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="50%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#B45309"/>
+    </linearGradient>
+    <linearGradient id="shadowDune1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="60%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#080C14"/>
+    </linearGradient>
+    <linearGradient id="sunDune2" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="50%" stop-color="#EAB308"/>
+      <stop offset="100%" stop-color="#CA8A04"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#skyGrad)"/>
+
+  <!-- Distant Dunes Horizon -->
+  <path d="M0 180 Q 300 130, 600 170 T 1200 150 Q 1400 130, 1600 160 L 1600 350 L 0 350 Z" fill="#331E12" opacity="0.4"/>
+  <path d="M0 220 Q 400 180, 800 230 T 1600 210 L 1600 450 L 0 450 Z" fill="#451A03" opacity="0.5"/>
+
+  <!-- Large Crescent Dunes (Barchan) -->
+  <!-- Dune Ridge 1: Top Left to Center -->
+  <g>
+    <!-- Sunlit Face -->
+    <path d="M-100 280 Q 200 230, 450 310 Q 700 380, 950 340 L 950 490 Q 600 430, 250 470 L -100 450 Z" fill="url(#sunDune1)"/>
+    <!-- Shadow Face -->
+    <path d="M450 310 Q 700 380, 950 340 Q 1150 420, 1400 390 L 1400 520 Q 1050 510, 800 460 L 450 310 Z" fill="url(#shadowDune1)"/>
+  </g>
+
+  <!-- Dune Ridge 2: Midground Sweeping Curve -->
+  <g>
+    <!-- Shadow Side -->
+    <path d="M0 430 Q 300 410, 600 490 Q 900 580, 1200 520 L 1200 680 Q 700 630, 200 620 L 0 600 Z" fill="url(#shadowDune1)"/>
+    <!-- Sunlit Crest -->
+    <path d="M400 450 Q 800 380, 1150 460 Q 1400 520, 1650 480 L 1650 670 Q 1300 620, 950 590 L 400 450 Z" fill="url(#sunDune2)"/>
+  </g>
+
+  <!-- Dune Ridge 3: Foreground Grand Dune -->
+  <g>
+    <!-- Giant Sunlit Face -->
+    <path d="M-50 580 Q 350 520, 750 620 Q 1150 720, 1650 630 L 1650 900 L -50 900 Z" fill="url(#sunDune1)"/>
+    <!-- Giant Shadow Pit & Ridge -->
+    <path d="M250 560 Q 650 670, 1050 640 Q 1350 750, 1650 720 L 1650 900 L 250 900 Z" fill="url(#shadowDune1)" opacity="0.9"/>
+  </g>
+
+  <!-- Wind Ripple Texture Lines -->
+  <g stroke="#F59E0B" stroke-width="1" opacity="0.25" fill="none">
+    <path d="M 100 620 Q 250 600 400 630"/>
+    <path d="M 120 635 Q 270 615 420 645"/>
+    <path d="M 140 650 Q 290 630 440 660"/>
+    <path d="M 500 580 Q 700 550 900 590"/>
+    <path d="M 520 595 Q 720 565 920 605"/>
+    <path d="M 540 610 Q 740 580 940 620"/>
+    <path d="M 1100 650 Q 1300 620 1500 660"/>
+    <path d="M 1120 665 Q 1320 635 1520 675"/>
+  </g>
+</svg>
