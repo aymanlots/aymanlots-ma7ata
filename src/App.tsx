@@ -30,7 +30,7 @@ import { ForcePasswordChangeModal } from './components/ForcePasswordChangeModal'
 import { GuidedSetupTourModal } from './components/GuidedSetupTourModal';
 import { StationScopeBar } from './components/StationScopeBar';
 import { Toast } from './components/Toast';
-import { Parcel } from './types/database';
+import { Parcel, TransactionType } from './types/database';
 import { AlertTriangle, Clock } from 'lucide-react';
 
 const MainApp: React.FC = () => {
@@ -46,6 +46,7 @@ const MainApp: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [openSettingsTeam, setOpenSettingsTeam] = useState(false);
   const [showNewVoucher, setShowNewVoucher] = useState(false);
+  const [voucherInitialType, setVoucherInitialType] = useState<TransactionType>('cash_in');
   const [showNewParcel, setShowNewParcel] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [showSQLModal, setShowSQLModal] = useState(false);
@@ -201,7 +202,10 @@ const MainApp: React.FC = () => {
           {currentTab === 'dashboard' && (
             userRole === 'owner' || userRole === 'platform_owner' || userRole === 'admin' ? (
               <OwnerDashboard
-                onOpenNewVoucher={() => setShowNewVoucher(true)}
+                onOpenNewVoucher={(type) => {
+                  setVoucherInitialType(type || 'cash_in');
+                  setShowNewVoucher(true);
+                }}
                 onOpenNewParcel={() => setShowNewParcel(true)}
                 onOpenLedger={() => setCurrentTab('cash')}
                 onOpenParcels={() => setCurrentTab('parcels')}
@@ -217,7 +221,10 @@ const MainApp: React.FC = () => {
               />
             ) : (
               <WorkerStationView
-                onOpenNewVoucher={() => setShowNewVoucher(true)}
+                onOpenNewVoucher={(type) => {
+                  setVoucherInitialType(type || 'cash_in');
+                  setShowNewVoucher(true);
+                }}
                 onOpenNewParcel={() => setShowNewParcel(true)}
                 onGoToParcels={() => setCurrentTab('parcels')}
                 onGoToCash={() => setCurrentTab('cash')}
@@ -235,7 +242,10 @@ const MainApp: React.FC = () => {
 
           {currentTab === 'cash' && (
             <LedgerView 
-              onOpenNewVoucher={() => setShowNewVoucher(true)}
+              onOpenNewVoucher={(type) => {
+                setVoucherInitialType(type || 'cash_in');
+                setShowNewVoucher(true);
+              }}
               onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
             />
           )}
@@ -259,13 +269,17 @@ const MainApp: React.FC = () => {
         <BottomNav
           currentTab={currentTab}
           onSelectTab={setCurrentTab}
-          onOpenNewVoucher={() => setShowNewVoucher(true)}
+          onOpenNewVoucher={() => {
+            setVoucherInitialType('cash_in');
+            setShowNewVoucher(true);
+          }}
           onOpenNewParcel={() => setShowNewParcel(true)}
         />
 
         {/* New Cash Voucher Modal */}
         <NewVoucherModal
           isOpen={showNewVoucher}
+          initialType={voucherInitialType}
           onClose={() => setShowNewVoucher(false)}
         />
 

@@ -26,8 +26,10 @@ import {
   Download,
   AlertTriangle,
   MessageCircle,
+  Trash2,
+  CheckCircle2,
 } from 'lucide-react';
-import { Transaction, Parcel } from '../types/database';
+import { Transaction, TransactionType, Parcel, Trip } from '../types/database';
 import { DailyFinancialReportModal } from './DailyFinancialReportModal';
 import { ParcelDetailModal } from './ParcelDetailModal';
 import { ParcelStickerModal } from './ParcelStickerModal';
@@ -38,7 +40,7 @@ import { BackupExportModal } from './BackupExportModal';
 import { getDormantParcels, openWhatsAppParcelNotification } from '../utils/logisticsFeatures';
 
 interface OwnerDashboardProps {
-  onOpenNewVoucher: () => void;
+  onOpenNewVoucher: (initialType?: TransactionType) => void;
   onOpenNewParcel: () => void;
   onOpenLedger: () => void;
   onOpenParcels: () => void;
@@ -74,14 +76,28 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     teamMembers,
     transactions,
     parcels,
+    trips,
     hideAmounts,
     addBalanceAdjustment,
     addStation,
     updateStation,
     addWorkerByOwner,
+    deleteTransaction,
+    deleteParcel,
+    deleteTrip,
+    executeCurrencyExchange,
+    convertCurrency,
     exchangeRate,
+    setExchangeRate,
     showToast,
   } = useApp();
+
+  const [showQuickExchange, setShowQuickExchange] = useState(false);
+  const [exFromCurr, setExFromCurr] = useState<'MAD' | 'MRU'>('MAD');
+  const [exAmountStr, setExAmountStr] = useState('1000');
+  const [exRateStr, setExRateStr] = useState(() => String(exchangeRate || 3.8));
+  const [exCustomerName, setExCustomerName] = useState('');
+  const [isExchanging, setIsExchanging] = useState(false);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -417,10 +433,31 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         parcel: p,
       }));
 
-    return [...filteredTx, ...filteredParcels].sort(
+    const filteredTrips = trips
+      .filter(
+        (tr) =>
+          selectedStationFilter === 'all' ||
+          tr.origin_station_id === selectedStationFilter ||
+          tr.destination_station_id === selectedStationFilter
+      )
+      .map((tr) => ({
+        id: `tr-${tr.id}`,
+        kind: 'trip' as const,
+        created_at: tr.created_at,
+        title: `رحلة ${tr.trip_code} — الشيفور: ${tr.driver_name} (${tr.vehicle_plate})`,
+        subtitle: `${tr.origin_station_name || ''} ➔ ${tr.destination_station_name || ''} • ${
+          tr.loaded_parcel_ids?.length || 0
+        } كولي`,
+        amount: tr.loaded_parcel_ids?.length || 0,
+        currency: 'كولي',
+        isPositive: true,
+        trip: tr,
+      }));
+
+    return [...filteredTx, ...filteredParcels, ...filteredTrips].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }, [transactions, parcels, selectedStationFilter]);
+  }, [transactions, parcels, trips, selectedStationFilter]);
 
   // Today's Cash Flow Summary
   const todayCashStats = useMemo(() => {
@@ -1200,26 +1237,190 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           </div>
         </div>
 
-        {/* Primary 2 Action Buttons Always Visible */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* Primary Cashbox (+ / -), Remittance, Exchange & Parcel Buttons */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <button
             type="button"
-            onClick={onOpenNewVoucher}
-            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
+            onClick={() => onOpenNewVoucher('cash_in')}
+            className="btn-gold flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
           >
-            <Coins className="w-3.5 h-3.5" />
-            <span>سند مالي (قبض / صرف)</span>
+            <span className="text-sm font-black leading-none">+</span>
+            <span>زيادة فلاكيس</span>
           </button>
 
           <button
             type="button"
-            onClick={onOpenNewParcel}
-            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
+            onClick={() => onOpenNewVoucher('cash_out')}
+            className="btn-delete flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
           >
-            <Package className="w-3.5 h-3.5" />
-            <span>إرسالية جديدة</span>
+            <span className="text-sm font-black leading-none">−</span>
+            <span>سحب من لاكيس</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowMoneyTransferModal(true)}
+            className="btn-cancel flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl text-xs font-black border border-[#F5C84C]/45 text-[#F5C84C] transition active:scale-95 cursor-pointer"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+            <span>إرسال/استقبال حوالة</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setExRateStr(String(exchangeRate || 3.8));
+              setShowQuickExchange(prev => !prev);
+            }}
+            className={`flex items-center justify-center gap-1 py-2 px-2.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer ${
+              showQuickExchange ? 'btn-gold' : 'btn-cancel'
+            }`}
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 text-[#2ECC71] shrink-0" />
+            <span>صرف العملة 💱</span>
           </button>
         </div>
+
+        {/* Quick Inline Currency Exchange Panel (درهم ⇄ أوقية) */}
+        {showQuickExchange && (
+          <div className="p-3 rounded-2xl bg-black/65 border border-[#F5C84C]/55 space-y-2.5 animate-fadeIn text-xs">
+            <div className="flex items-center justify-between border-b border-white/15 pb-1.5">
+              <span className="font-black text-[#F5C84C] flex items-center gap-1.5">
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                <span>صرف العملة فلاكيس (بين الدرهم MAD والأوقية MRU)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowQuickExchange(false)}
+                className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-bold"
+              >
+                إغلاق ▲
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setExFromCurr('MAD')}
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-black transition ${
+                  exFromCurr === 'MAD' ? 'btn-gold' : 'btn-cancel'
+                }`}
+              >
+                🇲🇦 درهم ➔ 🇲🇷 أوقية (+MAD / -MRU)
+              </button>
+              <button
+                type="button"
+                onClick={() => setExFromCurr('MRU')}
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-black transition ${
+                  exFromCurr === 'MRU' ? 'btn-gold' : 'btn-cancel'
+                }`}
+              >
+                🇲🇷 أوقية ➔ 🇲🇦 درهم (+MRU / -MAD)
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-emerald-950/35 p-2 rounded-xl border border-emerald-500/40">
+                <label className="block text-[10px] text-emerald-300 font-bold mb-1">
+                  + المستلم فلاكيس ({exFromCurr}):
+                </label>
+                <input
+                  type="number"
+                  value={exAmountStr}
+                  onChange={e => setExAmountStr(e.target.value)}
+                  className="w-full bg-black/70 border border-emerald-500/40 rounded-lg px-2 py-1 text-white font-mono font-black text-xs"
+                />
+              </div>
+
+              <div className="bg-rose-950/35 p-2 rounded-xl border border-rose-500/40 flex flex-col justify-between">
+                <span className="text-[10px] text-rose-300 font-bold block">
+                  − المسلّم للزبون ({exFromCurr === 'MAD' ? 'MRU' : 'MAD'}):
+                </span>
+                <span className="font-mono font-black text-sm text-[#F5C84C]" dir="ltr">
+                  {convertCurrency(
+                    parseFloat(exAmountStr) || 0,
+                    exFromCurr,
+                    exFromCurr === 'MAD' ? 'MRU' : 'MAD'
+                  )}{' '}
+                  {exFromCurr === 'MAD' ? 'MRU' : 'MAD'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 items-center">
+              <div className="flex items-center gap-1 bg-black/60 p-1.5 rounded-xl border border-white/15">
+                <span className="text-[10px] text-white/80 shrink-0">السعر:</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  dir="ltr"
+                  value={exRateStr}
+                  onChange={e => {
+                    setExRateStr(e.target.value);
+                    const n = parseFloat(e.target.value);
+                    if (!isNaN(n) && n > 0) setExchangeRate(n);
+                  }}
+                  className="w-full bg-black/80 border border-[#F5C84C]/50 rounded-lg px-2 py-1 text-center font-mono font-black text-white text-xs"
+                />
+              </div>
+              <input
+                type="text"
+                placeholder="اسم الزبون (اختياري)"
+                value={exCustomerName}
+                onChange={e => setExCustomerName(e.target.value)}
+                className="bg-black/60 border border-white/15 rounded-xl px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#F5C84C]"
+              />
+            </div>
+
+            <button
+              type="button"
+              disabled={isExchanging || stations.length === 0}
+              onClick={async () => {
+                const targetStId =
+                  (selectedStationFilter !== 'all' ? selectedStationFilter : selectedStationId) ||
+                  stations[0]?.id ||
+                  '';
+                const fromAmt = parseFloat(exAmountStr) || 0;
+                const toCurr = exFromCurr === 'MAD' ? 'MRU' : 'MAD';
+                const toAmt = convertCurrency(fromAmt, exFromCurr, toCurr);
+                if (!targetStId || fromAmt <= 0 || toAmt <= 0) {
+                  showToast('يرجى تحديد محطة وإدخال مبلغ صحيح للصرف', 'error');
+                  return;
+                }
+                setIsExchanging(true);
+                try {
+                  const res = await executeCurrencyExchange({
+                    stationId: targetStId,
+                    fromCurrency: exFromCurr,
+                    toCurrency: toCurr,
+                    fromAmount: fromAmt,
+                    toAmount: toAmt,
+                    rate: exchangeRate,
+                    customerName: exCustomerName,
+                  });
+                  if (res.success) {
+                    setExCustomerName('');
+                    setShowQuickExchange(false);
+                  }
+                } finally {
+                  setIsExchanging(false);
+                }
+              }}
+              className="btn-gold w-full py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>
+                {isExchanging
+                  ? 'جاري تسجيل الصرف...'
+                  : `تأكيد وتسجيل الصرف فلاكيس (+${parseFloat(exAmountStr) || 0} ${exFromCurr} / -${convertCurrency(
+                      parseFloat(exAmountStr) || 0,
+                      exFromCurr,
+                      exFromCurr === 'MAD' ? 'MRU' : 'MAD'
+                    )} ${exFromCurr === 'MAD' ? 'MRU' : 'MAD'})`}
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Collapsible Extra Treasury Details & Tools (تفتح بالسهم الصغير) */}
         {isTreasuryDetailsOpen && (
@@ -1373,15 +1574,49 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         setSelectedTxDetail(item.tx);
                       }
                     }}
-                    className="p-3 rounded-2xl bg-black/50 hover:bg-black/70 border border-white/15 flex items-center justify-between gap-2.5 cursor-pointer transition"
+                    className="p-3 rounded-2xl bg-black/50 hover:bg-black/70 border border-white/15 flex items-center justify-between gap-2 cursor-pointer transition"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-extrabold text-white truncate">{item.title}</p>
                       <p className="text-[10px] text-white/75 mt-0.5 truncate">{item.subtitle}</p>
                     </div>
-                    <span className="gold-pill px-2.5 py-1 text-xs font-mono shrink-0" dir="ltr">
-                      {hideAmounts ? '••••' : item.amount.toLocaleString()} {item.currency}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className={`px-2 py-0.5 rounded-lg text-xs font-mono font-black border ${
+                          item.kind === 'tx'
+                            ? item.isPositive
+                              ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40'
+                              : 'bg-rose-950/60 text-rose-300 border-rose-500/40'
+                            : 'gold-pill'
+                        }`}
+                        dir="ltr"
+                      >
+                        {hideAmounts
+                          ? '••••'
+                          : item.kind === 'tx'
+                          ? `${item.isPositive ? '+' : '-'}${item.amount.toLocaleString()}`
+                          : item.amount.toLocaleString()}{' '}
+                        {item.currency}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (item.kind === 'tx' && item.tx) {
+                            await deleteTransaction(item.tx.id);
+                          } else if (item.kind === 'parcel' && item.parcel) {
+                            await deleteParcel(item.parcel.id);
+                          } else if (item.kind === 'trip' && item.trip) {
+                            await deleteTrip(item.trip.id);
+                          }
+                        }}
+                        title="حذف هذه العملية من السجل والنظام (للمدير فقط)"
+                        className="btn-delete p-1.5 rounded-lg transition active:scale-95"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
 

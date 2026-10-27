@@ -291,6 +291,16 @@ export const firebaseSyncService = {
     }
   },
 
+  async deleteParcel(wsId: string, parcelId: string): Promise<void> {
+    if (!this.isAvailable() || !wsId || !parcelId) return;
+    const path = `workspaces/${wsId}/parcels/${parcelId}`;
+    try {
+      await deleteDoc(doc(db, 'workspaces', wsId, 'parcels', parcelId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
+  },
+
   // 4. TRANSACTIONS SYNC
   async syncTransaction(wsId: string, tx: Transaction): Promise<void> {
     if (!this.isAvailable() || !wsId || !tx?.id) return;
@@ -311,6 +321,16 @@ export const firebaseSyncService = {
     }
   },
 
+  async deleteTransaction(wsId: string, txId: string): Promise<void> {
+    if (!this.isAvailable() || !wsId || !txId) return;
+    const path = `workspaces/${wsId}/transactions/${txId}`;
+    try {
+      await deleteDoc(doc(db, 'workspaces', wsId, 'transactions', txId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
+  },
+
   // 5. TRIPS SYNC
   async syncTrip(wsId: string, trip: Trip): Promise<void> {
     if (!this.isAvailable() || !wsId || !trip?.id) return;
@@ -327,6 +347,31 @@ export const firebaseSyncService = {
       );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  async deleteTrip(wsId: string, tripId: string): Promise<void> {
+    if (!this.isAvailable() || !wsId || !tripId) return;
+    const path = `workspaces/${wsId}/trips/${tripId}`;
+    try {
+      await deleteDoc(doc(db, 'workspaces', wsId, 'trips', tripId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
+  },
+
+  async clearAllWorkspaceData(wsId: string): Promise<void> {
+    if (!this.isAvailable() || !wsId) return;
+    const subcollections = ['stations', 'parcels', 'transactions', 'trips'];
+    for (const sub of subcollections) {
+      const path = `workspaces/${wsId}/${sub}`;
+      try {
+        const snap = await getDocs(collection(db, 'workspaces', wsId, sub));
+        const deletions = snap.docs.map((d) => deleteDoc(d.ref));
+        await Promise.all(deletions);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, path);
+      }
     }
   },
 

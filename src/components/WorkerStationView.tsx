@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Parcel, Transaction } from '../types/database';
+import { Parcel, Transaction, TransactionType } from '../types/database';
 import { ParcelStickerModal } from './ParcelStickerModal';
 import { ParcelDetailModal } from './ParcelDetailModal';
 import { TransactionDetailModal } from './TransactionDetailModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
+import { MoneyTransferModal } from './MoneyTransferModal';
 import {
   Plus,
   Minus,
@@ -12,6 +13,7 @@ import {
   Clock,
   ArrowDownLeft,
   ArrowUpRight,
+  ArrowRightLeft,
   Package,
   ShieldCheck,
   Search,
@@ -21,10 +23,11 @@ import {
   MessageCircle,
   AlertTriangle,
   ChevronDown,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface WorkerStationViewProps {
-  onOpenNewVoucher: () => void;
+  onOpenNewVoucher: (initialType?: TransactionType) => void;
   onOpenNewParcel: () => void;
   onGoToParcels: () => void;
   onGoToCash: () => void;
@@ -46,6 +49,8 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     transactions,
     parcels,
     exchangeRate,
+    convertCurrency,
+    executeCurrencyExchange,
     hideAmounts,
     showToast,
   } = useApp();
@@ -53,6 +58,12 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   const [selectedCurrency, setSelectedCurrency] = useState<string>('MAD');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showScanner, setShowScanner] = useState<boolean>(false);
+  const [showMoneyTransferModal, setShowMoneyTransferModal] = useState<boolean>(false);
+  const [showWorkerExchange, setShowWorkerExchange] = useState<boolean>(false);
+  const [exFromCurr, setExFromCurr] = useState<'MAD' | 'MRU'>('MAD');
+  const [exAmountStr, setExAmountStr] = useState<string>('1000');
+  const [exCustomerName, setExCustomerName] = useState<string>('');
+  const [isExchanging, setIsExchanging] = useState<boolean>(false);
   const [activeBottomSheet, setActiveBottomSheet] = useState<'in' | 'out' | 'return' | null>(null);
   const [selectedParcelForReceipt, setSelectedParcelForReceipt] = useState<Parcel | null>(null);
   const [selectedParcelDetail, setSelectedParcelDetail] = useState<Parcel | null>(null);
@@ -271,12 +282,12 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
-            onClick={onOpenNewVoucher}
-            className="min-w-[52px] min-h-[52px] rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 active:scale-95"
-            title="إدخال مبلغ للصندوق (سند قبض)"
+            onClick={() => onOpenNewVoucher('cash_in')}
+            className="min-w-[58px] min-h-[54px] rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 active:scale-95"
+            title="زيادة فلوس فلاكيس (+ إيداع)"
           >
             <Plus className="w-5 h-5" />
-            <span className="text-[10px] font-extrabold">إدخال</span>
+            <span className="text-[10px] font-extrabold">+ زيادة</span>
           </button>
 
           <div
@@ -301,14 +312,157 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
 
           <button
             type="button"
-            onClick={onOpenNewVoucher}
-            className="min-w-[52px] min-h-[52px] rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 active:scale-95"
-            title="إخراج مبلغ من الصندوق (سند صرف)"
+            onClick={() => onOpenNewVoucher('cash_out')}
+            className="min-w-[58px] min-h-[54px] rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 active:scale-95"
+            title="سحب فلوس من لاكيس (- صرف)"
           >
             <Minus className="w-5 h-5" />
-            <span className="text-[10px] font-extrabold">إخراج</span>
+            <span className="text-[10px] font-extrabold">− سحب</span>
           </button>
         </div>
+
+        {/* Remittance (إرسال/استقبال حوالة) & Currency Exchange (صرف العملة) Buttons */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setShowMoneyTransferModal(true)}
+            className="btn-gold py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+            <span>إرسال / استقبال حوالة</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowWorkerExchange(prev => !prev)}
+            className={`py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95 ${
+              showWorkerExchange ? 'btn-gold' : 'btn-cancel'
+            }`}
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 text-[#2ECC71] shrink-0" />
+            <span>صرف العملة (MAD ⇄ MRU)</span>
+          </button>
+        </div>
+
+        {/* Active Currency Exchange Panel for Worker */}
+        {showWorkerExchange && (
+          <div className="p-3 rounded-2xl bg-black/65 border border-[#F5C84C]/55 space-y-2.5 animate-fadeIn text-xs">
+            <div className="flex items-center justify-between border-b border-white/15 pb-1.5">
+              <span className="font-black text-[#F5C84C]">
+                💱 صرف العملة فلاكيس (درهم ⇄ أوقية)
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowWorkerExchange(false)}
+                className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-bold"
+              >
+                إغلاق ▲
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setExFromCurr('MAD')}
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-black transition ${
+                  exFromCurr === 'MAD' ? 'btn-gold' : 'btn-cancel'
+                }`}
+              >
+                🇲🇦 درهم ➔ 🇲🇷 أوقية (+MAD / -MRU)
+              </button>
+              <button
+                type="button"
+                onClick={() => setExFromCurr('MRU')}
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-black transition ${
+                  exFromCurr === 'MRU' ? 'btn-gold' : 'btn-cancel'
+                }`}
+              >
+                🇲🇷 أوقية ➔ 🇲🇦 درهم (+MRU / -MAD)
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-emerald-950/35 p-2 rounded-xl border border-emerald-500/40">
+                <label className="block text-[10px] text-emerald-300 font-bold mb-1">
+                  + المستلم فلاكيس ({exFromCurr}):
+                </label>
+                <input
+                  type="number"
+                  value={exAmountStr}
+                  onChange={e => setExAmountStr(e.target.value)}
+                  className="w-full bg-black/70 border border-emerald-500/40 rounded-lg px-2 py-1 text-white font-mono font-black text-xs"
+                />
+              </div>
+
+              <div className="bg-rose-950/35 p-2 rounded-xl border border-rose-500/40 flex flex-col justify-between">
+                <span className="text-[10px] text-rose-300 font-bold block">
+                  − المسلّم للزبون ({exFromCurr === 'MAD' ? 'MRU' : 'MAD'}):
+                </span>
+                <span className="font-mono font-black text-sm text-[#F5C84C]" dir="ltr">
+                  {convertCurrency(
+                    parseFloat(exAmountStr) || 0,
+                    exFromCurr,
+                    exFromCurr === 'MAD' ? 'MRU' : 'MAD'
+                  )}{' '}
+                  {exFromCurr === 'MAD' ? 'MRU' : 'MAD'}
+                </span>
+              </div>
+            </div>
+
+            <input
+              type="text"
+              placeholder="اسم الزبون (اختياري)..."
+              value={exCustomerName}
+              onChange={e => setExCustomerName(e.target.value)}
+              className="w-full bg-black/60 border border-white/15 rounded-xl px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#F5C84C]"
+            />
+
+            <button
+              type="button"
+              disabled={isExchanging || !currentStation}
+              onClick={async () => {
+                if (!currentStation) return;
+                const fromAmt = parseFloat(exAmountStr) || 0;
+                const toCurr = exFromCurr === 'MAD' ? 'MRU' : 'MAD';
+                const toAmt = convertCurrency(fromAmt, exFromCurr, toCurr);
+                if (fromAmt <= 0 || toAmt <= 0) {
+                  showToast('يرجى إدخال مبلغ صحيح للصرف', 'error');
+                  return;
+                }
+                setIsExchanging(true);
+                try {
+                  const res = await executeCurrencyExchange({
+                    stationId: currentStation.id,
+                    fromCurrency: exFromCurr,
+                    toCurrency: toCurr,
+                    fromAmount: fromAmt,
+                    toAmount: toAmt,
+                    rate: exchangeRate,
+                    customerName: exCustomerName,
+                  });
+                  if (res.success) {
+                    setExCustomerName('');
+                    setShowWorkerExchange(false);
+                  }
+                } finally {
+                  setIsExchanging(false);
+                }
+              }}
+              className="btn-gold w-full py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>
+                {isExchanging
+                  ? 'جاري تسجيل الصرف...'
+                  : `تأكيد الصرف فلاكيس (+${parseFloat(exAmountStr) || 0} ${exFromCurr} / -${convertCurrency(
+                      parseFloat(exAmountStr) || 0,
+                      exFromCurr,
+                      exFromCurr === 'MAD' ? 'MRU' : 'MAD'
+                    )} ${exFromCurr === 'MAD' ? 'MRU' : 'MAD'})`}
+              </span>
+            </button>
+          </div>
+        )}
 
         <div className="flex items-center justify-between text-[11px] text-white/80 pt-2 border-t border-white/15 flex-wrap gap-2">
           <span>سعر الصرف المرجعي: 1 درهم = {exchangeRate} أوقية</span>
@@ -689,6 +843,12 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         isOpen={!!selectedTxDetail}
         transaction={selectedTxDetail}
         onClose={() => setSelectedTxDetail(null)}
+      />
+
+      {/* MONEY TRANSFER / HAWALA MODAL */}
+      <MoneyTransferModal
+        isOpen={showMoneyTransferModal}
+        onClose={() => setShowMoneyTransferModal(false)}
       />
     </div>
   );

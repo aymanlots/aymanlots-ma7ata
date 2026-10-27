@@ -21,9 +21,14 @@ import {
 interface NewVoucherModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialType?: TransactionType;
 }
 
-export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({ isOpen, onClose }) => {
+export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
+  isOpen,
+  onClose,
+  initialType = 'cash_in',
+}) => {
   const { 
     stations, 
     selectedStationId, 
@@ -33,7 +38,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({ isOpen, onClos
   } = useApp();
 
   const [stationId, setStationId] = useState<string>(selectedStationId || stations[0]?.id || '');
-  const [type, setType] = useState<TransactionType>('goods_payment');
+  const [type, setType] = useState<TransactionType>(initialType);
   const [amountStr, setAmountStr] = useState<string>('');
   const [currency, setCurrency] = useState<string>(currencies[0]?.code || 'MAD');
   const [phoneNumber, setPhoneNumber] = useState<string>('');
@@ -52,6 +57,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({ isOpen, onClos
 
   useEffect(() => {
     if (!isOpen) return;
+    setType(initialType);
     const defaultStId = selectedStationId || stations[0]?.id || '';
     const targetStId = stations.some(s => s.id === stationId) ? stationId : defaultStId;
     if (targetStId && targetStId !== stationId) {
@@ -61,7 +67,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({ isOpen, onClos
     if (st) {
       setCurrency(st.currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
     }
-  }, [isOpen, stations, selectedStationId]);
+  }, [isOpen, initialType, stations, selectedStationId]);
 
   useEffect(() => {
     const st = stations.find(s => s.id === stationId);
@@ -110,11 +116,6 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({ isOpen, onClos
       return;
     }
 
-    if (type === 'cash_out' && (!phoneNumber || phoneNumber.trim().length < 6)) {
-      setErrorMessage('رقم هاتف المستلم إلزامي في حالة التسليم النقدي');
-      return;
-    }
-
     if (!stationId) {
       setErrorMessage('يرجى تحديد المحطة');
       return;
@@ -128,13 +129,20 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({ isOpen, onClos
     setErrorMessage(null);
 
     try {
+      const defaultReason =
+        type === 'cash_in'
+          ? 'إيداع وزيادة فلوس فلاكيس (+)'
+          : type === 'cash_out'
+          ? 'سحب وصرف فلوس من لاكيس (-)'
+          : 'سداد بضاعة وتخليص (-)';
+
       const result = await createTransaction({
         station_id: stationId,
         type,
         amount: numAmount,
         currency,
         phone_number: phoneNumber,
-        reason,
+        reason: reason.trim() || defaultReason,
         photo_url: photoDataUrl || undefined,
         note,
       });
@@ -183,11 +191,21 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({ isOpen, onClos
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#D4AF37]/25 bg-black/55">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-r from-[#F5B05B] to-[#D4882A] text-[#1a0f00] flex items-center justify-center font-black">
-              +
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-base ${
+              type === 'cash_in'
+                ? 'bg-emerald-500 text-black'
+                : 'bg-rose-500 text-white'
+            }`}>
+              {type === 'cash_in' ? '+' : '-'}
             </div>
             <div>
-              <h2 className="text-sm font-black text-[#F5D799]">تسجيل إيصال جديد</h2>
+              <h2 className="text-sm font-black text-[#F5D799]">
+                {type === 'cash_in'
+                  ? '+ زيادة فلوس فلاكيس (إيداع)'
+                  : type === 'cash_out'
+                  ? '- سحب فلوس من لاكيس (صرف)'
+                  : '- سداد بضاعة من لاكيس'}
+              </h2>
               <p className="text-[10px] text-[#C8B08A]">
                 {currentStation?.name || 'محطة الإرساليات'}
               </p>
@@ -228,38 +246,12 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({ isOpen, onClos
             </div>
           )}
 
-          {/* 1. Operation Type: 3 Large Tactile Buttons */}
+          {/* 1. Operation Type: 3 Large Tactile Buttons with clear + and - */}
           <div>
-            <label className="block text-xs font-bold text-[#F5D799] mb-2">نوع العملية</label>
+            <label className="block text-xs font-bold text-[#F5D799] mb-2">اختر نوع العملية فلاكيس (+ أو -):</label>
             <div className="grid grid-cols-3 gap-2">
               
-              {/* Type 1: goods_payment */}
-              <button
-                type="button"
-                onClick={() => setType('goods_payment')}
-                className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition active:scale-95 ${
-                  type === 'goods_payment' ? 'btn-gold' : 'btn-cancel'
-                }`}
-              >
-                <Package className="w-5 h-5 mb-1" />
-                <span className="text-[11px] font-black">سداد بضاعة</span>
-                <span className="text-[9px] mt-0.5 opacity-80">شراء وتخليص</span>
-              </button>
-
-              {/* Type 2: cash_out */}
-              <button
-                type="button"
-                onClick={() => setType('cash_out')}
-                className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition active:scale-95 ${
-                  type === 'cash_out' ? 'btn-delete' : 'btn-cancel'
-                }`}
-              >
-                <ArrowUpRight className="w-5 h-5 mb-1" />
-                <span className="text-[11px] font-black">تسليم نقدي</span>
-                <span className="text-[9px] mt-0.5 opacity-80">صرف مبالغ</span>
-              </button>
-
-              {/* Type 3: cash_in */}
+              {/* Type 1: cash_in (+) */}
               <button
                 type="button"
                 onClick={() => setType('cash_in')}
@@ -267,9 +259,35 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({ isOpen, onClos
                   type === 'cash_in' ? 'btn-gold' : 'btn-cancel'
                 }`}
               >
-                <ArrowDownLeft className="w-5 h-5 mb-1" />
-                <span className="text-[11px] font-black">إيداع نقدي</span>
-                <span className="text-[9px] mt-0.5 opacity-80">تغذية الصندوق</span>
+                <span className="text-base font-black leading-none mb-0.5 text-emerald-400">+</span>
+                <span className="text-[11px] font-black">زيادة فلاكيس</span>
+                <span className="text-[9px] mt-0.5 opacity-80">إيداع / قبض (+)</span>
+              </button>
+
+              {/* Type 2: cash_out (-) */}
+              <button
+                type="button"
+                onClick={() => setType('cash_out')}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition active:scale-95 ${
+                  type === 'cash_out' ? 'btn-delete' : 'btn-cancel'
+                }`}
+              >
+                <span className="text-base font-black leading-none mb-0.5 text-rose-400">−</span>
+                <span className="text-[11px] font-black">سحب من لاكيس</span>
+                <span className="text-[9px] mt-0.5 opacity-80">صرف / تسليم (-)</span>
+              </button>
+
+              {/* Type 3: goods_payment (-) */}
+              <button
+                type="button"
+                onClick={() => setType('goods_payment')}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-2xl transition active:scale-95 ${
+                  type === 'goods_payment' ? 'btn-gold' : 'btn-cancel'
+                }`}
+              >
+                <Package className="w-4 h-4 mb-0.5" />
+                <span className="text-[11px] font-black">سداد بضاعة</span>
+                <span className="text-[9px] mt-0.5 opacity-80">شراء وتخليص (-)</span>
               </button>
 
             </div>

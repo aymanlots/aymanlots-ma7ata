@@ -34,7 +34,8 @@ import {
   FileText,
   ChevronDown,
   SlidersHorizontal,
-  BarChart3
+  BarChart3,
+  Trash2
 } from 'lucide-react';
 
 interface ParcelsViewProps {
@@ -57,8 +58,16 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     userRole,
     userAssignedStationId,
     hideAmounts,
+    deleteParcel,
+    deleteTrip,
     showToast 
   } = useApp();
+
+  const [itemToDelete, setItemToDelete] = useState<{
+    type: 'parcel' | 'trip';
+    id: string;
+    label: string;
+  } | null>(null);
 
   // Navigation Tabs within Parcels Module
   const [activeTab, setActiveTab] = useState<'parcels' | 'trips' | 'incoming' | 'overview'>('parcels');
@@ -1003,6 +1012,24 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                               <Eye className="w-3.5 h-3.5" />
                               <span>التفاصيل والتتبع</span>
                             </button>
+
+                            {(userRole === 'owner' || userRole === 'platform_owner') && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setItemToDelete({
+                                    type: 'parcel',
+                                    id: parcel.id,
+                                    label: `${parcel.tracking_code} (${parcel.sender_name} ➔ ${parcel.receiver_name})`,
+                                  })
+                                }
+                                className="btn-delete flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-black text-[11px] transition"
+                                title="حذف الكولي نهائياً (للمدير فقط)"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>حذف الكولي</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1183,6 +1210,23 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                             <FileText className="w-3.5 h-3.5" />
                             <span>طباعة ورقة الطريق الرسمية والجمارك (Manifeste PDF)</span>
                           </button>
+
+                          {(userRole === 'owner' || userRole === 'platform_owner') && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setItemToDelete({
+                                  type: 'trip',
+                                  id: trip.id,
+                                  label: `${trip.trip_code} (${trip.driver_name} — ${trip.vehicle_plate})`,
+                                })
+                              }
+                              className="btn-delete w-full py-2 rounded-xl font-black text-[11px] flex items-center justify-center gap-1.5 transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>حذف الرحلة نهائياً (للمدير فقط)</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -1361,6 +1405,53 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
         onClose={() => setDetailParcel(null)}
         onOpenTicket={(p) => setTicketParcel(p)}
       />
+
+      {/* Owner Delete Confirmation Modal for Parcel or Trip */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 animate-fadeIn">
+          <div className="w-full max-w-[360px] rounded-[24px] luxury-card p-5 shadow-2xl text-right space-y-3.5 border border-rose-500/40">
+            <div className="flex items-center gap-2.5 text-rose-400">
+              <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-black text-white">
+                {itemToDelete.type === 'parcel' ? 'تأكيد حذف الكولي نهائياً' : 'تأكيد حذف الرحلة نهائياً'}
+              </h3>
+            </div>
+            <p className="text-xs text-white/85 leading-relaxed">
+              هل أنت متأكد من رغبتك في حذف{' '}
+              <strong className="text-[#F5C84C]" dir="ltr">
+                [{itemToDelete.label}]
+              </strong>{' '}
+              نهائياً من النظام؟
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/15">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                className="btn-cancel px-4 py-2 rounded-xl text-xs font-bold"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (itemToDelete.type === 'parcel') {
+                    await deleteParcel(itemToDelete.id);
+                  } else {
+                    await deleteTrip(itemToDelete.id);
+                  }
+                  setItemToDelete(null);
+                }}
+                className="btn-delete px-5 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>تأكيد الحذف النهائي</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

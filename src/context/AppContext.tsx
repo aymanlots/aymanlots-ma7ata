@@ -202,6 +202,20 @@ interface AppContextType {
   }) => Promise<{ success: boolean; error?: string; transaction?: Transaction }>;
   updateTransaction: (id: string, updates: Partial<Transaction>, editReason?: string) => Promise<{ success: boolean; error?: string }>;
   cancelTransaction: (id: string, reason: string) => Promise<{ success: boolean; error?: string }>;
+  deleteTransaction: (id: string) => Promise<{ success: boolean; error?: string }>;
+  deleteAuditLog: (id: string) => void;
+  clearAuditLogs: () => void;
+  executeCurrencyExchange: (params: {
+    stationId: string;
+    fromCurrency: 'MAD' | 'MRU';
+    toCurrency: 'MAD' | 'MRU';
+    fromAmount: number;
+    toAmount: number;
+    rate: number;
+    customerName?: string;
+    customerPhone?: string;
+    note?: string;
+  }) => Promise<{ success: boolean; error?: string }>;
   
   // Parcels Module (Strictly 0 Initial Fake Data)
   parcels: Parcel[];
@@ -242,6 +256,7 @@ interface AppContextType {
     note?: string
   ) => Promise<{ success: boolean; error?: string }>;
   updateParcel: (id: string, updates: Partial<Parcel>) => Promise<{ success: boolean; error?: string }>;
+  deleteParcel: (id: string) => Promise<{ success: boolean; error?: string }>;
   initiateParcelReturn: (
     parcelId: string,
     data: { returnReason: string; returnNotes?: string; returnFee?: number }
@@ -257,6 +272,9 @@ interface AppContextType {
   trips: Trip[];
   rememberedDrivers: RememberedDriver[];
   rememberedPlates: RememberedVehicle[];
+  removeRememberedDriver: (name: string) => void;
+  removeRememberedPlate: (plate: string) => void;
+  deleteTrip: (tripId: string) => Promise<{ success: boolean; error?: string }>;
   createTrip: (params: {
     driverName: string;
     driverPhone?: string;
@@ -2506,48 +2524,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true };
   };
 
-  // Check if any demo records exist
+  // Check if any data records exist in workspace
   const hasDemoData = useMemo(() => {
     return (
-      stations.some(s => s.is_demo) ||
-      workspaceMembers.some(m => m.is_demo) ||
-      stationWorkers.some(sw => sw.is_demo) ||
-      allParcels.some(p => p.is_demo) ||
-      allTrips.some(t => t.is_demo) ||
-      allTransactions.some(tx => tx.is_demo)
+      stations.length > 0 ||
+      allParcels.length > 0 ||
+      allTrips.length > 0 ||
+      allTransactions.length > 0 ||
+      auditLogs.length > 0 ||
+      rememberedDrivers.length > 0 ||
+      rememberedPlates.length > 0
     );
-  }, [stations, workspaceMembers, stationWorkers, allParcels, allTrips, allTransactions]);
+  }, [stations, allParcels, allTrips, allTransactions, auditLogs, rememberedDrivers, rememberedPlates]);
 
-  // Delete ONLY demo records (is_demo === true) and nothing else
+  // مسح البيانات بالكامل وإرجاع التطبيق جديداً (صفر بيانات)
   const deleteDemoData = () => {
-    if (currentWorkspace) {
-      localStorage.setItem(`ittihadiya_demo_deleted_${currentWorkspace.id}`, 'true');
+    const wsId = currentWorkspace?.id;
+    if (wsId) {
+      localStorage.setItem(`ittihadiya_demo_deleted_${wsId}`, 'true');
+      localStorage.removeItem(`alittihadia_user_created_station_${wsId}`);
+      if (firebaseSyncService.isAvailable()) {
+        firebaseSyncService.clearAllWorkspaceData(wsId).catch(err => {
+          console.warn('Firebase clear workspace error:', err);
+        });
+      }
     }
-    setStations(prev => {
-      const remaining = prev.filter(s => !s.is_demo);
-      setSelectedStationId(remaining[0]?.id || null);
-      return remaining;
-    });
-    setWorkspaceMembers(prev => prev.filter(m => !m.is_demo));
-    setStationWorkers(prev => prev.filter(sw => !sw.is_demo));
-    setAllParcels(prev => prev.filter(p => !p.is_demo));
-    setAllTrips(prev => prev.filter(t => !t.is_demo));
-    setAllTransactions(prev => prev.filter(tx => !tx.is_demo));
-    setAuditLogs(prev => prev.filter(a => !a.is_demo));
-    showToast('تم حذف جميع البيانات التجريبية بنجاح وأصبح التطبيق فارغاً تماماً', 'success');
+    setStations([]);
+    setSelectedStationId(null);
+    setWorkspaceMembers(prev => prev.filter(m => !m.is_demo && m.role === 'admin'));
+    setStationWorkers([]);
+    setAllParcels([]);
+    setAllTrips([]);
+    setAllTransactions([]);
+    setAuditLogs([]);
+    tripService.clearRememberedDriversAndPlates();
+    setRememberedDrivers([]);
+    setRememberedPlates([]);
+    localStorage.removeItem('aman_stations');
+    localStorage.removeItem('aman_transactions');
+    localStorage.removeItem('ittihadiya_parcels');
+    localStorage.removeItem('aman_audit_logs');
+    localStorage.removeItem('alittihadia_hawala_transfers_v1');
+    storageService.remove('TRIPS');
+    storageService.remove('PARCELS');
+    storageService.remove('TRANSACTIONS');
+    showToast('تم مسح جميع البيانات وإرجاع التطبيق جديداً بنجاح', 'success');
   };
 
   // Reset Data to 0
   const resetAllDataToZero = () => {
-    setAllTransactions([]);
-    setAllParcels([]);
-    setAllTrips([]);
-    setAuditLogs([]);
-    localStorage.removeItem('aman_transactions');
-    localStorage.removeItem('ittihadiya_parcels');
-    storageService.remove('TRIPS');
-    localStorage.removeItem('aman_audit_logs');
-    showToast('تمت إعادة ضبط كافة الأرصدة والكوليات والرحلات إلى 0 بنجاح', 'info');
+    deleteDemoData();
   };
 
   // Add Worker by Owner (Creates real account via Edge Function when Supabase is connected, or generates one-time temp password locally)
@@ -2933,6 +2959,129 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     showToast('تم إلغاء السند وتحديث رصيد الصندوق وتوثيق السبب', 'info');
+    return { success: true };
+  };
+
+  // حذف سند مالي نهائياً (للمدير فقط)
+  const deleteTransaction = async (id: string): Promise<{ success: boolean; error?: string }> => {
+    if (userRole !== 'owner' && userRole !== 'platform_owner') {
+      const msg = 'صلاحية حذف السندات المالية للمدير المشرف فقط';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const targetTx = allTransactions.find(t => t.id === id);
+    if (!targetTx) return { success: false, error: 'السند غير موجود' };
+
+    const wsId = targetTx.workspace_id || currentWorkspace?.id || 'ws-default';
+    setAllTransactions(prev => prev.filter(t => t.id !== id));
+
+    const supabase = getSupabaseClient();
+    if (supabase && isSupabaseConfigured() && isValidUUID(id)) {
+      try {
+        await supabase.from('transactions').delete().eq('id', id);
+      } catch {}
+    }
+
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.deleteTransaction(wsId, id).catch(() => {});
+    }
+
+    showToast('تم حذف العملية المالية نهائياً من الصندوق والسجل', 'info');
+    return { success: true };
+  };
+
+  // حذف عملية من سجل العمليات (للمدير فقط)
+  const deleteAuditLog = (id: string) => {
+    if (userRole !== 'owner' && userRole !== 'platform_owner') {
+      showToast('صلاحية مسح سجل العمليات للمدير فقط', 'error');
+      return;
+    }
+    setAuditLogs(prev => prev.filter(a => a.id !== id));
+    showToast('تم مسح العملية من السجل بنجاح', 'info');
+  };
+
+  const clearAuditLogs = () => {
+    if (userRole !== 'owner' && userRole !== 'platform_owner') {
+      showToast('صلاحية مسح سجل العمليات للمدير فقط', 'error');
+      return;
+    }
+    setAuditLogs([]);
+    localStorage.removeItem('aman_audit_logs');
+    showToast('تم مسح سجل المراجعة بالكامل', 'info');
+  };
+
+  // تنفيذ عملية صرف العملة الفعلية في لاكيس المحطة (بين الدرهم MAD والأوقية MRU أو العكس)
+  const executeCurrencyExchange = async (params: {
+    stationId: string;
+    fromCurrency: 'MAD' | 'MRU';
+    toCurrency: 'MAD' | 'MRU';
+    fromAmount: number;
+    toAmount: number;
+    rate: number;
+    customerName?: string;
+    customerPhone?: string;
+    note?: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser) return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const cleanFrom = Math.round(Number(params.fromAmount) * 100) / 100;
+    const cleanTo = Math.round(Number(params.toAmount) * 100) / 100;
+    if (!params.stationId || cleanFrom <= 0 || cleanTo <= 0) {
+      return { success: false, error: 'يرجى تحديد المحطة وإدخال مبلغ صحيح للصرف' };
+    }
+    if (params.fromCurrency === params.toCurrency) {
+      return { success: false, error: 'يجب اختيار عملتين مختلفتين (درهم ⇄ أوقية)' };
+    }
+
+    const custLabel = params.customerName?.trim()
+      ? ` — الزبون: ${params.customerName.trim()}`
+      : '';
+    const extraNote = [
+      `سعر الصرف: 1 درهم = ${params.rate} أوقية`,
+      params.note?.trim() || '',
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+    // 1. إدخال المبلغ المستلم من الزبون إلى لاكيس المحطة (+)
+    const inRes = await createTransaction({
+      station_id: params.stationId,
+      type: 'cash_in',
+      amount: cleanFrom,
+      currency: params.fromCurrency,
+      phone_number: params.customerPhone?.trim() || '',
+      reason: `صرف عملة (+ إيداع فلاكيس): قبض ${cleanFrom} ${params.fromCurrency} مقابل تسليم ${cleanTo} ${params.toCurrency}${custLabel}`,
+      note: extraNote,
+    });
+
+    if (!inRes.success) {
+      return { success: false, error: inRes.error || 'تعذر تسجيل قبض العملة المستلمة' };
+    }
+
+    // 2. إخراج المبلغ المصروف للزبون من لاكيس المحطة (-)
+    const outRes = await createTransaction({
+      station_id: params.stationId,
+      type: 'cash_out',
+      amount: cleanTo,
+      currency: params.toCurrency,
+      phone_number: params.customerPhone?.trim() || '',
+      reason: `صرف عملة (- سحب من لاكيس): تسليم ${cleanTo} ${params.toCurrency} مقابل قبض ${cleanFrom} ${params.fromCurrency}${custLabel}`,
+      note: extraNote,
+    });
+
+    if (!outRes.success) {
+      return { success: false, error: outRes.error || 'تعذر تسجيل تسليم العملة للزبون' };
+    }
+
+    showToast(
+      `تمت عملية الصرف فلاكيس بنجاح: (+${cleanFrom} ${params.fromCurrency}) و (-${cleanTo} ${params.toCurrency})`,
+      'success'
+    );
     return { success: true };
   };
 
@@ -3960,6 +4109,82 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: res.success, error: res.error, trip: res.trip };
   };
 
+  // حذف كولي نهائياً (للمدير فقط)
+  const deleteParcel = async (id: string): Promise<{ success: boolean; error?: string }> => {
+    if (userRole !== 'owner' && userRole !== 'platform_owner') {
+      const msg = 'صلاحية حذف الكوليات للمدير المشرف فقط';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const targetParcel = allParcels.find(p => p.id === id);
+    if (!targetParcel) return { success: false, error: 'الكولي غير موجود' };
+
+    const wsId = targetParcel.workspace_id || currentWorkspace?.id || 'ws-default';
+    setAllParcels(prev => prev.filter(p => p.id !== id));
+
+    const supabase = getSupabaseClient();
+    if (supabase && isSupabaseConfigured() && isValidUUID(id)) {
+      try {
+        await supabase.from('parcels').delete().eq('id', id);
+      } catch {}
+    }
+
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.deleteParcel(wsId, id).catch(() => {});
+    }
+
+    showToast(`تم حذف الكولي [${targetParcel.tracking_code}] نهائياً`, 'info');
+    return { success: true };
+  };
+
+  // حذف رحلة نهائياً (للمدير فقط)
+  const deleteTrip = async (tripId: string): Promise<{ success: boolean; error?: string }> => {
+    if (userRole !== 'owner' && userRole !== 'platform_owner') {
+      const msg = 'صلاحية حذف الرحلات للمدير المشرف فقط';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const targetTrip = allTrips.find(t => t.id === tripId);
+    if (!targetTrip) return { success: false, error: 'الرحلة غير موجودة' };
+
+    const wsId = targetTrip.workspace_id || currentWorkspace?.id || 'ws-default';
+    setAllTrips(prev => {
+      const next = prev.filter(t => t.id !== tripId);
+      storageService.set('TRIPS', next);
+      return next;
+    });
+
+    const supabase = getSupabaseClient();
+    if (supabase && isSupabaseConfigured() && isValidUUID(tripId)) {
+      try {
+        await supabase.from('trips').delete().eq('id', tripId);
+      } catch {}
+    }
+
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.deleteTrip(wsId, tripId).catch(() => {});
+    }
+
+    showToast(`تم حذف الرحلة [${targetTrip.trip_code}] نهائياً`, 'info');
+    return { success: true };
+  };
+
+  const removeRememberedDriver = (name: string) => {
+    const next = tripService.removeRememberedDriver(name);
+    setRememberedDrivers(next);
+  };
+
+  const removeRememberedPlate = (plate: string) => {
+    const next = tripService.removeRememberedPlate(plate);
+    setRememberedPlates(next);
+  };
+
   const addBalanceAdjustment = async (stationId: string, currency: string, amount: number, note: string) => {
     if (userRole !== 'owner') return { success: false, error: 'غير مصرح' };
     const st = stations.find(s => s.id === stationId);
@@ -4980,11 +5205,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         createTransaction,
         updateTransaction,
         cancelTransaction,
+        deleteTransaction,
+        deleteAuditLog,
+        clearAuditLogs,
+        executeCurrencyExchange,
         parcels,
         createParcel,
         updateParcelStatus,
         recordParcelPayment,
         updateParcel,
+        deleteParcel,
         initiateParcelReturn,
         handoverReturnedParcelToSender,
         updateUnclaimedDaysThreshold,
@@ -4992,6 +5222,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         trips,
         rememberedDrivers,
         rememberedPlates,
+        removeRememberedDriver,
+        removeRememberedPlate,
+        deleteTrip,
         createTrip,
         updateTripExpenses,
         loadParcelToTrip,

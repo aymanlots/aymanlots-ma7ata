@@ -23,11 +23,13 @@ import {
   ChevronDown,
   Search,
   SlidersHorizontal,
-  Store
+  Store,
+  Trash2,
+  CheckCircle2
 } from 'lucide-react';
 
 interface LedgerViewProps {
-  onOpenNewVoucher: () => void;
+  onOpenNewVoucher: (initialType?: TransactionType) => void;
   onOpenCustomerAccounts?: () => void;
 }
 
@@ -42,7 +44,9 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
     hideAmounts,
     updateStation,
     updateTransaction, 
-    cancelTransaction, 
+    cancelTransaction,
+    deleteTransaction,
+    executeCurrencyExchange,
     exchangeRate,
     setExchangeRate,
     convertCurrency,
@@ -86,6 +90,10 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
   const [calcAmount, setCalcAmount] = useState('1000');
   const [calcFrom, setCalcFrom] = useState<'MAD' | 'MRU'>('MAD');
   const [manualRateStr, setManualRateStr] = useState<string>(() => String(exchangeRate || 3.8));
+  const [exchangeStationId, setExchangeStationId] = useState<string>(() => selectedStationId || stations[0]?.id || '');
+  const [exchangeCustomerName, setExchangeCustomerName] = useState<string>('');
+  const [exchangeCustomerPhone, setExchangeCustomerPhone] = useState<string>('');
+  const [isExecutingExchange, setIsExecutingExchange] = useState<boolean>(false);
 
   const [detailTx, setDetailTx] = useState<Transaction | null>(null);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -94,6 +102,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
   const [editPhone, setEditPhone] = useState<string>('');
   const [cancellingTx, setCancellingTx] = useState<Transaction | null>(null);
   const [cancelReason, setCancelReason] = useState<string>('');
+  const [deletingTx, setDeletingTx] = useState<Transaction | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
   // Active Station or Global Totals for Quick Balance Cards
@@ -317,38 +326,50 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
           </button>
         </div>
 
-        {/* Primary 3 Buttons Always Visible */}
-        <div className="grid grid-cols-3 gap-1.5">
+        {/* Primary Cashbox & Exchange & Remittance Buttons Always Visible */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
           <button
             type="button"
-            onClick={onOpenNewVoucher}
+            onClick={() => onOpenNewVoucher('cash_in')}
             className="btn-gold flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-[11px] font-black transition active:scale-95 cursor-pointer"
           >
-            <PlusCircle className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">سند جديد</span>
+            <span className="text-sm font-black leading-none">+</span>
+            <span className="truncate">زيادة فلوس فلاكيس</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onOpenNewVoucher('cash_out')}
+            className="btn-delete flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-[11px] font-black transition active:scale-95 cursor-pointer"
+          >
+            <span className="text-sm font-black leading-none">−</span>
+            <span className="truncate">سحب فلوس من لاكيس</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowMoneyTransferModal(true)}
+            className="btn-cancel flex items-center justify-center gap-1 px-2 py-2 rounded-xl text-[11px] font-black transition active:scale-95 cursor-pointer border border-[#F5C84C]/45 text-[#F5C84C]"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 text-[#F5C84C] shrink-0" />
+            <span className="truncate">إرسال / استقبال حوالة</span>
           </button>
 
           <button
             type="button"
             onClick={() => {
               setManualRateStr(String(exchangeRate || 3.8));
+              if (!exchangeStationId && stations[0]?.id) {
+                setExchangeStationId(selectedStationId || stations[0].id);
+              }
               setShowConverter(prev => !prev);
             }}
             className={`flex items-center justify-center gap-1 px-2 py-2 rounded-xl text-[11px] font-black transition active:scale-95 cursor-pointer ${
               showConverter ? 'btn-gold' : 'btn-cancel'
             }`}
           >
-            <ArrowRightLeft className="w-3.5 h-3.5 text-[#F5C84C] shrink-0" />
-            <span className="truncate">صرف العملة</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowDailyReport(true)}
-            className="btn-cancel flex items-center justify-center gap-1 px-2 py-2 rounded-xl text-[11px] font-black transition active:scale-95 cursor-pointer"
-          >
-            <Calendar className="w-3.5 h-3.5 text-[#F5C84C] shrink-0" />
-            <span className="truncate">التقرير اليومي</span>
+            <ArrowRightLeft className="w-3.5 h-3.5 text-[#2ECC71] shrink-0" />
+            <span className="truncate">صرف العملة (MAD ⇄ MRU)</span>
           </button>
         </div>
 
@@ -357,23 +378,20 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
           <div className="pt-2 border-t border-white/15 grid grid-cols-2 gap-2 animate-fadeIn">
             <button
               type="button"
-              onClick={() => setShowMoneyTransferModal(true)}
-              className="btn-gold flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
+              onClick={() => setShowDailyReport(true)}
+              className="btn-cancel flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
             >
-              <ArrowRightLeft className="w-3.5 h-3.5" />
-              <span>حوالة مالية / أمانة 💸</span>
+              <Calendar className="w-3.5 h-3.5 text-[#F5C84C]" />
+              <span>التقرير المالي اليومي</span>
             </button>
 
             <button
               type="button"
-              onClick={() => {
-                setManualRateStr(String(exchangeRate || 3.8));
-                setShowConverter(!showConverter);
-              }}
-              className="btn-cancel flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
+              onClick={() => setShowMoneyTransferModal(true)}
+              className="btn-gold flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
             >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-[#F5C84C]" />
-              <span>محوّل وسعر الصرف اليدوي</span>
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>إرسال / استقبال حوالة بين المحطات</span>
             </button>
 
             {onOpenCustomerAccounts && (
@@ -387,7 +405,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
               </button>
             )}
 
-            {userRole === 'owner' && (
+            {(userRole === 'owner' || userRole === 'platform_owner') && (
               <button
                 type="button"
                 onClick={exportToCSV}
@@ -401,13 +419,13 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
         )}
       </div>
 
-      {/* Live Currency Converter & Manual Rate Editor Widget */}
+      {/* Active Currency Exchange & Cashbox Recording Widget (صرف العملة الفعلي بين الدرهم والأوقية) */}
       {showConverter && (
-        <div className="luxury-card rounded-[20px] p-3.5 animate-fadeIn space-y-2.5 border border-[#F5C84C]/55">
+        <div className="luxury-card rounded-[20px] p-3.5 animate-fadeIn space-y-3 border border-[#F5C84C]/65">
           <div className="flex items-center justify-between border-b border-white/15 pb-2">
             <div className="flex items-center gap-1.5 text-xs font-black text-[#F5C84C]">
               <ArrowRightLeft className="w-4 h-4 text-[#F5C84C]" />
-              <span>صرف العملة وتعديل سعر الصرف يدوياً (درهم ⇄ أوقية)</span>
+              <span>عملية صرف العملة فلاكيس (درهم مغربي MAD ⇄ أوقية موريتانية MRU)</span>
             </div>
             <button
               type="button"
@@ -418,82 +436,184 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
             </button>
           </div>
 
-          {/* Manual Exchange Rate Input Row */}
-          <div className="bg-black/65 p-2.5 rounded-xl border border-[#F5C84C]/35 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-white">سعر الصرف اليدوي:</span>
-              <span className="text-[10px] font-mono text-[#E6C37A]" dir="ltr">
-                1 MAD =
-              </span>
+          {/* Direction Quick Toggle */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setCalcFrom('MAD')}
+              className={`py-2 px-2.5 rounded-xl text-[11px] font-black transition flex items-center justify-center gap-1.5 ${
+                calcFrom === 'MAD' ? 'btn-gold' : 'btn-cancel'
+              }`}
+            >
+              <span>🇲🇦 درهم ➔ 🇲🇷 أوقية</span>
+              <span className="text-[9px] opacity-85">(+MAD / -MRU)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalcFrom('MRU')}
+              className={`py-2 px-2.5 rounded-xl text-[11px] font-black transition flex items-center justify-center gap-1.5 ${
+                calcFrom === 'MRU' ? 'btn-gold' : 'btn-cancel'
+              }`}
+            >
+              <span>🇲🇷 أوقية ➔ 🇲🇦 درهم</span>
+              <span className="text-[9px] opacity-85">(+MRU / -MAD)</span>
+            </button>
+          </div>
+
+          {/* Station + Manual Exchange Rate Input Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div className="bg-black/65 p-2.5 rounded-xl border border-white/15">
+              <label className="block text-[10px] text-[#F5C84C] font-bold mb-1">
+                محطة تنفيذ عملية الصرف:
+              </label>
+              <select
+                value={exchangeStationId || currentStation?.id || ''}
+                onChange={e => setExchangeStationId(e.target.value)}
+                className="w-full bg-black/80 border border-white/20 rounded-lg px-2.5 py-1.5 text-white font-bold text-xs focus:outline-none focus:border-[#F5C84C]"
+              >
+                {stations.map(st => (
+                  <option key={st.id} value={st.id}>
+                    {st.name} ({st.city})
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="flex items-center gap-1.5 flex-1 max-w-[190px]">
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                dir="ltr"
-                value={manualRateStr}
-                onChange={e => {
-                  const val = e.target.value;
-                  setManualRateStr(val);
-                  const num = parseFloat(val);
-                  if (!isNaN(num) && num > 0) {
-                    setExchangeRate(num);
-                  }
-                }}
-                className="w-full bg-black/80 border border-[#F5C84C]/60 focus:border-[#F5C84C] rounded-lg px-2.5 py-1 text-center font-mono font-black text-white text-xs"
-              />
-              <span className="text-[10px] font-mono font-bold text-[#68E399] shrink-0">MRU</span>
-              <button
-                type="button"
-                onClick={() => {
-                  const num = parseFloat(manualRateStr);
-                  if (!isNaN(num) && num > 0) {
-                    setExchangeRate(num);
-                    showToast(`تم تثبيت سعر الصرف اليدوي: 1 درهم = ${num} أوقية`, 'success');
-                  } else {
-                    showToast('يرجى إدخال سعر صرف صحيح أكبر من 0', 'error');
-                  }
-                }}
-                className="btn-gold px-2.5 py-1 rounded-lg text-[10px] font-black shrink-0"
-              >
-                حفظ
-              </button>
+            <div className="bg-black/65 p-2.5 rounded-xl border border-[#F5C84C]/35 flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-bold text-white">سعر الصرف المعتمد:</span>
+                <span className="text-[10px] font-mono text-[#E6C37A]" dir="ltr">
+                  1 MAD = {exchangeRate} MRU
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  dir="ltr"
+                  value={manualRateStr}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setManualRateStr(val);
+                    const num = parseFloat(val);
+                    if (!isNaN(num) && num > 0) {
+                      setExchangeRate(num);
+                    }
+                  }}
+                  className="w-full bg-black/80 border border-[#F5C84C]/60 focus:border-[#F5C84C] rounded-lg px-2.5 py-1 text-center font-mono font-black text-white text-xs"
+                />
+                <span className="text-[10px] font-mono font-bold text-[#68E399] shrink-0">MRU</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const num = parseFloat(manualRateStr);
+                    if (!isNaN(num) && num > 0) {
+                      setExchangeRate(num);
+                      showToast(`تم تثبيت سعر الصرف: 1 درهم = ${num} أوقية`, 'success');
+                    } else {
+                      showToast('يرجى إدخال سعر صرف صحيح أكبر من 0', 'error');
+                    }
+                  }}
+                  className="btn-gold px-2.5 py-1 rounded-lg text-[10px] font-black shrink-0"
+                >
+                  حفظ
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Conversion Amount Calculator Row */}
-          <div className="grid grid-cols-3 gap-2 items-end text-xs">
-            <div>
-              <label className="text-[10px] text-white/80 block mb-1">المبلغ المراد صرفه:</label>
+          {/* Conversion Amount Calculator & Customer Info */}
+          <div className="grid grid-cols-2 gap-2 items-stretch text-xs">
+            <div className="bg-emerald-950/35 p-2.5 rounded-xl border border-emerald-500/40">
+              <label className="text-[10px] text-emerald-300 font-black block mb-1">
+                + المبلغ المستلم فلاكيس ({calcFrom}):
+              </label>
               <input
                 type="number"
                 value={calcAmount}
                 onChange={(e) => setCalcAmount(e.target.value)}
-                className="w-full bg-black/60 border border-white/20 rounded-xl px-2.5 py-1.5 text-white font-mono font-bold"
+                placeholder="أدخل المبلغ المستلم..."
+                className="w-full bg-black/70 border border-emerald-500/40 rounded-xl px-2.5 py-1.5 text-white font-mono font-black text-sm"
               />
             </div>
 
-            <div>
-              <label className="text-[10px] text-white/80 block mb-1">من العملة:</label>
-              <select
-                value={calcFrom}
-                onChange={(e) => setCalcFrom(e.target.value as 'MAD' | 'MRU')}
-                className="w-full bg-black/60 border border-white/20 rounded-xl px-2 py-1.5 text-white font-bold"
-              >
-                <option value="MAD">درهم (MAD)</option>
-                <option value="MRU">أوقية (MRU)</option>
-              </select>
-            </div>
-
-            <div className="bg-black/60 px-2.5 py-1.5 rounded-xl border border-[#2ECC71]/45 text-center">
-              <span className="text-[9px] text-white/75 block">الصافي بعد الصرف:</span>
-              <span className="text-xs font-black font-mono text-[#68E399]" dir="ltr">
-                {convertCurrency(parseFloat(calcAmount) || 0, calcFrom, calcFrom === 'MAD' ? 'MRU' : 'MAD')} {calcFrom === 'MAD' ? 'MRU' : 'MAD'}
+            <div className="bg-rose-950/35 p-2.5 rounded-xl border border-rose-500/40 flex flex-col justify-between">
+              <span className="text-[10px] text-rose-300 font-black block">
+                − المبلغ المسلّم للزبون ({calcFrom === 'MAD' ? 'MRU' : 'MAD'}):
+              </span>
+              <span className="text-sm font-black font-mono text-[#F5C84C] py-1" dir="ltr">
+                {convertCurrency(parseFloat(calcAmount) || 0, calcFrom, calcFrom === 'MAD' ? 'MRU' : 'MAD')}{' '}
+                {calcFrom === 'MAD' ? 'MRU' : 'MAD'}
               </span>
             </div>
           </div>
+
+          {/* Optional Customer Name & Phone */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <input
+              type="text"
+              placeholder="اسم الزبون (اختياري)..."
+              value={exchangeCustomerName}
+              onChange={e => setExchangeCustomerName(e.target.value)}
+              className="bg-black/60 border border-white/20 rounded-xl px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#F5C84C]"
+            />
+            <input
+              type="tel"
+              dir="ltr"
+              placeholder="هاتف الزبون (اختياري)..."
+              value={exchangeCustomerPhone}
+              onChange={e => setExchangeCustomerPhone(e.target.value)}
+              className="bg-black/60 border border-white/20 rounded-xl px-2.5 py-1.5 text-white font-mono text-xs focus:outline-none focus:border-[#F5C84C]"
+            />
+          </div>
+
+          {/* Execute Currency Exchange in Station Cashbox Button */}
+          <button
+            type="button"
+            disabled={isExecutingExchange || stations.length === 0}
+            onClick={async () => {
+              const targetStId = exchangeStationId || currentStation?.id || stations[0]?.id || '';
+              const fromAmt = parseFloat(calcAmount) || 0;
+              const toCurr = calcFrom === 'MAD' ? 'MRU' : 'MAD';
+              const toAmt = convertCurrency(fromAmt, calcFrom, toCurr);
+              if (fromAmt <= 0 || toAmt <= 0) {
+                showToast('يرجى إدخال مبلغ صحيح أكبر من 0 لتنفيذ عملية الصرف', 'error');
+                return;
+              }
+              setIsExecutingExchange(true);
+              try {
+                const res = await executeCurrencyExchange({
+                  stationId: targetStId,
+                  fromCurrency: calcFrom,
+                  toCurrency: toCurr,
+                  fromAmount: fromAmt,
+                  toAmount: toAmt,
+                  rate: exchangeRate,
+                  customerName: exchangeCustomerName,
+                  customerPhone: exchangeCustomerPhone,
+                });
+                if (res.success) {
+                  setExchangeCustomerName('');
+                  setExchangeCustomerPhone('');
+                }
+              } finally {
+                setIsExecutingExchange(false);
+              }
+            }}
+            className="btn-gold w-full py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition disabled:opacity-50"
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>
+              {isExecutingExchange
+                ? 'جاري تسجيل عملية الصرف فلاكيس...'
+                : `تأكيد وتسجيل الصرف فلاكيس (+${parseFloat(calcAmount) || 0} ${calcFrom} / -${convertCurrency(
+                    parseFloat(calcAmount) || 0,
+                    calcFrom,
+                    calcFrom === 'MAD' ? 'MRU' : 'MAD'
+                  )} ${calcFrom === 'MAD' ? 'MRU' : 'MAD'})`}
+            </span>
+          </button>
         </div>
       )}
 
@@ -902,23 +1022,36 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
                           </button>
                         )}
 
-                        {userRole === 'owner' && !isCancelled && (
+                        {(userRole === 'owner' || userRole === 'platform_owner') && (
                           <>
+                            {!isCancelled && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => startEdit(tx)}
+                                  className="btn-cancel p-1.5 rounded-lg transition"
+                                  title="تعديل السند"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setCancellingTx(tx)}
+                                  className="btn-cancel p-1.5 rounded-lg transition text-amber-300"
+                                  title="إلغاء السند مع بقائه في الأرشيف"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
                             <button
                               type="button"
-                              onClick={() => startEdit(tx)}
-                              className="btn-cancel p-1.5 rounded-lg transition"
-                              title="تعديل السند"
+                              onClick={() => setDeletingTx(tx)}
+                              className="btn-delete px-2 py-1 rounded-lg transition flex items-center gap-1 text-[10px] font-black"
+                              title="حذف السند نهائياً من النظام (للمدير فقط)"
                             >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setCancellingTx(tx)}
-                              className="btn-delete p-1.5 rounded-lg transition"
-                              title="إلغاء السند"
-                            >
-                              <Ban className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3 h-3" />
+                              <span>حذف</span>
                             </button>
                           </>
                         )}
@@ -1095,6 +1228,47 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
         isOpen={Boolean(detailTx)}
         onClose={() => setDetailTx(null)}
       />
+
+      {/* Owner Permanent Delete Transaction Modal */}
+      {deletingTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 animate-fadeIn">
+          <div className="w-full max-w-[360px] rounded-[24px] luxury-card p-5 shadow-2xl text-right space-y-3.5 border border-rose-500/40">
+            <div className="flex items-center gap-2.5 text-rose-400">
+              <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-black text-white">حذف السند المالي نهائياً</h3>
+            </div>
+            <p className="text-xs text-white/85 leading-relaxed">
+              هل أنت متأكد من حذف عملية{' '}
+              <strong className="text-[#F5C84C]">
+                [{deletingTx.reason || 'سند نقدي'} — {deletingTx.amount} {deletingTx.currency}]
+              </strong>{' '}
+              نهائياً من الصندوق وسجل العمليات؟
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/15">
+              <button
+                type="button"
+                onClick={() => setDeletingTx(null)}
+                className="btn-cancel px-4 py-2 rounded-xl text-xs font-bold"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await deleteTransaction(deletingTx.id);
+                  setDeletingTx(null);
+                }}
+                className="btn-delete px-5 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>تأكيد الحذف النهائي</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

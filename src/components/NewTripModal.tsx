@@ -32,6 +32,9 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
     createTrip, 
     rememberedDrivers, 
     rememberedPlates,
+    removeRememberedDriver,
+    removeRememberedPlate,
+    userRole,
     showToast 
   } = useApp();
 
@@ -94,7 +97,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       });
 
       if (res.success && res.trip) {
-        showToast(`تم إنشاء الرحلة [${res.trip.trip_code}] بنجاح، يمكنك الآن شحن الكوليات عليها`, 'success');
+        showToast(`تم إنشاء الرحلة [${res.trip.trip_code}] وحفظ الشيفور والماتريكيل بنجاح`, 'success');
         if (onTripCreated) onTripCreated(res.trip);
         onClose();
       } else {
@@ -122,7 +125,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
             <div>
               <h3 className="text-xs font-black text-white">إنشاء وتجهيز رحلة شحن جديدة</h3>
               <p className="text-[10px] text-[#D4AF37] font-medium">
-                {originSt?.city || 'الداخلة'} ➔ معبر الكركرات ➔ {destSt?.city || 'نواذيبو'}
+                {originSt?.name || originSt?.city || 'الانطلاق'} ➔ {destSt?.name || destSt?.city || 'الوصول'}
               </p>
             </div>
           </div>
@@ -191,22 +194,39 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 <User className="w-3.5 h-3.5 text-[#D4AF37]" />
                 <span>بيانات السائق (الشيفور):</span>
               </span>
-              <span className="text-[9px] text-[#C2A878]">اختيار سريع</span>
+              <span className="text-[9px] text-[#C2A878]">يُحفظ تلقائياً عند الإضافة</span>
             </div>
 
             {/* Quick Remembered Drivers Chips */}
             {rememberedDrivers && rememberedDrivers.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {rememberedDrivers.slice(0, 4).map((d, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => handleSelectDriver(d)}
-                    className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] transition active:scale-95 flex items-center gap-1"
-                  >
-                    <span>{d.name}</span>
-                  </button>
-                ))}
+              <div className="space-y-1">
+                <span className="text-[9px] text-[#D4AF37] block">الشيافر المسجلين عندك (اضغط للاختيار):</span>
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {rememberedDrivers.map((d, i) => (
+                    <div
+                      key={i}
+                      className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] flex items-center gap-1.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleSelectDriver(d)}
+                        className="font-bold text-white hover:text-[#F5D799] transition"
+                      >
+                        {d.name}
+                      </button>
+                      {(userRole === 'owner' || userRole === 'platform_owner') && (
+                        <button
+                          type="button"
+                          onClick={() => removeRememberedDriver(d.name)}
+                          title="حذف هذا الشيفور من القائمة"
+                          className="text-rose-400 hover:text-rose-300 font-black px-0.5"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -216,7 +236,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="مثال: محمد الأمين ولد فال"
+                  placeholder="أدخل اسم الشيفور (سيبقى محفوظاً عندك)"
                   value={driverName}
                   onChange={e => setDriverName(e.target.value)}
                   className="w-full bg-[#0d0700] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-bold text-xs focus:outline-none focus:border-[#F5D799]"
@@ -243,22 +263,39 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 <Truck className="w-3.5 h-3.5 text-[#D4AF37]" />
                 <span>ماتريكيل العربة (لوحة الترقيم):</span>
               </span>
-              <span className="text-[9px] text-[#C2A878]">عربة النقل الدولي</span>
+              <span className="text-[9px] text-[#C2A878]">يُحفظ تلقائياً عند الإضافة</span>
             </div>
 
             {/* Quick Remembered Plates Chips */}
             {rememberedPlates && rememberedPlates.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {rememberedPlates.slice(0, 4).map((p, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => handleSelectPlate(p)}
-                    className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-mono transition active:scale-95"
-                  >
-                    {p.plate}
-                  </button>
-                ))}
+              <div className="space-y-1">
+                <span className="text-[9px] text-[#D4AF37] block">الماتريكيلات المسجلة عندك (اضغط للاختيار):</span>
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {rememberedPlates.map((p, i) => (
+                    <div
+                      key={i}
+                      className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-mono flex items-center gap-1.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleSelectPlate(p)}
+                        className="font-bold text-white hover:text-[#F5D799] transition"
+                      >
+                        {p.plate}
+                      </button>
+                      {(userRole === 'owner' || userRole === 'platform_owner') && (
+                        <button
+                          type="button"
+                          onClick={() => removeRememberedPlate(p.plate)}
+                          title="حذف هذا الماتريكيل من القائمة"
+                          className="text-rose-400 hover:text-rose-300 font-black px-0.5"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -267,7 +304,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
               <input
                 type="text"
                 required
-                placeholder="مثال: 68-أ-1234 أو 1458-BK-00"
+                placeholder="أدخل ماتريكيل العربة (سيبقى محفوظاً عندك)"
                 value={vehiclePlate}
                 onChange={e => setVehiclePlate(e.target.value)}
                 className="w-full bg-[#0d0700] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#F5D799]"

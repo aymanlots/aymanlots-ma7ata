@@ -378,7 +378,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               activeTab === 'list' ? 'btn-gold' : 'btn-cancel'
             }`}
           >
-            سجل الحوالات ({transfers.length})
+            📥 استقبال وتسليم ({transfers.length})
           </button>
           <button
             type="button"
@@ -388,7 +388,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
             }`}
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>إرسال حوالة جديدة</span>
+            <span>📤 إرسال حوالة (+ فلاكيس)</span>
           </button>
         </div>
 

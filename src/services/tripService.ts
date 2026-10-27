@@ -892,15 +892,11 @@ export const tripService = {
     return { success: true, trip: updatedTrip, updatedTrips };
   },
 
-  // حفظ واسترجاع السائقين المحفوظين
+  // حفظ واسترجاع السائقين المحفوظين (بدون أي أسماء تجريبية مسبقة)
   rememberDriver(name: string, phone?: string, workspaceId?: string): void {
     if (!name.trim()) return;
     const now = new Date().toISOString();
-    const list = storageService.get<RememberedDriver[]>('DRIVERS', [
-      { name: 'محمد الأمين ولد فال', phone: '+22246123456', last_used: now },
-      { name: 'بوشعيب الصحراوي', phone: '+212661234567', last_used: now },
-      { name: 'سيدي عالي ولد احميتي', phone: '+22236987654', last_used: now }
-    ]);
+    const list = this.getRememberedDrivers();
     const filtered = list.filter(d => d.name.toLowerCase() !== name.trim().toLowerCase());
     const entry: RememberedDriver = {
       workspace_id: workspaceId,
@@ -908,7 +904,7 @@ export const tripService = {
       phone: phone?.trim(),
       last_used: now,
     };
-    const updated = [entry, ...filtered].slice(0, 15);
+    const updated = [entry, ...filtered].slice(0, 25);
     storageService.set('DRIVERS', updated);
 
     if (isSupabaseConfigured() && isValidUUID(workspaceId)) {
@@ -949,29 +945,41 @@ export const tripService = {
   },
 
   getRememberedDrivers(): RememberedDriver[] {
-    return storageService.get<RememberedDriver[]>('DRIVERS', [
-      { name: 'محمد الأمين ولد فال', phone: '+22246123456', last_used: new Date().toISOString() },
-      { name: 'بوشعيب الصحراوي', phone: '+212661234567', last_used: new Date().toISOString() },
-      { name: 'سيدي عالي ولد احميتي', phone: '+22236987654', last_used: new Date().toISOString() }
+    const legacyDemoNames = new Set([
+      'محمد الأمين ولد فال',
+      'بوشعيب الصحراوي',
+      'سيدي عالي ولد احميتي',
     ]);
+    const list = storageService.get<RememberedDriver[]>('DRIVERS', []);
+    const cleaned = (Array.isArray(list) ? list : []).filter(
+      (d) => d && d.name && !legacyDemoNames.has(d.name.trim())
+    );
+    if (cleaned.length !== (Array.isArray(list) ? list.length : 0)) {
+      storageService.set('DRIVERS', cleaned);
+    }
+    return cleaned;
   },
 
-  // حفظ واسترجاع ماتريكيلات العربات
+  removeRememberedDriver(name: string): RememberedDriver[] {
+    const cleaned = this.getRememberedDrivers().filter(
+      (d) => d.name.toLowerCase() !== name.trim().toLowerCase()
+    );
+    storageService.set('DRIVERS', cleaned);
+    return cleaned;
+  },
+
+  // حفظ واسترجاع ماتريكيلات العربات (بدون أي أرقام تجريبية مسبقة)
   rememberPlate(plate: string, workspaceId?: string): void {
     if (!plate.trim()) return;
     const now = new Date().toISOString();
-    const list = storageService.get<RememberedVehicle[]>('PLATES', [
-      { plate: '68-أ-1234 (شاحنة الداخلة)', last_used: now },
-      { plate: '1458-BK-00 (فان نواذيبو)', last_used: now },
-      { plate: '24-ب-5678 (تويوتا لاندكروزر)', last_used: now }
-    ]);
+    const list = this.getRememberedPlates();
     const filtered = list.filter(v => v.plate.toLowerCase() !== plate.trim().toLowerCase());
     const entry: RememberedVehicle = {
       workspace_id: workspaceId,
       plate: plate.trim(),
       last_used: now,
     };
-    const updated = [entry, ...filtered].slice(0, 15);
+    const updated = [entry, ...filtered].slice(0, 25);
     storageService.set('PLATES', updated);
 
     if (isSupabaseConfigured() && isValidUUID(workspaceId)) {
@@ -1011,10 +1019,31 @@ export const tripService = {
   },
 
   getRememberedPlates(): RememberedVehicle[] {
-    return storageService.get<RememberedVehicle[]>('PLATES', [
-      { plate: '68-أ-1234 (شاحنة الداخلة)', last_used: new Date().toISOString() },
-      { plate: '1458-BK-00 (فان نواذيبو)', last_used: new Date().toISOString() },
-      { plate: '24-ب-5678 (تويوتا لاندكروزر)', last_used: new Date().toISOString() }
+    const legacyDemoPlates = new Set([
+      '68-أ-1234 (شاحنة الداخلة)',
+      '1458-BK-00 (فان نواذيبو)',
+      '24-ب-5678 (تويوتا لاندكروزر)',
     ]);
+    const list = storageService.get<RememberedVehicle[]>('PLATES', []);
+    const cleaned = (Array.isArray(list) ? list : []).filter(
+      (v) => v && v.plate && !legacyDemoPlates.has(v.plate.trim())
+    );
+    if (cleaned.length !== (Array.isArray(list) ? list.length : 0)) {
+      storageService.set('PLATES', cleaned);
+    }
+    return cleaned;
+  },
+
+  removeRememberedPlate(plate: string): RememberedVehicle[] {
+    const cleaned = this.getRememberedPlates().filter(
+      (v) => v.plate.toLowerCase() !== plate.trim().toLowerCase()
+    );
+    storageService.set('PLATES', cleaned);
+    return cleaned;
+  },
+
+  clearRememberedDriversAndPlates(): void {
+    storageService.set('DRIVERS', []);
+    storageService.set('PLATES', []);
   }
 };

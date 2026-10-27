@@ -1186,7 +1186,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         isAdminView={true}
       />
 
-      {/* 9. Delete Demo Data (Admin Only) */}
+      {/* 9. مسح البيانات وإرجاع التطبيق جديد (Admin Only) */}
       {(userRole === 'owner' || userRole === 'platform_owner') && (
         <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
           <div className="flex items-center gap-2.5">
@@ -1194,9 +1194,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Trash2 className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-xs font-black text-white">إدارة البيانات التجريبية</h3>
+              <h3 className="text-xs font-black text-white">مسح البيانات (إرجاع التطبيق جديداً)</h3>
               <p className="text-[10px] text-white/75 mt-0.5">
-                حذف كافة السجلات التجريبية دون المساس بالبيانات الحقيقية
+                مسح كافة البيانات والتجارب وإرجاع التطبيق فارغاً من الصفر (مع خيار تحميل نسخة احتياطية أولاً إذا أردت)
               </p>
             </div>
           </div>
@@ -1204,10 +1204,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button
             type="button"
             onClick={() => setShowDeleteDemoConfirm(true)}
-            className="btn-delete w-full flex items-center justify-center gap-2 py-2 rounded-xl font-black text-xs shadow-md active:scale-95 transition"
+            className="btn-delete w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>حذف البيانات التجريبية</span>
+            <span>مسح البيانات</span>
           </button>
         </div>
       )}
@@ -1223,28 +1223,75 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </button>
       </div>
 
-      {/* Confirmation Dialog: Delete Demo Data */}
+      {/* Confirmation Dialog: مسح البيانات مع خيار النسخ الاحتياطي الاختياري */}
       {showDeleteDemoConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 animate-fadeIn">
-          <div className="w-full max-w-[360px] rounded-[24px] luxury-card p-5 shadow-2xl text-right space-y-3.5">
+          <div className="w-full max-w-[380px] rounded-[24px] luxury-card p-5 shadow-2xl text-right space-y-3.5 border border-rose-500/40">
             <div className="flex items-center gap-2.5 text-rose-400">
-              <div className="w-9 h-9 rounded-xl bg-rose-950/60 flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
-              <h3 className="text-sm font-bold text-white">تأكيد حذف البيانات التجريبية</h3>
+              <div>
+                <h3 className="text-sm font-black text-white">مسح البيانات وإرجاع التطبيق جديداً</h3>
+                <p className="text-[10px] text-rose-300 font-bold">إعادة ضبط شاملة (صفر بيانات)</p>
+              </div>
             </div>
 
-            <p className="text-xs text-white/80 leading-relaxed">
-              هل أنت متأكد من رغبتك في حذف <strong className="text-white">جميع البيانات التجريبية</strong>؟ سيتم حذف السجلات التجريبية فقط ولن يتم حذف أي سجل حقيقي.
+            <p className="text-xs text-white/85 leading-relaxed">
+              عند التأكيد سيتم مسح <strong className="text-white">جميع المحطات، الكوليات، الرحلات، السندات المالية، وسجل العمليات</strong> وإرجاع التطبيق جديداً فارغاً تماماً.
             </p>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-white/15">
+            {/* Optional Backup Section before wiping */}
+            <div className="bg-black/60 border border-[#F5C84C]/35 rounded-2xl p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-black text-[#F5C84C]">
+                  💾 النسخ الاحتياطي قبل المسح (اختياري):
+                </span>
+                <span className="text-[9px] text-white/60">إن كنت قد سجلت شيئاً مهماً</span>
+              </div>
+              <p className="text-[10px] text-white/75 leading-relaxed">
+                إذا وضعت بيانات مهمة وتريد حفظها قبل المسح اضغط على أحد الزرين بالأسفل، وإذا كنت فقط تجرّب التطبيق ولا تريد نسخة احتياطية اضغط مباشرة على زر المسح الأحمر:
+              </p>
+              <div className="grid grid-cols-1 gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (currentWorkspace) {
+                      exportService.exportWorkspaceBackupJSON(currentWorkspace, transactions, parcels);
+                      showToast('تم تحميل النسخة الاحتياطية الكاملة (JSON) بنجاح', 'success');
+                    }
+                  }}
+                  className="btn-cancel w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[11px] font-black text-[#F5C84C] border border-[#F5C84C]/40"
+                >
+                  <FileJson className="w-3.5 h-3.5 shrink-0" />
+                  <span>تحميل نسخة احتياطية كاملة (JSON) أولاً</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (transactions.length > 0) {
+                      exportService.exportTransactionsToCSV(transactions, currentWorkspace?.name || 'محطة الاتحادية');
+                    }
+                    if (parcels.length > 0) {
+                      exportService.exportParcelsToCSV(parcels, currentWorkspace?.name || 'محطة الاتحادية');
+                    }
+                    showToast('تم تحميل جداول الصندوق والكوليات (CSV/Excel) بنجاح', 'success');
+                  }}
+                  className="btn-cancel w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[11px] font-bold text-white/90"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
+                  <span>تحميل جداول Excel / CSV (الصندوق + الكوليات)</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2 border-t border-white/15">
               <button
                 type="button"
                 onClick={() => setShowDeleteDemoConfirm(false)}
-                className="btn-cancel px-4 py-2 rounded-xl text-xs font-bold"
+                className="btn-cancel px-4 py-2.5 rounded-xl text-xs font-bold"
               >
-                إلغاء
+                إلغاء والرجوع
               </button>
               <button
                 type="button"
@@ -1252,9 +1299,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   deleteDemoData();
                   setShowDeleteDemoConfirm(false);
                 }}
-                className="btn-delete px-5 py-2 rounded-xl text-xs font-bold shadow-md"
+                className="btn-delete flex-1 px-4 py-2.5 rounded-xl text-xs font-black shadow-md flex items-center justify-center gap-1.5"
               >
-                تأكيد الحذف
+                <Trash2 className="w-4 h-4" />
+                <span>مسح جميع البيانات الآن (إرجاع التطبيق جديداً)</span>
               </button>
             </div>
           </div>
