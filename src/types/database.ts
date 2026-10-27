@@ -78,6 +78,7 @@ export interface Workspace {
   workers_count?: number;
   stations_count?: number;
   collaborations_count?: number;
+  last_reset_at?: string;
 }
 
 // التوافق مع الكود السابق

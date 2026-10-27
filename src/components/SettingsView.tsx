@@ -72,13 +72,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     switchWorkspacePlan,
     joinRequests,
     deleteDemoData,
+    daysUntilExpiry,
+    isSubscriptionExpired,
     showToast
   } = useApp();
 
+  const isInFree30Days = daysUntilExpiry > 0 && !isSubscriptionExpired;
   const isPlan2TwoStations =
-    currentWorkspace?.plan_tier === 'plan_2_two_stations' ||
-    currentWorkspace?.max_stations === 2 ||
-    currentWorkspace?.max_workers_per_station === 1;
+    !isInFree30Days &&
+    (currentWorkspace?.plan_tier === 'plan_2_two_stations' ||
+      currentWorkspace?.max_stations === 2 ||
+      currentWorkspace?.max_workers_per_station === 1);
   const activeWorkersList = workspaceMembers.filter(m => m.role === 'worker');
 
   const isOnline = useOnlineStatus();

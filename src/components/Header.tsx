@@ -56,10 +56,10 @@ export const Header: React.FC<HeaderProps> = ({
       <header className="sticky top-0 z-40 bg-[#080502]/90 backdrop-blur-xl border-b border-[#D4AF37]/25 px-3.5 py-2.5 pt-safe relative shadow-2xl">
         <div className="w-full mx-auto flex items-center justify-between gap-2 relative z-10" dir="rtl">
           
-          {/* Right Section (RTL): Large Golden Title "محطة الاتحادية" + Quick Pills */}
+          {/* Right Section (RTL): Large Golden Title + Quick Pills */}
           <div className="flex flex-col items-start text-right min-w-0 flex-1">
-            <h1 className="text-[22px] font-black tracking-tight text-[#E6C37A] leading-tight truncate drop-shadow-[0_2px_8px_rgba(212,175,55,0.25)]">
-              محطة الاتحادية
+            <h1 className="text-[20px] sm:text-[22px] font-black tracking-tight text-[#E6C37A] leading-tight truncate max-w-full drop-shadow-[0_2px_8px_rgba(212,175,55,0.25)]">
+              {currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'محطة الاتحادية'}
             </h1>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               <button
@@ -79,7 +79,7 @@ export const Header: React.FC<HeaderProps> = ({
                 title="القائمة والمحطات"
               >
                 <span className="w-2 h-2 rounded-full bg-[#2ECC71]" />
-                <span className="max-w-[75px] truncate">{currentStation ? (currentStation.name || currentStation.city) : 'كافة المحطات'}</span>
+                <span className="max-w-[85px] truncate">{currentStation ? (currentStation.name || currentStation.city) : 'كافة المحطات'}</span>
                 <Menu className="w-3 h-3 text-[#F5C84C] mr-0.5" />
               </button>
 
@@ -102,8 +102,11 @@ export const Header: React.FC<HeaderProps> = ({
             title="القائمة الرئيسية"
           >
             <img 
-              src="/logo.png" 
+              src={currentWorkspace?.custom_brand_logo_url || '/logo.png'} 
               alt="شعار محطة الاتحادية" 
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = '/logo.png';
+              }}
               style={{ borderRadius: '50%', width: '68px', height: '68px', objectFit: 'cover', background: 'transparent', display: 'block' }}
             />
           </div>

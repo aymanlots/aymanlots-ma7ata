@@ -1063,17 +1063,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return member?.role || (currentWorkspace.created_by === currentUser.id ? 'owner' : 'worker');
   }, [currentUser, currentWorkspace, workspaceMembers, isPlatformOwner]);
 
-  // Plan limits check: الباك الأول (شامل ومفتوح) vs الباك الثاني (محطتين فقط + عامل واحد في كل محطة)
+  // أول 30 يوماً مجانية بالكامل (الباك الأول الشامل مفتوح بدون قيود على المحطات أو العمال)
+  const isInFree30DayMonth = useMemo(() => {
+    if (!currentWorkspace?.created_at) return true;
+    const createdMs = new Date(currentWorkspace.created_at).getTime();
+    if (isNaN(createdMs)) return true;
+    const daysSinceCreation = (Date.now() - createdMs) / (1000 * 60 * 60 * 24);
+    return daysSinceCreation <= 30;
+  }, [currentWorkspace?.created_at]);
+
+  // Plan limits check: خلال الشهر الأول (30 يوماً) كل شيء مفتوح ومجاني 100%
   const isPlan2TwoStations = useMemo(() => {
     if (!currentWorkspace) return false;
-    return (
-      currentWorkspace.plan_tier === 'plan_2_two_stations' ||
-      currentWorkspace.max_stations === 2 ||
-      currentWorkspace.max_workers_per_station === 1
-    );
-  }, [currentWorkspace]);
+    if (isInFree30DayMonth) return false;
+    return currentWorkspace.plan_tier === 'plan_2_two_stations';
+  }, [currentWorkspace, isInFree30DayMonth]);
 
-  // Visible Stations: Filter by currentWorkspace.id, and if on الباك الثاني (محطتين فقط), limit active open stations to 2 stations
+  // Visible Stations: Filter by currentWorkspace.id
   const visibleStations: Station[] = useMemo(() => {
     const wsId = currentWorkspace?.id;
     const wsStations = wsId
@@ -1104,161 +1110,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setSelectedStationId(null);
     }
   }, [userRole, userAssignedStationId, visibleStations, selectedStationId]);
-
-  // Auto-recover any missing stations or parcels referenced by synced transactions
-  // (e.g. if transactions synced before stations/parcels were pushed from the phone)
-  useEffect(() => {
-    if (!currentWorkspace?.id) return;
-    const wsId = currentWorkspace.id;
-    const wsTxs = allTransactions.filter(tx => (tx.workspace_id === wsId || tx.team_id === wsId) && !tx.deleted_at);
-    if (wsTxs.length === 0) return;
-
-    const existingStationIds = new Set(stations.map(s => s.id));
-    const recoveredStations: Station[] = [];
-
-    for (const tx of wsTxs) {
-      if (!tx.station_id || existingStationIds.has(tx.station_id)) continue;
-      existingStationIds.add(tx.station_id);
-
-      // Extract station name from tx.station_name or tx.note / tx.reason
-      let stName = tx.station_name && tx.station_name !== 'محطة الاتحادية' ? tx.station_name : '';
-      if (!stName && tx.note) {
-        const matchNote = tx.note.match(/محطة\s+([^\s(]+)/);
-        if (matchNote?.[1]) stName = matchNote[1];
-      }
-      if (!stName && tx.reason) {
-        const matchParen = tx.reason.match(/\(([^)]+)\)/);
-        if (matchParen?.[1]) stName = matchParen[1];
-      }
-      if (!stName) stName = tx.currency === 'MRU' ? 'محطة موريتانيا' : 'محطة المغرب';
-
-      const curr = (tx.currency || 'MAD').toUpperCase();
-      const country: 'MA' | 'MR' = curr === 'MRU' ? 'MR' : 'MA';
-
-      const recoveredSt: Station = {
-        id: tx.station_id,
-        workspace_id: wsId,
-        team_id: wsId,
-        name: stName,
-        city: stName,
-        country,
-        currency: curr,
-        owner_id: currentWorkspace.created_by || currentUser?.id || null,
-        is_active: true,
-        created_at: tx.created_at || new Date().toISOString(),
-      };
-      recoveredStations.push(recoveredSt);
-    }
-
-    if (recoveredStations.length > 0) {
-      localStorage.setItem(`alittihadia_user_created_station_${wsId}`, 'true');
-      localStorage.setItem(`alittihadia_guided_tour_completed_${wsId}`, 'true');
-      setStations(prev => {
-        const map = new Map<string, Station>();
-        prev.forEach(s => map.set(s.id, s));
-        recoveredStations.forEach(s => map.set(s.id, s));
-        return Array.from(map.values());
-      });
-      if (firebaseSyncService.isAvailable()) {
-        recoveredStations.forEach(st => {
-          firebaseSyncService.syncStation(wsId, st).catch(() => {});
-        });
-      }
-    }
-
-    // Also recover any parcel referenced in a shipping fee transaction if missing in allParcels
-    const existingParcelIds = new Set(allParcels.map(p => p.id));
-    const recoveredParcels: Parcel[] = [];
-    const allKnownStations = [...stations, ...recoveredStations];
-
-    for (const tx of wsTxs) {
-      if (tx.type !== 'parcel_shipping_fee' || !tx.parcel_id || existingParcelIds.has(tx.parcel_id)) continue;
-      existingParcelIds.add(tx.parcel_id);
-
-      const codeMatch = tx.reason?.match(/\[(ITT-[^\]]+)\]/);
-      const destMatch = tx.reason?.match(/إلى\s+(.+)$/);
-      const trackingCode = codeMatch?.[1] || `ITT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      const originSt = allKnownStations.find(s => s.id === tx.station_id);
-      const destSt =
-        allKnownStations.find(s => s.id !== tx.station_id && (destMatch?.[1] ? s.name.includes(destMatch[1].trim()) || s.city.includes(destMatch[1].trim()) : true)) ||
-        allKnownStations.find(s => s.id !== tx.station_id) ||
-        originSt;
-
-      const descClean = tx.note ? tx.note.replace(/^شحن\s+\d+\s+طرد\s*-\s*/, '').trim() : 'طرد بضائع';
-
-      const recoveredParcel: Parcel = {
-        id: tx.parcel_id,
-        tracking_code: trackingCode,
-        parcel_number: allParcels.length + recoveredParcels.length + 1,
-        workspace_id: wsId,
-        team_id: wsId,
-        origin_station_id: tx.station_id,
-        destination_station_id: destSt?.id || tx.station_id,
-        origin_station_name: originSt?.name || tx.station_name || 'محطة الانطلاق',
-        destination_station_name: destSt?.name || destMatch?.[1]?.trim() || 'محطة الوصول',
-        sender_name: 'مرسل الكولي',
-        sender_phone: tx.phone_number || '',
-        receiver_name: 'مستلم الكولي',
-        receiver_phone: tx.phone_number || '',
-        route: `${originSt?.name || 'محطة الانطلاق'} ➔ الكركرات ➔ ${destSt?.name || 'محطة الوصول'}`,
-        description: descClean || 'طرد بضائع',
-        category: 'طرد بضائع',
-        items_count: 1,
-        amount_due: Number(tx.amount) || 0,
-        shipping_fee: Number(tx.amount) || 0,
-        payer: 'sender',
-        amount_paid: Number(tx.amount) || 0,
-        cod_amount: 0,
-        currency: tx.currency || 'MAD',
-        status: 'registered',
-        condition: 'normal',
-        condition_notes: null,
-        payment_status: 'paid',
-        status_history: [
-          {
-            status: 'registered',
-            timestamp: tx.created_at || new Date().toISOString(),
-            changed_by_id: tx.created_by || 'sys',
-            changed_by_name: tx.creator_name || 'المدير',
-            notes: 'تسجيل الكولي في المحطة',
-            condition: 'normal',
-          },
-        ],
-        payment_history: [
-          {
-            id: `pay-${tx.id}`,
-            amount: Number(tx.amount) || 0,
-            currency: tx.currency || 'MAD',
-            paid_by: 'المرسل',
-            recorded_by_id: tx.created_by || 'sys',
-            recorded_by_name: tx.creator_name || 'المدير',
-            recorded_at: tx.created_at || new Date().toISOString(),
-            note: 'الدفعة الأولى عند التسجيل',
-          },
-        ],
-        created_by: tx.created_by || 'sys',
-        creator_name: tx.creator_name || 'المدير',
-        created_at: tx.created_at || new Date().toISOString(),
-        updated_at: tx.updated_at || new Date().toISOString(),
-        notes: null,
-      };
-      recoveredParcels.push(recoveredParcel);
-    }
-
-    if (recoveredParcels.length > 0) {
-      setAllParcels(prev => {
-        const map = new Map<string, Parcel>();
-        prev.forEach(p => map.set(p.id, p));
-        recoveredParcels.forEach(p => map.set(p.id, p));
-        return Array.from(map.values());
-      });
-      if (firebaseSyncService.isAvailable()) {
-        recoveredParcels.forEach(p => {
-          firebaseSyncService.syncParcel(wsId, p).catch(() => {});
-        });
-      }
-    }
-  }, [currentWorkspace?.id, allTransactions, stations, allParcels]);
 
   // ============================================================================
   // MULTI-ADMIN ISOLATION & OPTIONAL COLLABORATION FILTERING
@@ -1494,107 +1345,122 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('aman_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
-  // Real-time Firebase Sync Listener + Automatic Push of Local Workspace Records
+  // Real-time Authoritative Firebase Sync Listener (Prevents Ghost Data Resurrection Across Devices)
   useEffect(() => {
     if (!currentWorkspace?.id || !firebaseSyncService.isAvailable()) return;
     const wsId = currentWorkspace.id;
+    let isCancelled = false;
 
-    // 1. Initial sync of current workspace and any existing local items (stations, parcels, transactions, trips, members) to Firebase
-    firebaseSyncService.syncWorkspace(currentWorkspace).catch(() => {});
+    // 1. Check authoritative cloud state FIRST before pushing anything so stale localStorage on PC never overwrites Phone wipes/deletions
+    firebaseSyncService.loadFullWorkspaceFromCloud(wsId).then((cloudData) => {
+      if (isCancelled) return;
+      if (cloudData.workspace) {
+        if (cloudData.workspace.last_reset_at) {
+          localStorage.setItem(`aman_last_reset_${wsId}`, cloudData.workspace.last_reset_at);
+        }
+        setCurrentWorkspace(prev => (prev ? { ...prev, ...cloudData.workspace } : cloudData.workspace));
+        setStations(cloudData.stations.map(s => ({ ...s, workspace_id: wsId, team_id: wsId })));
+        setAllParcels(prev => {
+          const otherWsParcels = prev.filter(p => p.workspace_id && p.workspace_id !== wsId && p.team_id !== wsId);
+          const myCloudParcels = cloudData.parcels.map(p => ({ ...p, workspace_id: wsId, team_id: wsId }));
+          return [...myCloudParcels, ...otherWsParcels].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        });
+        setAllTransactions(
+          cloudData.transactions
+            .map(t => ({ ...t, workspace_id: wsId, team_id: wsId }))
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        );
+        setAllTrips(
+          cloudData.trips
+            .map(t => ({ ...t, workspace_id: wsId }))
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        );
+        if (cloudData.members.length > 0) {
+          setWorkspaceMembers(cloudData.members.map(m => ({ ...m, workspace_id: wsId })));
+        }
+      } else {
+        // Workspace does not exist in Firestore yet -> push initial workspace & local items
+        firebaseSyncService.syncWorkspace(currentWorkspace).catch(() => {});
+        stations
+          .filter(s => (!s.workspace_id || s.workspace_id === wsId || s.team_id === wsId) && !s.is_demo)
+          .forEach(s => firebaseSyncService.syncStation(wsId, s).catch(() => {}));
+        allParcels
+          .filter(p => (p.workspace_id === wsId || p.team_id === wsId) && !p.is_demo)
+          .forEach(p => firebaseSyncService.syncParcel(wsId, p).catch(() => {}));
+        allTransactions
+          .filter(tx => (tx.workspace_id === wsId || tx.team_id === wsId) && !tx.is_demo)
+          .forEach(tx => firebaseSyncService.syncTransaction(wsId, tx).catch(() => {}));
+        allTrips
+          .filter(t => t.workspace_id === wsId && !t.is_demo)
+          .forEach(t => firebaseSyncService.syncTrip(wsId, t).catch(() => {}));
+        workspaceMembers
+          .filter(m => (!m.workspace_id || m.workspace_id === wsId) && !m.is_demo)
+          .forEach(m => firebaseSyncService.syncWorkspaceMember(wsId, m).catch(() => {}));
+      }
+    }).catch(() => {});
 
-    stations
-      .filter(s => (!s.workspace_id || s.workspace_id === wsId || s.team_id === wsId) && !s.is_demo)
-      .forEach(s => {
-        firebaseSyncService.syncStation(wsId, s).catch(() => {});
-      });
-
-    allParcels
-      .filter(p => (p.workspace_id === wsId || p.team_id === wsId) && !p.is_demo)
-      .forEach(p => {
-        firebaseSyncService.syncParcel(wsId, p).catch(() => {});
-      });
-
-    allTransactions
-      .filter(tx => (tx.workspace_id === wsId || tx.team_id === wsId) && !tx.is_demo)
-      .forEach(tx => {
-        firebaseSyncService.syncTransaction(wsId, tx).catch(() => {});
-      });
-
-    allTrips
-      .filter(t => t.workspace_id === wsId && !t.is_demo)
-      .forEach(t => {
-        firebaseSyncService.syncTrip(wsId, t).catch(() => {});
-      });
-
-    workspaceMembers
-      .filter(m => (!m.workspace_id || m.workspace_id === wsId) && !m.is_demo)
-      .forEach(m => {
-        firebaseSyncService.syncWorkspaceMember(wsId, m).catch(() => {});
-      });
-
-    // 2. Real-time subscription from Firebase Firestore
+    // 2. Real-time subscription from Firebase Firestore (reflects additions, edits, AND deletions/wipes immediately)
     const unsubscribe = firebaseSyncService.subscribeToWorkspace(wsId, {
+      onWorkspace: (remoteWs) => {
+        if (!remoteWs) return;
+        const prevReset = localStorage.getItem(`aman_last_reset_${wsId}`);
+        if (remoteWs.last_reset_at && remoteWs.last_reset_at !== prevReset) {
+          localStorage.setItem(`aman_last_reset_${wsId}`, remoteWs.last_reset_at);
+          localStorage.removeItem('aman_stations');
+          localStorage.removeItem('aman_transactions');
+          localStorage.removeItem('ittihadiya_parcels');
+          storageService.remove('TRIPS');
+        }
+        setCurrentWorkspace(prev => (prev ? { ...prev, ...remoteWs } : remoteWs));
+      },
       onStations: (remoteStations) => {
-        if (remoteStations && remoteStations.length > 0) {
+        const cleanList = (remoteStations || []).map(s => ({
+          ...s,
+          workspace_id: wsId,
+          team_id: wsId,
+        }));
+        if (cleanList.length > 0) {
           localStorage.setItem(`alittihadia_user_created_station_${wsId}`, 'true');
           localStorage.setItem(`alittihadia_guided_tour_completed_${wsId}`, 'true');
-          setStations(prev => {
-            const map = new Map<string, Station>();
-            prev.forEach(s => map.set(s.id, s));
-            remoteStations.forEach(s => map.set(s.id, { ...s, workspace_id: wsId, team_id: wsId }));
-            return Array.from(map.values());
-          });
         }
+        setStations(cleanList);
       },
       onParcels: (remoteParcels) => {
-        if (remoteParcels && remoteParcels.length > 0) {
-          setAllParcels(prev => {
-            const map = new Map<string, Parcel>();
-            prev.forEach(p => map.set(p.id, p));
-            remoteParcels.forEach(p => map.set(p.id, { ...p, workspace_id: wsId, team_id: wsId }));
-            return Array.from(map.values()).sort(
-              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            );
-          });
-        }
+        const cleanParcels = (remoteParcels || []).map(p => ({
+          ...p,
+          workspace_id: wsId,
+          team_id: wsId,
+        }));
+        setAllParcels(prev => {
+          const otherWsParcels = prev.filter(p => p.workspace_id && p.workspace_id !== wsId && p.team_id !== wsId);
+          return [...cleanParcels, ...otherWsParcels].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        });
       },
       onTransactions: (remoteTxs) => {
-        if (remoteTxs && remoteTxs.length > 0) {
-          setAllTransactions(prev => {
-            const map = new Map<string, Transaction>();
-            prev.forEach(t => map.set(t.id, t));
-            remoteTxs.forEach(t => map.set(t.id, { ...t, workspace_id: wsId, team_id: wsId }));
-            return Array.from(map.values()).sort(
-              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            );
-          });
-        }
+        const cleanTxs = (remoteTxs || [])
+          .map(t => ({ ...t, workspace_id: wsId, team_id: wsId }))
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setAllTransactions(cleanTxs);
       },
       onTrips: (remoteTrips) => {
-        if (remoteTrips && remoteTrips.length > 0) {
-          setAllTrips(prev => {
-            const map = new Map<string, Trip>();
-            prev.forEach(t => map.set(t.id, t));
-            remoteTrips.forEach(t => map.set(t.id, { ...t, workspace_id: wsId }));
-            return Array.from(map.values()).sort(
-              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            );
-          });
-        }
+        const cleanTrips = (remoteTrips || [])
+          .map(t => ({ ...t, workspace_id: wsId }))
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setAllTrips(cleanTrips);
       },
       onMembers: (remoteMembers) => {
         if (remoteMembers && remoteMembers.length > 0) {
-          setWorkspaceMembers(prev => {
-            const map = new Map<string, WorkspaceMember>();
-            prev.forEach(m => map.set(m.user_id, m));
-            remoteMembers.forEach(m => map.set(m.user_id, { ...m, workspace_id: wsId }));
-            return Array.from(map.values());
-          });
+          setWorkspaceMembers(remoteMembers.map(m => ({ ...m, workspace_id: wsId })));
         }
       },
     });
 
     return () => {
+      isCancelled = true;
       unsubscribe();
     };
   }, [currentWorkspace?.id]);
@@ -1981,18 +1847,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               localStorage.setItem(`ittihadiya_demo_deleted_${cloudData.workspace.id}`, 'true');
               localStorage.setItem(`alittihadia_guided_tour_completed_${cloudData.workspace.id}`, 'true');
             }
-            if (cloudData.stations.length > 0) {
-              setStations(cloudData.stations);
-            }
-            if (cloudData.parcels.length > 0) {
-              setAllParcels(cloudData.parcels);
-            }
-            if (cloudData.transactions.length > 0) {
-              setAllTransactions(cloudData.transactions);
-            }
-            if (cloudData.trips.length > 0) {
-              setAllTrips(cloudData.trips);
-            }
+            setStations(cloudData.stations);
+            setAllParcels(cloudData.parcels);
+            setAllTransactions(cloudData.transactions);
+            setAllTrips(cloudData.trips);
             if (cloudData.members.length > 0) {
               setWorkspaceMembers(cloudData.members);
               const swList: StationWorker[] = cloudData.members
@@ -2135,10 +1993,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             localStorage.setItem(`ittihadiya_demo_deleted_${cloudData.workspace.id}`, 'true');
             localStorage.setItem(`alittihadia_guided_tour_completed_${cloudData.workspace.id}`, 'true');
           }
-          if (cloudData.stations.length > 0) setStations(cloudData.stations);
-          if (cloudData.parcels.length > 0) setAllParcels(cloudData.parcels);
-          if (cloudData.transactions.length > 0) setAllTransactions(cloudData.transactions);
-          if (cloudData.trips.length > 0) setAllTrips(cloudData.trips);
+          setStations(cloudData.stations);
+          setAllParcels(cloudData.parcels);
+          setAllTransactions(cloudData.transactions);
+          setAllTrips(cloudData.trips);
           if (cloudData.members.length > 0) setWorkspaceMembers(cloudData.members);
         }
 
@@ -2537,21 +2395,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   }, [stations, allParcels, allTrips, allTransactions, auditLogs, rememberedDrivers, rememberedPlates]);
 
-  // مسح البيانات بالكامل وإرجاع التطبيق جديداً (صفر بيانات)
+  // مسح البيانات بالكامل وإرجاع التطبيق جديداً (صفر بيانات بضغطة واحدة على الهاتف والحاسوب معاً)
   const deleteDemoData = () => {
     const wsId = currentWorkspace?.id;
-    if (wsId) {
-      localStorage.setItem(`ittihadiya_demo_deleted_${wsId}`, 'true');
-      localStorage.removeItem(`alittihadia_user_created_station_${wsId}`);
-      if (firebaseSyncService.isAvailable()) {
-        firebaseSyncService.clearAllWorkspaceData(wsId).catch(err => {
-          console.warn('Firebase clear workspace error:', err);
-        });
-      }
-    }
+    const resetAt = new Date().toISOString();
+
     setStations([]);
     setSelectedStationId(null);
-    setWorkspaceMembers(prev => prev.filter(m => !m.is_demo && m.role === 'admin'));
+    setWorkspaceMembers(prev => prev.filter(m => !m.is_demo && (m.role === 'admin' || m.role === 'owner')));
     setStationWorkers([]);
     setAllParcels([]);
     setAllTrips([]);
@@ -2560,6 +2411,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     tripService.clearRememberedDriversAndPlates();
     setRememberedDrivers([]);
     setRememberedPlates([]);
+
     localStorage.removeItem('aman_stations');
     localStorage.removeItem('aman_transactions');
     localStorage.removeItem('ittihadiya_parcels');
@@ -2568,7 +2420,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     storageService.remove('TRIPS');
     storageService.remove('PARCELS');
     storageService.remove('TRANSACTIONS');
-    showToast('تم مسح جميع البيانات وإرجاع التطبيق جديداً بنجاح', 'success');
+
+    if (wsId) {
+      localStorage.setItem(`aman_last_reset_${wsId}`, resetAt);
+      localStorage.setItem(`ittihadiya_demo_deleted_${wsId}`, 'true');
+      localStorage.removeItem(`alittihadia_user_created_station_${wsId}`);
+      localStorage.removeItem(`alittihadia_station_currencies_${wsId}`);
+      setCurrentWorkspace(prev => (prev ? { ...prev, last_reset_at: resetAt } : null));
+      if (firebaseSyncService.isAvailable()) {
+        firebaseSyncService.clearAllWorkspaceData(wsId, resetAt).catch(err => {
+          console.warn('Firebase clear workspace error:', err);
+        });
+      }
+    }
+
+    showToast('تم مسح جميع البيانات والمحطات وإرجاع التطبيق جديداً من الصفر بنجاح', 'success');
   };
 
   // Reset Data to 0
@@ -3773,6 +3639,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       prev
         ? {
             ...prev,
+            name: cleanName || prev.name,
             custom_brand_name: cleanName,
             custom_brand_subtitle: cleanSub,
             custom_brand_phone: cleanPhone,
@@ -3797,6 +3664,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (firebaseSyncService.isAvailable()) {
       firebaseSyncService.syncWorkspace({
         ...currentWorkspace,
+        name: cleanName || currentWorkspace.name,
         custom_brand_name: cleanName,
         custom_brand_subtitle: cleanSub,
         custom_brand_phone: cleanPhone,
@@ -3806,7 +3674,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
 
-    showToast('تم حفظ تخصيص اسم وشعار المحطة على الملصق الحراري بنجاح', 'success');
+    showToast('تم حفظ اسم وهوية وشعار المحطة بنجاح', 'success');
     return { success: true };
   };
 
@@ -4289,7 +4157,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const maxStations = isPlan2TwoStations ? 2 : (currentWorkspace?.max_stations ?? 99);
+    const maxStations = isInFree30DayMonth
+      ? 999
+      : isPlan2TwoStations
+      ? 2
+      : Math.max(99, currentWorkspace?.max_stations ?? 99);
     const activeStationsCount = isPlan2TwoStations
       ? visibleStations.length
       : stations.filter(s => !s.is_demo).length;

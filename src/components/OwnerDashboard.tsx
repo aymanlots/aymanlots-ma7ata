@@ -28,8 +28,9 @@ import {
   MessageCircle,
   Trash2,
   CheckCircle2,
+  Pencil,
 } from 'lucide-react';
-import { Transaction, TransactionType, Parcel, Trip } from '../types/database';
+import { Transaction, TransactionType, Parcel, Trip, Station } from '../types/database';
 import { DailyFinancialReportModal } from './DailyFinancialReportModal';
 import { ParcelDetailModal } from './ParcelDetailModal';
 import { ParcelStickerModal } from './ParcelStickerModal';
@@ -81,6 +82,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     addBalanceAdjustment,
     addStation,
     updateStation,
+    deleteStation,
+    updateWorkspaceBranding,
     addWorkerByOwner,
     deleteTransaction,
     deleteParcel,
@@ -141,6 +144,27 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   const [newStationCountry, setNewStationCountry] = useState<'MA' | 'MR'>('MA');
   const [newStationPhone, setNewStationPhone] = useState('');
   const [newStationCurrency, setNewStationCurrency] = useState('MAD');
+
+  // Edit / Rename / Delete Existing Station Modal State
+  const [editingStation, setEditingStation] = useState<Station | null>(null);
+  const [editStationName, setEditStationName] = useState('');
+  const [editStationCity, setEditStationCity] = useState('');
+  const [editStationCountry, setEditStationCountry] = useState<'MA' | 'MR'>('MA');
+  const [editStationPhone, setEditStationPhone] = useState('');
+  const [editStationCurrency, setEditStationCurrency] = useState('MAD');
+
+  // Rename Main Workspace / Agency Name Modal State
+  const [showEditWorkspaceNameModal, setShowEditWorkspaceNameModal] = useState(false);
+  const [workspaceNameInput, setWorkspaceNameInput] = useState('');
+
+  const openEditStationModal = (st: Station) => {
+    setEditingStation(st);
+    setEditStationName(st.name || st.city || '');
+    setEditStationCity(st.city || st.name || '');
+    setEditStationCountry(st.country || 'MA');
+    setEditStationCurrency(st.currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
+    setEditStationPhone(st.phone || '');
+  };
 
   const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
   const [workerName, setWorkerName] = useState('');
@@ -608,8 +632,22 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-sm sm:text-base font-black text-white truncate">
-              {currentWorkspace?.name || 'محطة الاتحادية'}
+              {currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'محطة الاتحادية'}
             </h2>
+            <button
+              type="button"
+              onClick={() => {
+                setWorkspaceNameInput(
+                  currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'محطة الاتحادية'
+                );
+                setShowEditWorkspaceNameModal(true);
+              }}
+              className="px-2 py-0.5 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/55 text-[10px] font-black text-[#F5C84C] inline-flex items-center gap-1 hover:bg-[#F5C84C]/30 cursor-pointer"
+              title="تغيير اسم المحطة / الوكالة الرئيسي"
+            >
+              <Pencil className="w-2.5 h-2.5" />
+              <span>تعديل الاسم</span>
+            </button>
             <span className="px-3 py-0.5 rounded-full bg-gradient-to-r from-[#8c6d2c]/60 to-[#523d14]/70 border border-[#F5C84C]/60 text-[11px] font-black text-white shadow-sm">
               المدير
             </span>
@@ -827,6 +865,17 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditStationModal(item.station);
+                        }}
+                        className="p-1 rounded-md bg-black/60 border border-[#F5C84C]/40 text-[#F5C84C] hover:bg-[#F5C84C]/25 transition cursor-pointer"
+                        title={`تعديل اسم أو حذف محطة ${item.station.name}`}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
                       <span className="px-1.5 py-0.5 rounded-md bg-[#F5C84C]/20 border border-[#F5C84C]/40 text-[#F5C84C] font-mono font-black text-[10px]">
                         📦{item.stockCount}
                       </span>
@@ -862,16 +911,26 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setInspectedStationId(null);
-                  setSelectedStationFilter('all');
-                }}
-                className="btn-cancel px-2 py-1 rounded-xl text-[10px] font-black shrink-0"
-              >
-                إغلاق ▲
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => openEditStationModal(activeInspectedStation.station)}
+                  className="btn-gold px-2 py-1 rounded-xl text-[10px] font-black flex items-center gap-1 shrink-0"
+                >
+                  <Pencil className="w-3 h-3" />
+                  <span>تعديل الاسم</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectedStationId(null);
+                    setSelectedStationFilter('all');
+                  }}
+                  className="btn-cancel px-2 py-1 rounded-xl text-[10px] font-black shrink-0"
+                >
+                  إغلاق ▲
+                </button>
+              </div>
             </div>
 
             {/* 1. Cash Balances & Today Flow in this Station */}
@@ -1711,17 +1770,34 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                     key={station.id}
                     className="bg-black/50 border border-white/15 rounded-2xl p-3 space-y-2"
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <span>{station.country === 'MA' ? '🇲🇦' : '🇲🇷'}</span>
-                        <div>
-                          <h4 className="text-xs font-black text-white">{station.name}</h4>
-                          <p className="text-[10px] text-white/75">{station.city}</p>
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-black text-white truncate">{station.name}</h4>
+                          <p className="text-[10px] text-white/75 truncate">{station.city}</p>
                         </div>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/60 border border-[#F5C84C]/40 text-[#F5C84C] font-bold">
-                        {station.country === 'MA' ? 'المغرب' : 'موريتانيا'}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openEditStationModal(station)}
+                          className="px-2 py-1 rounded-lg bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] text-[10px] font-black flex items-center gap-1 cursor-pointer"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>تعديل الاسم</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await deleteStation(station.id);
+                          }}
+                          className="btn-delete p-1.5 rounded-lg text-[10px] font-black cursor-pointer"
+                          title="حذف هذه المحطة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
@@ -2052,6 +2128,208 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 </button>
                 <button type="submit" className="px-5 py-2 rounded-xl font-black">
                   إضافة المحطة
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit / Rename / Delete Existing Station Modal */}
+      {editingStation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 animate-fadeIn">
+          <div className="w-full max-w-[360px] luxury-card rounded-3xl p-5 shadow-2xl space-y-4 text-right border border-[#F5C84C]/50">
+            <div className="flex items-center justify-between border-b border-white/15 pb-2">
+              <h3 className="text-sm font-black text-white flex items-center gap-1.5">
+                <Pencil className="w-4 h-4 text-[#F5C84C]" />
+                <span>تعديل اسم وبيانات المحطة</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingStation(null)}
+                className="btn-cancel p-1.5 rounded-xl"
+                aria-label="إغلاق"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!editStationName.trim()) {
+                  showToast('يرجى إدخال اسم المحطة', 'error');
+                  return;
+                }
+                const res = await updateStation(editingStation.id, {
+                  name: editStationName.trim(),
+                  city: editStationCity.trim() || editStationName.trim(),
+                  country: editStationCountry,
+                  currency: editStationCurrency,
+                  phone: editStationPhone.trim(),
+                });
+                if (res.success) {
+                  setEditingStation(null);
+                }
+              }}
+              className="space-y-3 text-xs"
+            >
+              <div>
+                <label className="text-white/90 font-bold block mb-1">اسم المحطة الجديد *</label>
+                <input
+                  type="text"
+                  required
+                  value={editStationName}
+                  onChange={(e) => setEditStationName(e.target.value)}
+                  placeholder="مثال: محطة الداخلة أو محطة نواكشوط"
+                  className="w-full bg-black/60 border border-[#F5C84C]/50 rounded-xl px-3 py-2 text-white font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="text-white/90 font-bold block mb-1">المدينة *</label>
+                <input
+                  type="text"
+                  required
+                  value={editStationCity}
+                  onChange={(e) => setEditStationCity(e.target.value)}
+                  placeholder="مثال: الداخلة"
+                  className="w-full bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-white/90 font-bold block mb-1">الدولة:</label>
+                <select
+                  value={editStationCountry}
+                  onChange={(e) => {
+                    const c = e.target.value as 'MA' | 'MR';
+                    setEditStationCountry(c);
+                    setEditStationCurrency(c === 'MR' ? 'MRU' : 'MAD');
+                  }}
+                  className="w-full bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white font-bold"
+                >
+                  <option value="MA">المملكة المغربية 🇲🇦</option>
+                  <option value="MR">الجمهورية الإسلامية الموريتانية 🇲🇷</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-white/90 font-bold block mb-1">العملة الأساسية للمحطة:</label>
+                <select
+                  value={editStationCurrency}
+                  onChange={(e) => setEditStationCurrency(e.target.value)}
+                  className="w-full bg-black/60 border border-[#F5C84C]/40 rounded-xl px-3 py-2 text-white font-bold"
+                >
+                  {currencies.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.label_ar} ({c.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-white/90 font-bold block mb-1">رقم الهاتف للتواصل (اختياري):</label>
+                <input
+                  type="tel"
+                  dir="ltr"
+                  value={editStationPhone}
+                  onChange={(e) => setEditStationPhone(e.target.value)}
+                  placeholder="+212 528 000 000"
+                  className="w-full bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white text-right font-mono"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/15">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const idToDelete = editingStation.id;
+                    setEditingStation(null);
+                    if (inspectedStationId === idToDelete) setInspectedStationId(null);
+                    await deleteStation(idToDelete);
+                  }}
+                  className="btn-delete px-3 py-2 rounded-xl font-black flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>حذف المحطة</span>
+                </button>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditingStation(null)}
+                    className="btn-cancel px-3.5 py-2 rounded-xl font-bold"
+                  >
+                    إلغاء
+                  </button>
+                  <button type="submit" className="btn-gold px-4 py-2 rounded-xl font-black">
+                    حفظ التعديل
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Main Workspace / Agency Title Modal */}
+      {showEditWorkspaceNameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 animate-fadeIn">
+          <div className="w-full max-w-[360px] luxury-card rounded-3xl p-5 shadow-2xl space-y-4 text-right border border-[#F5C84C]/50">
+            <div className="flex items-center justify-between border-b border-white/15 pb-2">
+              <h3 className="text-sm font-black text-white flex items-center gap-1.5">
+                <Pencil className="w-4 h-4 text-[#F5C84C]" />
+                <span>تغيير اسم الوكالة / المحطة الرئيسي</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowEditWorkspaceNameModal(false)}
+                className="btn-cancel p-1.5 rounded-xl"
+                aria-label="إغلاق"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!workspaceNameInput.trim()) return;
+                await updateWorkspaceBranding({
+                  customBrandName: workspaceNameInput.trim(),
+                  customBrandPhone: currentWorkspace?.custom_brand_phone || currentUser?.phone || '',
+                  customBrandLogoUrl: currentWorkspace?.custom_brand_logo_url || '',
+                });
+                setShowEditWorkspaceNameModal(false);
+              }}
+              className="space-y-3 text-xs"
+            >
+              <div>
+                <label className="text-white/90 font-bold block mb-1">
+                  اسم الوكالة / المحطة (يظهر في الأعلى وعلى البونات والملصقات):
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={workspaceNameInput}
+                  onChange={(e) => setWorkspaceNameInput(e.target.value)}
+                  placeholder="مثال: محطة الاتحادية للنقل"
+                  className="w-full bg-black/60 border border-[#F5C84C]/50 rounded-xl px-3 py-2.5 text-white font-bold"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditWorkspaceNameModal(false)}
+                  className="btn-cancel px-4 py-2 rounded-xl font-bold"
+                >
+                  إلغاء
+                </button>
+                <button type="submit" className="btn-gold px-5 py-2 rounded-xl font-black">
+                  حفظ الاسم الجديد
                 </button>
               </div>
             </form>

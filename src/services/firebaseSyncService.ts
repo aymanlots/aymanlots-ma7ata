@@ -152,10 +152,11 @@ export const firebaseSyncService = {
           custom_brand_phone: ws.custom_brand_phone || null,
           custom_brand_logo_url: ws.custom_brand_logo_url || null,
           plan_tier: ws.plan_tier || 'plan_1_full',
-          plan_name: ws.plan_name || 'الباقة القياسية',
-          max_workers: ws.max_workers ?? 10,
-          max_stations: ws.max_stations ?? 5,
-          max_collaborations: ws.max_collaborations ?? 5,
+          plan_name: ws.plan_name || 'الباقة الشاملة المفتوحة (30 يوم مجاناً)',
+          max_workers: ws.max_workers ?? 999,
+          max_stations: ws.max_stations ?? 999,
+          max_collaborations: ws.max_collaborations ?? 999,
+          last_reset_at: ws.last_reset_at || null,
           created_at: ws.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }),
@@ -360,25 +361,43 @@ export const firebaseSyncService = {
     }
   },
 
-  async clearAllWorkspaceData(wsId: string): Promise<void> {
+  async clearAllWorkspaceData(wsId: string, resetTimestamp?: string): Promise<void> {
     if (!this.isAvailable() || !wsId) return;
-    const subcollections = ['stations', 'parcels', 'transactions', 'trips'];
-    for (const sub of subcollections) {
-      const path = `workspaces/${wsId}/${sub}`;
-      try {
-        const snap = await getDocs(collection(db, 'workspaces', wsId, sub));
-        const deletions = snap.docs.map((d) => deleteDoc(d.ref));
-        await Promise.all(deletions);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, path);
-      }
+    const nowIso = resetTimestamp || new Date().toISOString();
+    try {
+      await setDoc(
+        doc(db, 'workspaces', wsId),
+        {
+          last_reset_at: nowIso,
+          updated_at: nowIso,
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Firestore set last_reset_at warning:', err);
     }
+
+    // Delete transactions, parcels, trips, and stations in parallel so no orphan records remain
+    const subcollections = ['transactions', 'parcels', 'trips', 'stations'];
+    await Promise.all(
+      subcollections.map(async (sub) => {
+        const path = `workspaces/${wsId}/${sub}`;
+        try {
+          const snap = await getDocs(collection(db, 'workspaces', wsId, sub));
+          const deletions = snap.docs.map((d) => deleteDoc(d.ref));
+          await Promise.all(deletions);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, path);
+        }
+      })
+    );
   },
 
   // 6. REAL-TIME SUBSCRIPTION FOR WORKSPACE DATA
   subscribeToWorkspace(
     wsId: string,
     callbacks: {
+      onWorkspace?: (ws: Workspace | null) => void;
       onStations?: (stations: Station[]) => void;
       onParcels?: (parcels: Parcel[]) => void;
       onTransactions?: (transactions: Transaction[]) => void;
@@ -389,6 +408,21 @@ export const firebaseSyncService = {
     if (!this.isAvailable() || !wsId) return () => {};
 
     const unsubs: Unsubscribe[] = [];
+
+    // Workspace document listener (tracks branding, name, and last_reset_at across devices)
+    if (callbacks.onWorkspace) {
+      const wsPath = `workspaces/${wsId}`;
+      const un = onSnapshot(
+        doc(db, 'workspaces', wsId),
+        (snapshot) => {
+          callbacks.onWorkspace?.(snapshot.exists() ? (snapshot.data() as Workspace) : null);
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.GET, wsPath);
+        }
+      );
+      unsubs.push(un);
+    }
 
     // Stations listener
     if (callbacks.onStations) {
