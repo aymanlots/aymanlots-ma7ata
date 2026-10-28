@@ -36,9 +36,12 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
     createTransaction,
     convertCurrency,
     exchangeRate,
+    userRole,
+    userAssignedStationId,
   } = useApp();
 
   const resolveStationId = () => {
+    if (userRole === 'worker' && userAssignedStationId) return userAssignedStationId;
     if (fixedStationId && fixedStationId !== 'all') return fixedStationId;
     if (selectedStationId && selectedStationId !== 'all') return selectedStationId;
     return stations[0]?.id || '';
@@ -67,7 +70,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
     if (st) {
       setCurrency(st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
     }
-  }, [fixedStationId, selectedStationId, stations, isOpen]);
+  }, [fixedStationId, selectedStationId, userRole, userAssignedStationId, stations, isOpen]);
 
   if (!isOpen) return null;
 
@@ -242,7 +245,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
               <label className="block text-xs font-bold text-white/90 mb-1">المحطة</label>
               <select
                 value={stationId}
-                disabled={Boolean(fixedStationId && fixedStationId !== 'all')}
+                disabled={userRole === 'worker' || Boolean(fixedStationId && fixedStationId !== 'all')}
                 onChange={e => {
                   const nextId = e.target.value;
                   setStationId(nextId);

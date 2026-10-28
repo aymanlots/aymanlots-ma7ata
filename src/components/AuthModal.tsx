@@ -22,12 +22,18 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPublicTracking }) => {
-  const { registerUser, loginWithCredentials, loginWithGoogle } = useApp();
-  const [isSignUp, setIsSignUp] = useState(true); // Default to Sign Up
+  const { registerUser, loginWithCredentials } = useApp();
+  const [isSignUp, setIsSignUp] = useState(false); // Default to Login directly
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showLegalTerms, setShowLegalTerms] = useState(false);
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(() => {
+    try {
+      return localStorage.getItem('ittihadiya_saved_login_phone') || '';
+    } catch {
+      return '';
+    }
+  });
   const [whatsapp, setWhatsapp] = useState('');
   const [sameAsPhone, setSameAsPhone] = useState(true);
   const [password, setPassword] = useState('');
@@ -62,6 +68,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
       setError('يرجى إدخال رقم هاتف صحيح');
       return;
     }
+
+    try {
+      localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
+    } catch {}
 
     if (!password || password.length < 6) {
       setError('كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام');
@@ -105,23 +115,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
     } catch (err: any) {
       setIsLoading(false);
       setError(err?.message || 'حدث خطأ أثناء معالجة الطلب');
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setError(null);
-    setIsLoading(true);
-    try {
-      const res = await loginWithGoogle();
-      setIsLoading(false);
-      if (res.success && onClose) {
-        onClose();
-      } else if (res.error) {
-        setError(res.error);
-      }
-    } catch (err: any) {
-      setIsLoading(false);
-      setError(err?.message || 'تعذر تسجيل الدخول بحساب Google');
     }
   };
 
@@ -324,54 +317,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
               ? 'جاري التحقق...' 
               : isSignUp 
               ? (isOwnerRole ? 'إنشاء مساحة العمل وبدء الإدارة' : 'إرسال طلب الانضمام للعامل') 
-              : 'تسجيل الدخول برقم الهاتف'}
-          </button>
-
-          {/* Divider */}
-          <div className="flex items-center gap-2 py-1">
-            <div className="flex-1 h-px bg-[#D4AF37]/25" />
-            <span className="text-[10px] text-[#C8B08A] font-bold">أو عبر البريد الإلكتروني</span>
-            <div className="flex-1 h-px bg-[#D4AF37]/25" />
-          </div>
-
-          {/* Google / Gmail Sign-In Button */}
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={isLoading}
-            className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-slate-100 text-slate-900 font-black text-xs flex items-center justify-center gap-2 shadow-md transition active:scale-95 disabled:opacity-50"
-          >
-            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-              <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z" />
-              <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z" />
-              <path fill="#FBBC05" d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z" />
-              <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z" />
-            </svg>
-            <span>المتابعة السريعة بحساب Google (Gmail)</span>
+              : 'تسجيل الدخول'}
           </button>
         </form>
 
         {/* Toggle Sign in / Sign up */}
         <div className="text-center mt-4 pt-3 border-t border-[#D4AF37]/25 space-y-2">
+          <button
+            type="button"
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setError(null);
+            }}
+            className="w-full py-2.5 px-3 rounded-xl bg-[#120a00] border border-[#D4AF37]/50 text-[#F5D799] hover:bg-[#2a1800] text-xs font-black transition cursor-pointer"
+          >
+            {isSignUp ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'إنشاء حساب جديد'}
+          </button>
           {onOpenPublicTracking && (
             <button
               type="button"
               onClick={onOpenPublicTracking}
-              className="w-full py-2.5 px-3 rounded-xl bg-[#120a00] border border-[#D4AF37]/55 text-[#F5D799] text-xs font-black flex items-center justify-center gap-1.5 hover:bg-[#2a1800] transition"
+              className="w-full py-2.5 px-3 rounded-xl bg-[#120a00] border border-[#D4AF37]/35 text-[#E6C37A] text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-[#2a1800] transition"
             >
               <Package className="w-4 h-4 text-[#F3A952]" />
               <span>تتبع شحنة للزبون بدون تسجيل الدخول</span>
             </button>
           )}
-          <button
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setError(null);
-            }}
-            className="text-xs text-[#F5D799] hover:underline font-bold block w-full"
-          >
-            {isSignUp ? 'هل لديك حساب بالفعل؟ تسجيل الدخول' : 'ليس لديك حساب؟ إنشاء حساب جديد كمدير مساحة عمل'}
-          </button>
           <button
             type="button"
             onClick={() => setShowLegalTerms(true)}

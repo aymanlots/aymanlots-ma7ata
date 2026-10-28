@@ -4,6 +4,8 @@ import { Transaction, TransactionType, MoneyTransfer } from '../types/database';
 import { DailyFinancialReportModal } from './DailyFinancialReportModal';
 import { TransactionDetailModal } from './TransactionDetailModal';
 import { MoneyTransferModal } from './MoneyTransferModal';
+import { exportService } from '../services/exportService';
+import { formatDateTimeStandard } from '../utils/logisticsFeatures';
 import { 
   FileText, 
   Download, 
@@ -38,7 +40,9 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
     transactions, 
     stations, 
     currencies,
+    currentWorkspace,
     userRole, 
+    userAssignedStationId,
     stationBalances,
     selectedStationId,
     hideAmounts,
@@ -55,20 +59,26 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
     showToast 
   } = useApp();
 
+  const workerStationId = userRole === 'worker' ? (userAssignedStationId || selectedStationId || stations[0]?.id || '') : '';
+
   // Filters synchronized with globally selected active station
-  const [filterStation, setFilterStation] = useState<string>(() => selectedStationId || 'all');
+  const [filterStation, setFilterStation] = useState<string>(() =>
+    workerStationId || selectedStationId || 'all'
+  );
   const [filterType, setFilterType] = useState<string>('all');
   const [filterDate, setFilterDate] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Keep local filter in sync with top station selector
   useEffect(() => {
-    if (selectedStationId) {
+    if (userRole === 'worker' && workerStationId) {
+      setFilterStation(workerStationId);
+    } else if (selectedStationId) {
       setFilterStation(selectedStationId);
     } else {
       setFilterStation('all');
     }
-  }, [selectedStationId]);
+  }, [selectedStationId, userRole, workerStationId]);
 
   // Compact / Collapsible UI States (اختصارات بالسهم الصغير)
   const [isMoreToolsOpen, setIsMoreToolsOpen] = useState(false);
@@ -102,12 +112,14 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
   const [pendingPayoutWarningTransfer, setPendingPayoutWarningTransfer] = useState<MoneyTransfer | null>(null);
 
   useEffect(() => {
-    if (selectedStationId && selectedStationId !== 'all') {
+    if (userRole === 'worker' && workerStationId) {
+      setExchangeStationId(workerStationId);
+    } else if (selectedStationId && selectedStationId !== 'all') {
       setExchangeStationId(selectedStationId);
     } else if (stations[0]?.id && (!exchangeStationId || exchangeStationId === 'all')) {
       setExchangeStationId(stations[0].id);
     }
-  }, [selectedStationId, stations, exchangeStationId]);
+  }, [selectedStationId, stations, exchangeStationId, userRole, workerStationId]);
 
   const [detailTx, setDetailTx] = useState<Transaction | null>(null);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -192,51 +204,17 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
     (filterType !== 'all' ? 1 : 0) +
     (filterDate !== 'all' ? 1 : 0);
 
-  // Export to CSV with UTF-8 BOM
-  const exportToCSV = () => {
+  // Export to Official PDF
+  const exportToPDF = () => {
     if (filteredTransactions.length === 0) {
       showToast('لا توجد بيانات لتصديرها', 'error');
       return;
     }
-
-    const headers = [
-      'رقم السند',
-      'التاريخ والوقت',
-      'المحطة',
-      'نوع العملية',
-      'المبلغ',
-      'العملة',
-      'رقم الهاتف',
-      'السبب والبيان',
-      'الموظف المنشئ',
-      'الحالة',
-      'ملاحظات'
-    ];
-
-    const rows = filteredTransactions.map(tx => [
-      tx.id,
-      new Date(tx.created_at).toLocaleString('ar-MA'),
-      tx.station_name || tx.station_id,
-      tx.type,
-      tx.amount,
-      tx.currency,
-      tx.phone_number || '',
-      `"${(tx.reason || '').replace(/"/g, '""')}"`,
-      tx.creator_name || '',
-      tx.status === 'confirmed' ? 'معتمد' : tx.status === 'cancelled' ? 'ملغى' : 'معلق',
-      `"${(tx.note || '').replace(/"/g, '""')}"`
-    ]);
-
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `كشف_حساب_محطة_الاتحادية_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('تم تصدير جدول البيانات بنجاح', 'success');
+    exportService.exportTransactionsToPDF(
+      filteredTransactions,
+      currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'محطة الاتحادية'
+    );
+    showToast('جاري تحضير ملف PDF لسجل الصندوق...', 'success');
   };
 
   // Open Edit Modal
@@ -422,11 +400,11 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
             {(userRole === 'owner' || userRole === 'platform_owner') && (
               <button
                 type="button"
-                onClick={exportToCSV}
+                onClick={exportToPDF}
                 className="btn-cancel flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-400" />
-                <span>تصدير CSV</span>
+                <span>تصدير PDF</span>
               </button>
             )}
           </div>
@@ -482,10 +460,17 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
               </label>
               <select
                 value={exchangeStationId || currentStation?.id || ''}
-                onChange={e => setExchangeStationId(e.target.value)}
-                className="w-full bg-black/80 border border-white/20 rounded-lg px-2.5 py-1.5 text-white font-bold text-xs focus:outline-none focus:border-[#F5C84C]"
+                disabled={userRole === 'worker'}
+                onChange={e => {
+                  if (userRole === 'worker') return;
+                  setExchangeStationId(e.target.value);
+                }}
+                className="w-full bg-black/80 border border-white/20 rounded-lg px-2.5 py-1.5 text-white font-bold text-xs focus:outline-none focus:border-[#F5C84C] disabled:opacity-75"
               >
-                {stations.map(st => (
+                {(userRole === 'worker' && workerStationId
+                  ? stations.filter(st => st.id === workerStationId)
+                  : stations
+                ).map(st => (
                   <option key={st.id} value={st.id}>
                     {st.name} ({st.city})
                   </option>
@@ -791,24 +776,30 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
                       </strong>
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const destBal =
-                        stationBalances[t.destination_station_id]?.[t.payout_currency] || 0;
-                      if (destBal <= 0 || destBal - t.payout_amount < 0) {
-                        setPendingPayoutWarningTransfer(t);
-                        return;
-                      }
-                      await payoutMoneyTransfer(t.id);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>
-                      تم الاستلام (-{t.payout_amount} {t.payout_currency})
+                  {userRole !== 'worker' || t.destination_station_id === workerStationId ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const destBal =
+                          stationBalances[t.destination_station_id]?.[t.payout_currency] || 0;
+                        if (destBal <= 0 || destBal - t.payout_amount < 0) {
+                          setPendingPayoutWarningTransfer(t);
+                          return;
+                        }
+                        await payoutMoneyTransfer(t.id);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>
+                        تم الاستلام (-{t.payout_amount} {t.payout_currency})
+                      </span>
+                    </button>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-xl bg-black/55 border border-amber-500/40 text-amber-300 font-bold text-[10px] shrink-0">
+                      ⏳ بانتظار الاستلام في {t.destination_station_name}
                     </span>
-                  </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -923,11 +914,18 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
             <div className="grid grid-cols-2 gap-1.5 text-xs">
               <select
                 value={filterStation}
-                onChange={e => setFilterStation(e.target.value)}
-                className="bg-black/60 border border-white/20 rounded-xl px-2 py-1.5 text-[11px] text-white focus:outline-none focus:border-[#F5C84C] font-bold"
+                disabled={userRole === 'worker'}
+                onChange={e => {
+                  if (userRole === 'worker') return;
+                  setFilterStation(e.target.value);
+                }}
+                className="bg-black/60 border border-white/20 rounded-xl px-2 py-1.5 text-[11px] text-white focus:outline-none focus:border-[#F5C84C] font-bold disabled:opacity-75"
               >
-                <option value="all">كافة المحطات</option>
-                {stations.map(st => (
+                {userRole !== 'worker' && <option value="all">كافة المحطات</option>}
+                {(userRole === 'worker' && workerStationId
+                  ? stations.filter(st => st.id === workerStationId)
+                  : stations
+                ).map(st => (
                   <option key={st.id} value={st.id}>{st.name}</option>
                 ))}
               </select>
@@ -1078,7 +1076,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
                       </span>
                       <span className="text-[10px] text-white/80 font-mono flex items-center gap-1" dir="ltr">
                         <Clock className="w-3 h-3 text-[#F5C84C]" />
-                        <span>{new Date(tx.created_at).toLocaleString('ar-MA')}</span>
+                        <span>{formatDateTimeStandard(tx.created_at)}</span>
                       </span>
                     </div>
 

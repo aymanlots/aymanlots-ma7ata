@@ -38,8 +38,13 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     hideAmounts,
     updateParcelStatus, 
     recordParcelPayment, 
+    userRole,
+    userAssignedStationId,
+    selectedStationId,
     showToast 
   } = useApp();
+
+  const workerStationId = userRole === 'worker' ? (userAssignedStationId || selectedStationId || '') : '';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(initialParcel);
@@ -87,6 +92,11 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     );
 
     if (found) {
+      if (userRole === 'worker' && workerStationId && found.destination_station_id !== workerStationId) {
+        playErrorBeep();
+        setErrorMessage(`غير مسموح: هذا الكولي متجه إلى محطة (${found.destination_station_name}) ولا يمكنك تسليمه من محطتك الحالية.`);
+        return;
+      }
       playSuccessBeep();
       setSelectedParcel(found);
       setDeliveredTo(found.receiver_name);
@@ -111,6 +121,11 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
 
     if (selectedParcel.status === 'delivered') {
       setErrorMessage('هذا الكولي تم تسليمه مسبقاً بالفعل');
+      return;
+    }
+
+    if (userRole === 'worker' && workerStationId && selectedParcel.destination_station_id !== workerStationId) {
+      setErrorMessage(`غير مسموح: هذا الكولي تابع لمحطة الوصول (${selectedParcel.destination_station_name}) فقط.`);
       return;
     }
 

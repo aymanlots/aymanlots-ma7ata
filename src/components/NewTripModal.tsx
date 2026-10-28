@@ -35,14 +35,18 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
     removeRememberedDriver,
     removeRememberedPlate,
     userRole,
+    userAssignedStationId,
     showToast 
   } = useApp();
 
-  const [originStationId, setOriginStationId] = useState<string>(
-    selectedStationId || stations[0]?.id || ''
-  );
+  const defaultOriginId =
+    userRole === 'worker' && userAssignedStationId
+      ? userAssignedStationId
+      : selectedStationId || stations[0]?.id || '';
+
+  const [originStationId, setOriginStationId] = useState<string>(defaultOriginId);
   const [destinationStationId, setDestinationStationId] = useState<string>(
-    stations.find(s => s.id !== (selectedStationId || stations[0]?.id))?.id || stations[1]?.id || ''
+    stations.find(s => s.id !== defaultOriginId)?.id || stations[1]?.id || ''
   );
 
   const [driverName, setDriverName] = useState('');
@@ -159,8 +163,9 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 <label className="block text-[#C2A878] mb-1 text-[10px]">محطة الانطلاق والشحن *</label>
                 <select
                   value={originStationId}
+                  disabled={userRole === 'worker'}
                   onChange={e => setOriginStationId(e.target.value)}
-                  className="w-full bg-[#0d0700] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-bold text-xs focus:outline-none focus:border-[#F5D799]"
+                  className="w-full bg-[#0d0700] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-bold text-xs focus:outline-none focus:border-[#F5D799] disabled:opacity-70"
                 >
                   {stations.map(st => (
                     <option key={st.id} value={st.id}>

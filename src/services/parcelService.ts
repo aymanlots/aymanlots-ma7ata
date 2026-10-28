@@ -149,9 +149,7 @@ export const parcelService = {
       localStorage.setItem(key, nextSeq.toString());
     } catch {}
 
-    const year = new Date().getFullYear();
-    const formattedNum = String(nextSeq).padStart(5, '0');
-    const trackingCode = `ITT-${year}-${formattedNum}`;
+    const trackingCode = String(nextSeq).padStart(7, '0');
 
     return { parcelNumber: nextSeq, trackingCode };
   },
@@ -168,9 +166,9 @@ export const parcelService = {
           const { data, error } = await supabase.rpc('rpc_next_parcel_number', {
             p_workspace_id: workspaceId,
           });
-          if (!error && data && data.success && data.parcel_number && data.tracking_code) {
+          if (!error && data && data.success && data.parcel_number) {
             const num = Number(data.parcel_number);
-            const code = String(data.tracking_code);
+            const code = String(num).padStart(7, '0');
             try {
               localStorage.setItem(`ittihadiya_seq_${workspaceId}`, num.toString());
             } catch {}

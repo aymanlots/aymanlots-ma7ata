@@ -1406,57 +1406,57 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {openExportSection && (
           <div className="mt-3.5 pt-3 border-t border-white/15 grid grid-cols-1 gap-2">
-            {/* Export Cash Transactions CSV */}
+            {/* Export Cash Transactions PDF */}
             <button
               onClick={() => {
                 if (transactions.length === 0) {
                   showToast('لا توجد معاملات نقدية لتصديرها حالياً', 'info');
                   return;
                 }
-                exportService.exportTransactionsToCSV(transactions, currentWorkspace?.name || 'محطة الاتحادية');
-                showToast('تم تصدير سجلات الصندوق والمعاملات بتنسيق CSV', 'success');
+                exportService.exportTransactionsToPDF(transactions, currentWorkspace?.name || 'محطة الاتحادية');
+                showToast('تم فتح وتحميل تقرير سجل الصندوق بصيغة PDF', 'success');
               }}
               className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
             >
-              <FileSpreadsheet className="w-4 h-4 shrink-0" />
+              <Download className="w-4 h-4 shrink-0" />
               <div>
-                <span className="font-bold text-xs block">سجلات الصندوق (CSV) — متوافق مع Excel</span>
+                <span className="font-bold text-xs block">تقرير سجلات الصندوق والمعاملات (PDF)</span>
               </div>
             </button>
 
-            {/* Export Parcels CSV */}
+            {/* Export Parcels PDF */}
             <button
               onClick={() => {
                 if (parcels.length === 0) {
                   showToast('لا توجد سجلات كوليات لتصديرها حالياً', 'info');
                   return;
                 }
-                exportService.exportParcelsToCSV(parcels, currentWorkspace?.name || 'محطة الاتحادية');
-                showToast('تم تصدير سجلات الكوليات والشحنات بتنسيق CSV', 'success');
+                exportService.exportParcelsToPDF(parcels, currentWorkspace?.name || 'محطة الاتحادية');
+                showToast('تم فتح وتحميل تقرير سجلات الكوليات بصيغة PDF', 'success');
               }}
               className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
             >
-              <FileSpreadsheet className="w-4 h-4 shrink-0" />
+              <Download className="w-4 h-4 shrink-0" />
               <div>
-                <span className="font-bold text-xs block">سجلات الكوليات (CSV) — شامل المبالغ والمستلمين</span>
+                <span className="font-bold text-xs block">تقرير سجلات الكوليات والشحنات (PDF)</span>
               </div>
             </button>
 
-            {/* Export Full Workspace Backup JSON */}
+            {/* Export Full Workspace Backup PDF */}
             <button
               onClick={() => {
                 if (!currentWorkspace) {
                   showToast('تعذر تصدير النسخة الاحتياطية', 'error');
                   return;
                 }
-                exportService.exportWorkspaceBackupJSON(currentWorkspace, transactions, parcels);
-                showToast('تم تصدير النسخة الاحتياطية الشاملة بتنسيق JSON', 'success');
+                exportService.exportFullWorkspacePDF(currentWorkspace, transactions, parcels);
+                showToast('تم فتح وتحميل النسخة الاحتياطية الشاملة لبيانات مساحة العمل (PDF)', 'success');
               }}
               className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
             >
-              <FileJson className="w-4 h-4 shrink-0" />
+              <Download className="w-4 h-4 shrink-0" />
               <div>
-                <span className="font-bold text-xs block">نسخة احتياطية كاملة (JSON)</span>
+                <span className="font-bold text-xs block">نسخة احتياطية شاملة لبيانات مساحة العمل (PDF)</span>
               </div>
             </button>
           </div>
@@ -1618,30 +1618,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   onClick={() => {
                     if (currentWorkspace) {
-                      exportService.exportWorkspaceBackupJSON(currentWorkspace, transactions, parcels);
-                      showToast('تم تحميل النسخة الاحتياطية الكاملة (JSON) بنجاح', 'success');
+                      exportService.exportFullWorkspacePDF(currentWorkspace, transactions, parcels);
+                      showToast('تم فتح وتحميل النسخة الاحتياطية الكاملة (PDF) بنجاح', 'success');
                     }
                   }}
                   className="btn-cancel w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[11px] font-black text-[#F5C84C] border border-[#F5C84C]/40"
                 >
-                  <FileJson className="w-3.5 h-3.5 shrink-0" />
-                  <span>تحميل نسخة احتياطية كاملة (JSON) أولاً</span>
+                  <Download className="w-3.5 h-3.5 shrink-0" />
+                  <span>تحميل نسخة احتياطية شاملة (PDF) أولاً</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     if (transactions.length > 0) {
-                      exportService.exportTransactionsToCSV(transactions, currentWorkspace?.name || 'محطة الاتحادية');
+                      exportService.exportTransactionsToPDF(transactions, currentWorkspace?.name || 'محطة الاتحادية');
                     }
                     if (parcels.length > 0) {
-                      exportService.exportParcelsToCSV(parcels, currentWorkspace?.name || 'محطة الاتحادية');
+                      exportService.exportParcelsToPDF(parcels, currentWorkspace?.name || 'محطة الاتحادية');
                     }
-                    showToast('تم تحميل جداول الصندوق والكوليات (CSV/Excel) بنجاح', 'success');
+                    showToast('تم فتح وتحميل تقارير الصندوق والكوليات (PDF) بنجاح', 'success');
                   }}
                   className="btn-cancel w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[11px] font-bold text-white/90"
                 >
-                  <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
-                  <span>تحميل جداول Excel / CSV (الصندوق + الكوليات)</span>
+                  <Download className="w-3.5 h-3.5 shrink-0" />
+                  <span>تحميل تقارير PDF (الصندوق + الكوليات)</span>
                 </button>
               </div>
             </div>

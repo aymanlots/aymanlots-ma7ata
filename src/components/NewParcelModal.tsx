@@ -21,12 +21,33 @@ import {
   Star,
   MessageCircle,
   Settings,
+  Layers,
+  Users,
+  UserCheck,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 interface NewParcelModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onParcelCreated?: (parcel: Parcel) => void;
+  onParcelCreated?: (parcel: Parcel, allCreatedParcels?: Parcel[]) => void;
+}
+
+interface MultiParcelItemDraft {
+  id: string;
+  destinationStationId: string;
+  receiverName: string;
+  receiverPhone: string;
+  description: string;
+  category: string;
+  itemsCount: string;
+  weightKg: string;
+  amountDue: string;
+  payer: ParcelPayer;
+  amountPaid: string;
+  condition: 'normal' | 'abnormal';
+  conditionNotes: string;
 }
 
 export const NewParcelModal: React.FC<NewParcelModalProps> = ({
@@ -41,14 +62,25 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
     currencies,
     createParcel,
     isSubscriptionExpired,
+    userRole,
+    userAssignedStationId,
     showToast,
   } = useApp();
 
-  const [originStationId, setOriginStationId] = useState<string>(
-    selectedStationId || stations[0]?.id || ''
-  );
+  // Registration Mode:
+  // 'single': مرسل واحد -> كولي واحد -> مستلم واحد
+  // 'multi': مرسل واحد -> بزاف ديال الكوليات (إما لمستلم واحد أو لبزاف ديال المستلمين)
+  const [registrationMode, setRegistrationMode] = useState<'single' | 'multi'>('single');
+  const [multiSubMode, setMultiSubMode] = useState<'one_receiver' | 'multi_receivers'>('one_receiver');
+
+  const initialOriginId =
+    userRole === 'worker' && userAssignedStationId
+      ? userAssignedStationId
+      : selectedStationId || stations[0]?.id || '';
+
+  const [originStationId, setOriginStationId] = useState<string>(initialOriginId);
   const [destinationStationId, setDestinationStationId] = useState<string>(
-    stations.find((s) => s.id !== (selectedStationId || stations[0]?.id))?.id ||
+    stations.find((s) => s.id !== initialOriginId)?.id ||
       stations[1]?.id ||
       ''
   );
@@ -74,6 +106,25 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
   const [condition, setCondition] = useState<'normal' | 'abnormal'>('normal');
   const [conditionNotes, setConditionNotes] = useState('');
 
+  // Multi-parcel items state
+  const createEmptyDraftItem = (defaultDestId: string): MultiParcelItemDraft => ({
+    id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    destinationStationId: defaultDestId,
+    receiverName: '',
+    receiverPhone: '',
+    description: '',
+    category: 'طرد بضائع عامة',
+    itemsCount: '1',
+    weightKg: '',
+    amountDue: '200',
+    payer: 'sender',
+    amountPaid: '200',
+    condition: 'normal',
+    conditionNotes: '',
+  });
+
+  const [multiItems, setMultiItems] = useState<MultiParcelItemDraft[]>([]);
+
   // Auto Calculator & VIP Customer state
   const [savedCustomers, setSavedCustomers] = useState<SavedCustomer[]>([]);
   const [selectedVipSender, setSelectedVipSender] = useState<SavedCustomer | null>(null);
@@ -87,30 +138,55 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // تصفير جميع الحقول عند فتح النافذة من جديد حتى لا تبقى أسماء المرسل والمستلم السابقة
   useEffect(() => {
     if (isOpen) {
       setSavedCustomers(getSavedCustomersList(currentWorkspace?.id));
       setRouteTariffs(getSavedRouteTariffs(currentWorkspace?.id));
+
       const origId =
-        stations.some((s) => s.id === originStationId)
-          ? originStationId
-          : selectedStationId || stations[0]?.id || '';
-      if (origId && origId !== originStationId) {
-        setOriginStationId(origId);
-      }
+        userRole === 'worker' && userAssignedStationId
+          ? userAssignedStationId
+          : selectedStationId && stations.some((s) => s.id === selectedStationId)
+          ? selectedStationId
+          : stations[0]?.id || '';
       const destId =
-        stations.some((s) => s.id === destinationStationId && s.id !== origId)
-          ? destinationStationId
-          : stations.find((s) => s.id !== origId)?.id || stations[0]?.id || '';
-      if (destId && destId !== destinationStationId) {
-        setDestinationStationId(destId);
-      }
+        stations.find((s) => s.id !== origId)?.id || stations[0]?.id || '';
+
+      setOriginStationId(origId);
+      setDestinationStationId(destId);
+
       const st = stations.find((s) => s.id === origId);
-      if (st) {
-        setCurrency(st.currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
-      }
+      const defaultCurr = st ? st.currency || (st.country === 'MR' ? 'MRU' : 'MAD') : currencies[0]?.code || 'MAD';
+      setCurrency(defaultCurr);
+
+      // Reset all sender/receiver/parcel fields cleanly
+      setRegistrationMode('single');
+      setMultiSubMode('one_receiver');
+      setSenderName('');
+      setSenderPhone('');
+      setReceiverName('');
+      setReceiverPhone('');
+      setDescription('');
+      setCategory('طرد بضائع عامة');
+      setItemsCount('1');
+      setWeightKg('');
+      setAmountDue('200');
+      setPayer('sender');
+      setAmountPaid('200');
+      setNotes('');
+      setCondition('normal');
+      setConditionNotes('');
+      setSelectedVipSender(null);
+      setErrorMessage(null);
+      setIsSubmitting(false);
+
+      setMultiItems([
+        createEmptyDraftItem(destId),
+        createEmptyDraftItem(destId),
+      ]);
     }
-  }, [isOpen, currentWorkspace?.id, stations, selectedStationId]);
+  }, [isOpen, currentWorkspace?.id, selectedStationId]);
 
   useEffect(() => {
     const st = stations.find((s) => s.id === originStationId);
@@ -234,6 +310,31 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
     }
   };
 
+  const updateMultiItem = (id: string, patch: Partial<MultiParcelItemDraft>) => {
+    setMultiItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const next = { ...item, ...patch };
+        if (patch.amountDue !== undefined && next.payer === 'sender' && patch.amountPaid === undefined) {
+          next.amountPaid = patch.amountDue;
+        }
+        if (patch.payer !== undefined) {
+          next.amountPaid = patch.payer === 'sender' ? next.amountDue : '0';
+        }
+        return next;
+      })
+    );
+  };
+
+  const handleAddMultiItem = () => {
+    setMultiItems((prev) => [...prev, createEmptyDraftItem(destinationStationId)]);
+  };
+
+  const handleRemoveMultiItem = (id: string) => {
+    if (multiItems.length <= 1) return;
+    setMultiItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -251,89 +352,226 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
       setErrorMessage('يرجى إدخال رقم هاتف المرسل بشكل صحيح');
       return;
     }
-    if (!receiverName.trim()) {
-      setErrorMessage('يرجى إدخال اسم المستلم');
-      return;
-    }
-    if (!receiverPhone.trim() || receiverPhone.trim().length < 6) {
-      setErrorMessage('يرجى إدخال رقم هاتف المستلم بشكل صحيح');
-      return;
-    }
-    if (!description.trim()) {
-      setErrorMessage('يرجى إدخال وصف حر للبضاعة');
-      return;
-    }
-    if (originStationId === destinationStationId) {
-      setErrorMessage('لا يمكن أن تكون محطة الانطلاق والوصول هي نفس المحطة');
+
+    // =========================================================================
+    // MODE A: كولي واحد (مرسل واحد -> كولي واحد -> مستلم واحد)
+    // =========================================================================
+    if (registrationMode === 'single') {
+      if (!receiverName.trim()) {
+        setErrorMessage('يرجى إدخال اسم المستلم');
+        return;
+      }
+      if (!receiverPhone.trim() || receiverPhone.trim().length < 6) {
+        setErrorMessage('يرجى إدخال رقم هاتف المستلم بشكل صحيح');
+        return;
+      }
+      if (!description.trim()) {
+        setErrorMessage('يرجى إدخال وصف حر للبضاعة');
+        return;
+      }
+      if (originStationId === destinationStationId) {
+        setErrorMessage('لا يمكن أن تكون محطة الانطلاق والوصول هي نفس المحطة');
+        return;
+      }
+
+      const dueNum = parseFloat(amountDue) || 0;
+      const paidNum = parseFloat(amountPaid) || 0;
+
+      if (dueNum < 0) {
+        setErrorMessage('المبلغ المستحق لا يمكن أن يكون سالباً');
+        return;
+      }
+      if (paidNum > dueNum) {
+        setErrorMessage('المبلغ المدفوع لا يمكن أن يتجاوز المبلغ الإجمالي المستحق');
+        return;
+      }
+
+      if (condition === 'abnormal' && !conditionNotes.trim()) {
+        setErrorMessage('يرجى كتابة ملاحظات وتفاصيل حالة الكولي غير العادية');
+        return;
+      }
+
+      try {
+        setIsSubmitting(true);
+
+        const res = await createParcel({
+          origin_station_id: originStationId,
+          destination_station_id: destinationStationId,
+          sender_name: senderName.trim(),
+          sender_phone: senderPhone.trim(),
+          receiver_name: receiverName.trim(),
+          receiver_phone: receiverPhone.trim(),
+          description: description.trim(),
+          category,
+          items_count: parseInt(itemsCount, 10) || 1,
+          weight_kg: weightKg ? parseFloat(weightKg) : undefined,
+          amount_due: dueNum,
+          payer,
+          amount_paid: paidNum,
+          currency,
+          notes: notes.trim() || undefined,
+          condition,
+          condition_notes: condition === 'abnormal' ? conditionNotes.trim() : undefined,
+          route: `${originSt?.city || 'الانطلاق'} ➔ ${destSt?.city || 'الوصول'}`,
+        });
+
+        setIsSubmitting(false);
+
+        if (res.success && res.parcel) {
+          try {
+            confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+          } catch {}
+
+          if (autoSendWhatsApp) {
+            openWhatsAppParcelNotification(
+              res.parcel,
+              'registered_sender',
+              currentWorkspace?.custom_brand_name || currentWorkspace?.name
+            );
+          }
+
+          if (onParcelCreated) {
+            onParcelCreated(res.parcel, [res.parcel]);
+          }
+          onClose();
+        } else {
+          setErrorMessage(res.error || 'حدث خطأ أثناء حفظ الكولي');
+        }
+      } catch (err: any) {
+        setIsSubmitting(false);
+        setErrorMessage(err.message || 'حدث خطأ غير متوقع');
+      }
       return;
     }
 
-    const dueNum = parseFloat(amountDue) || 0;
-    const paidNum = parseFloat(amountPaid) || 0;
-
-    if (dueNum < 0) {
-      setErrorMessage('المبلغ المستحق لا يمكن أن يكون سالباً');
-      return;
+    // =========================================================================
+    // MODE B: إرسالية متعددة (مرسل واحد -> بزاف ديال الكوليات)
+    // =========================================================================
+    if (multiSubMode === 'one_receiver') {
+      if (!receiverName.trim()) {
+        setErrorMessage('يرجى إدخال اسم المستلم');
+        return;
+      }
+      if (!receiverPhone.trim() || receiverPhone.trim().length < 6) {
+        setErrorMessage('يرجى إدخال رقم هاتف المستلم بشكل صحيح');
+        return;
+      }
+      if (originStationId === destinationStationId) {
+        setErrorMessage('لا يمكن أن تكون محطة الانطلاق والوصول هي نفس المحطة');
+        return;
+      }
     }
-    if (paidNum > dueNum) {
-      setErrorMessage('المبلغ المدفوع لا يمكن أن يتجاوز المبلغ الإجمالي المستحق');
-      return;
-    }
 
-    if (condition === 'abnormal' && !conditionNotes.trim()) {
-      setErrorMessage('يرجى كتابة ملاحظات وتفاصيل حالة الكولي غير العادية');
-      return;
+    for (let i = 0; i < multiItems.length; i++) {
+      const item = multiItems[i];
+      const idxLabel = `الكولي #${i + 1}`;
+      if (multiSubMode === 'multi_receivers') {
+        if (!item.receiverName.trim()) {
+          setErrorMessage(`يرجى إدخال اسم المستلم في ${idxLabel}`);
+          return;
+        }
+        if (!item.receiverPhone.trim() || item.receiverPhone.trim().length < 6) {
+          setErrorMessage(`يرجى إدخال رقم هاتف المستلم في ${idxLabel}`);
+          return;
+        }
+        if (originStationId === item.destinationStationId) {
+          setErrorMessage(`محطة الوصول في ${idxLabel} لا يمكن أن تكون نفس محطة الانطلاق`);
+          return;
+        }
+      }
+      if (!item.description.trim()) {
+        setErrorMessage(`يرجى إدخال وصف البضاعة في ${idxLabel}`);
+        return;
+      }
+      const d = parseFloat(item.amountDue) || 0;
+      const p = parseFloat(item.amountPaid) || 0;
+      if (d < 0 || p > d) {
+        setErrorMessage(`يرجى التحقق من المبلغ المستحق والمدفوع في ${idxLabel}`);
+        return;
+      }
+      if (item.condition === 'abnormal' && !item.conditionNotes.trim()) {
+        setErrorMessage(`يرجى كتابة ملاحظة حالة الكسر في ${idxLabel}`);
+        return;
+      }
     }
 
     try {
       setIsSubmitting(true);
+      const createdList: Parcel[] = [];
 
-      const res = await createParcel({
-        origin_station_id: originStationId,
-        destination_station_id: destinationStationId,
-        sender_name: senderName.trim(),
-        sender_phone: senderPhone.trim(),
-        receiver_name: receiverName.trim(),
-        receiver_phone: receiverPhone.trim(),
-        description: description.trim(),
-        category,
-        items_count: parseInt(itemsCount, 10) || 1,
-        weight_kg: weightKg ? parseFloat(weightKg) : undefined,
-        amount_due: dueNum,
-        payer,
-        amount_paid: paidNum,
-        currency,
-        notes: notes.trim() || undefined,
-        condition,
-        condition_notes: condition === 'abnormal' ? conditionNotes.trim() : undefined,
-        route: `${originSt?.city || 'الداخلة'} ➔ الكركرات ➔ ${destSt?.city || 'نواذيبو'}`,
-      });
+      for (let i = 0; i < multiItems.length; i++) {
+        const item = multiItems[i];
+        const targetDestId =
+          multiSubMode === 'one_receiver' ? destinationStationId : item.destinationStationId;
+        const targetDestSt = stations.find((s) => s.id === targetDestId);
+        const targetReceiverName =
+          multiSubMode === 'one_receiver' ? receiverName.trim() : item.receiverName.trim();
+        const targetReceiverPhone =
+          multiSubMode === 'one_receiver' ? receiverPhone.trim() : item.receiverPhone.trim();
+
+        const dueNum = parseFloat(item.amountDue) || 0;
+        const paidNum = parseFloat(item.amountPaid) || 0;
+
+        const res = await createParcel({
+          origin_station_id: originStationId,
+          destination_station_id: targetDestId,
+          sender_name: senderName.trim(),
+          sender_phone: senderPhone.trim(),
+          receiver_name: targetReceiverName,
+          receiver_phone: targetReceiverPhone,
+          description: item.description.trim(),
+          category: item.category || 'طرد بضائع عامة',
+          items_count: parseInt(item.itemsCount, 10) || 1,
+          weight_kg: item.weightKg ? parseFloat(item.weightKg) : undefined,
+          amount_due: dueNum,
+          payer: item.payer,
+          amount_paid: paidNum,
+          currency,
+          notes: notes.trim()
+            ? `${notes.trim()} (دفعة متعددة ${i + 1}/${multiItems.length})`
+            : `دفعة متعددة (${i + 1}/${multiItems.length})`,
+          condition: item.condition,
+          condition_notes: item.condition === 'abnormal' ? item.conditionNotes.trim() : undefined,
+          route: `${originSt?.city || 'الانطلاق'} ➔ ${targetDestSt?.city || 'الوصول'}`,
+        });
+
+        if (res.success && res.parcel) {
+          createdList.push(res.parcel);
+        } else {
+          setIsSubmitting(false);
+          setErrorMessage(res.error || `حدث خطأ أثناء تسجيل الكولي #${i + 1}`);
+          return;
+        }
+      }
 
       setIsSubmitting(false);
 
-      if (res.success && res.parcel) {
+      if (createdList.length > 0) {
         try {
-          confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+          confetti({ particleCount: 65, spread: 70, origin: { y: 0.7 } });
         } catch {}
+
+        showToast(
+          `تم تسجيل ${createdList.length} كوليات بنجاح للزبون ${senderName.trim()}`,
+          'success'
+        );
 
         if (autoSendWhatsApp) {
           openWhatsAppParcelNotification(
-            res.parcel,
+            createdList[0],
             'registered_sender',
             currentWorkspace?.custom_brand_name || currentWorkspace?.name
           );
         }
 
         if (onParcelCreated) {
-          onParcelCreated(res.parcel);
+          onParcelCreated(createdList[0], createdList);
         }
         onClose();
-      } else {
-        setErrorMessage(res.error || 'حدث خطأ أثناء حفظ الكولي');
       }
     } catch (err: any) {
       setIsSubmitting(false);
-      setErrorMessage(err.message || 'حدث خطأ غير متوقع');
+      setErrorMessage(err.message || 'حدث خطأ غير متوقع أثناء التسجيل المتعدد');
     }
   };
 
@@ -341,6 +579,9 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
     0,
     Math.round(((parseFloat(amountDue) || 0) - (parseFloat(amountPaid) || 0)) * 100) / 100
   );
+
+  const multiTotalDue = multiItems.reduce((sum, item) => sum + (parseFloat(item.amountDue) || 0), 0);
+  const multiTotalPaid = multiItems.reduce((sum, item) => sum + (parseFloat(item.amountPaid) || 0), 0);
 
   return (
     <div
@@ -350,7 +591,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
       <div className="fixed inset-0 bg-black/90 backdrop-blur-sm" onClick={onClose} />
 
       <div
-        className="w-full max-w-[410px] rounded-[24px] luxury-card border border-[#D4AF37]/65 p-4 shadow-2xl text-right overflow-hidden relative z-10 my-4 space-y-3.5 max-h-[92vh] flex flex-col"
+        className="w-full max-w-[440px] rounded-[24px] luxury-card border border-[#D4AF37]/65 p-4 shadow-2xl text-right overflow-hidden relative z-10 my-4 space-y-3 max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -364,7 +605,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 تسجيل كولي جديد (إرسالية بضائع)
               </h2>
               <p className="text-[10px] text-[#E6C37A] font-bold">
-                حاسبة وزن ذكية + تذكرة حرارية + إشعار واتساب QR
+                كولي فردي أو عدة كوليات لنفس الزبون + تذكرة حرارية QR
               </p>
             </div>
           </div>
@@ -376,6 +617,66 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Mode Selector: Single Parcel vs Multi-Parcel from 1 Sender */}
+        <div className="bg-black/60 p-2 rounded-2xl border border-[#D4AF37]/45 space-y-2 shrink-0">
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setRegistrationMode('single')}
+              className={`py-2 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 transition ${
+                registrationMode === 'single' ? 'btn-gold shadow-md' : 'btn-cancel'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5 shrink-0" />
+              <span>كولي واحد (مرسل ➔ مستلم)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRegistrationMode('multi')}
+              className={`py-2 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 transition ${
+                registrationMode === 'multi' ? 'btn-gold shadow-md' : 'btn-cancel'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 shrink-0" />
+              <span>بزاف ديال الكوليات (مرسل واحد)</span>
+            </button>
+          </div>
+
+          {registrationMode === 'multi' && (
+            <div className="pt-1.5 border-t border-white/10 space-y-1.5 animate-fadeIn">
+              <span className="text-[10px] font-black text-[#F5C84C] block">
+                اختر نوع الإرسال المتعدد لهذا الزبون:
+              </span>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setMultiSubMode('one_receiver')}
+                  className={`py-1.5 px-2 rounded-xl text-[10px] font-black flex items-center justify-center gap-1 transition ${
+                    multiSubMode === 'one_receiver'
+                      ? 'bg-[#F5C84C]/25 border border-[#F5C84C] text-[#F5C84C]'
+                      : 'bg-black/40 border border-white/15 text-white/75'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>بزاف ديال الكوليات لمستلم واحد</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMultiSubMode('multi_receivers')}
+                  className={`py-1.5 px-2 rounded-xl text-[10px] font-black flex items-center justify-center gap-1 transition ${
+                    multiSubMode === 'multi_receivers'
+                      ? 'bg-[#F5C84C]/25 border border-[#F5C84C] text-[#F5C84C]'
+                      : 'bg-black/40 border border-white/15 text-white/75'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5 shrink-0" />
+                  <span>بزاف ديال الكوليات لعدة مستلمين</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Error message */}
@@ -407,14 +708,15 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               <span>خط النقل والمحطات:</span>
             </span>
             <div className="grid grid-cols-2 gap-2">
-              <div>
+              <div className={registrationMode === 'multi' && multiSubMode === 'multi_receivers' ? 'col-span-2' : ''}>
                 <label className="block text-[#C8B08A] mb-1 font-bold text-[11px]">
-                  محطة الانطلاق:
+                  محطة الانطلاق (تودع فيها البضاعة):
                 </label>
                 <select
                   value={originStationId}
+                  disabled={userRole === 'worker'}
                   onChange={(e) => setOriginStationId(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-[#FFF8EB] font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-[#FFF8EB] font-bold text-xs focus:outline-none focus:border-[#D4AF37] disabled:opacity-70"
                   required
                 >
                   {stations.map((st) => (
@@ -425,23 +727,25 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 </select>
               </div>
 
-              <div>
-                <label className="block text-[#C8B08A] mb-1 font-bold text-[11px]">
-                  محطة الوصول:
-                </label>
-                <select
-                  value={destinationStationId}
-                  onChange={(e) => setDestinationStationId(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-[#FFF8EB] font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
-                  required
-                >
-                  {stations.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.name} ({st.city})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {(registrationMode === 'single' || multiSubMode === 'one_receiver') && (
+                <div>
+                  <label className="block text-[#C8B08A] mb-1 font-bold text-[11px]">
+                    محطة الوصول:
+                  </label>
+                  <select
+                    value={destinationStationId}
+                    onChange={(e) => setDestinationStationId(e.target.value)}
+                    className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-[#FFF8EB] font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
+                    required
+                  >
+                    {stations.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.name} ({st.city})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -489,48 +793,55 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             </div>
           )}
 
-          {/* 3. Sender and Receiver Information */}
-          <div className="grid grid-cols-1 gap-2.5">
-            {/* Sender */}
-            <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[#F5D799] block text-xs">بيانات المرسل:</span>
-                {selectedVipSender && (
-                  <span className="px-2 py-0.5 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/40 text-[#F5C84C] text-[9px] font-black">
-                    ⭐ تعريفة تاجر VIP مفعلة
-                  </span>
-                )}
+          {/* 3. Sender Information (Shared for both Single & Multi modes) */}
+          <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-[#F5D799] block text-xs">
+                {registrationMode === 'multi'
+                  ? '👤 بيانات المرسل (صاحب الإرساليات):'
+                  : '👤 بيانات المرسل:'}
+              </span>
+              {selectedVipSender && (
+                <span className="px-2 py-0.5 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/40 text-[#F5C84C] text-[9px] font-black">
+                  ⭐ تعريفة تاجر VIP مفعلة
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[#C8B08A] mb-1 text-[11px]">الاسم الكامل *</label>
+                <input
+                  type="text"
+                  placeholder="اسم مرسل البضاعة"
+                  required
+                  value={senderName}
+                  onChange={(e) => setSenderName(e.target.value)}
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-white text-xs focus:outline-none focus:border-[#D4AF37]"
+                />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[#C8B08A] mb-1 text-[11px]">الاسم الكامل *</label>
-                  <input
-                    type="text"
-                    placeholder="اسم مرسل البضاعة"
-                    required
-                    value={senderName}
-                    onChange={(e) => setSenderName(e.target.value)}
-                    className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-white text-xs focus:outline-none focus:border-[#D4AF37]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[#C8B08A] mb-1 text-[11px]">رقم الهاتف / واتساب *</label>
-                  <input
-                    type="tel"
-                    placeholder="0600000000"
-                    required
-                    value={senderPhone}
-                    onChange={(e) => setSenderPhone(e.target.value)}
-                    dir="ltr"
-                    className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-white font-mono text-xs focus:outline-none focus:border-[#D4AF37]"
-                  />
-                </div>
+              <div>
+                <label className="block text-[#C8B08A] mb-1 text-[11px]">رقم الهاتف / واتساب *</label>
+                <input
+                  type="tel"
+                  placeholder="0600000000"
+                  required
+                  value={senderPhone}
+                  onChange={(e) => setSenderPhone(e.target.value)}
+                  dir="ltr"
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-white font-mono text-xs focus:outline-none focus:border-[#D4AF37]"
+                />
               </div>
             </div>
+          </div>
 
-            {/* Receiver */}
+          {/* Receiver Info (Shown at top if Single Mode OR Multi-Parcel to One Receiver) */}
+          {(registrationMode === 'single' || multiSubMode === 'one_receiver') && (
             <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
-              <span className="font-bold text-[#E6C37A] block text-xs">بيانات المستلم:</span>
+              <span className="font-bold text-[#E6C37A] block text-xs">
+                {registrationMode === 'multi'
+                  ? '🎯 بيانات المستلم الموحد (يتسلم جميع الكوليات أسفله):'
+                  : '🎯 بيانات المستلم:'}
+              </span>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[#C8B08A] mb-1 text-[11px]">الاسم الكامل *</label>
@@ -557,314 +868,596 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* 4. Goods Description, Quantity, Weight & Auto Tariff Calculator */}
-          <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
-            <span className="font-bold text-[#F5D799] block text-xs">مواصفات البضاعة والوزن:</span>
+          {/* =================================================================== */}
+          {/* SINGLE PARCEL BODY */}
+          {/* =================================================================== */}
+          {registrationMode === 'single' ? (
+            <>
+              {/* 4. Goods Description, Quantity, Weight & Auto Tariff Calculator */}
+              <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
+                <span className="font-bold text-[#F5D799] block text-xs">مواصفات البضاعة والوزن:</span>
 
-            <div>
-              <label className="block text-[#C8B08A] mb-1 text-[11px]">
-                وصف حر لمحتوى الطرد أو البضاعة *
-              </label>
-              <textarea
-                placeholder="اكتب بالتفصيل نوع البضاعة، الماركة، أو أي تفاصيل تميز الكولي..."
-                rows={2}
-                required
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#D4AF37] leading-relaxed"
-              />
-            </div>
+                <div>
+                  <label className="block text-[#C8B08A] mb-1 text-[11px]">
+                    وصف حر لمحتوى الطرد أو البضاعة *
+                  </label>
+                  <textarea
+                    placeholder="اكتب بالتفصيل نوع البضاعة، الماركة، أو أي تفاصيل تميز الكولي..."
+                    rows={2}
+                    required
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#D4AF37] leading-relaxed"
+                  />
+                </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="col-span-2">
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">تصنيف البضاعة:</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#D4AF37]"
-                >
-                  {categories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="col-span-2">
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">تصنيف البضاعة:</label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#D4AF37]"
+                    >
+                      {categories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">عدد الطرود *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={itemsCount}
+                      onChange={(e) => setItemsCount(e.target.value)}
+                      className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-1.5 text-white font-mono text-xs focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[#F5C84C] mb-1 text-[11px] font-black flex items-center gap-1">
+                      <Scale className="w-3 h-3" />
+                      <span>الوزن بالكيلوغرام (kg):</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="مثال: 15"
+                      value={weightKg}
+                      onChange={(e) => setWeightKg(e.target.value)}
+                      className="w-full bg-[#120a00] border border-[#F5C84C]/60 rounded-xl px-3 py-1.5 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#F5C84C]"
+                    />
+                  </div>
+                </div>
+
+                {/* Automatic Tariff Calculator Box */}
+                <div className="bg-black/60 p-2.5 rounded-xl border border-[#F5C84C]/40 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Calculator className="w-3.5 h-3.5 text-[#F5C84C]" />
+                      <span className="font-black text-[11px] text-[#F5C84C]">
+                        حاسبة التسعيرة التلقائية ({originSt?.city || 'الانطلاق'} ➔ {destSt?.city || 'الوصول'}):
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowTariffEditor(!showTariffEditor)}
+                      className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] flex items-center gap-1"
+                    >
+                      <Settings className="w-3 h-3" />
+                      <span>تعريفة الخط</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-black/50 px-2.5 py-2 rounded-xl border border-white/10">
+                    <div>
+                      <span className="text-[10px] text-white/70 block">
+                        {shippingEstimate.breakdown}
+                      </span>
+                      <span className="font-mono font-black text-sm text-emerald-400">
+                        السعر المقترح: {shippingEstimate.total} {shippingEstimate.currency}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextVal = String(shippingEstimate.total);
+                          setAmountDue(nextVal);
+                          if (payer === 'sender') setAmountPaid(nextVal);
+                          setCurrency(shippingEstimate.currency);
+                          showToast(
+                            `تم اعتماد التسعيرة المحسوبة (${shippingEstimate.total} ${shippingEstimate.currency})`,
+                            'info'
+                          );
+                        }}
+                        className="btn-gold px-2.5 py-1.5 rounded-xl font-black text-[10px]"
+                      >
+                        اعتماد السعر ✓
+                      </button>
+                    </div>
+                  </div>
+
+                  {showTariffEditor && (
+                    <div className="pt-2 border-t border-white/15 space-y-2 animate-fadeIn">
+                      <span className="text-[10px] text-[#F5C84C] font-bold block">
+                        تعديل تسعيرة الخط ({originSt?.city} ➔ {destSt?.city}):
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[9px] text-white/70 block mb-0.5">
+                            السعر الأساسي الأدنى:
+                          </label>
+                          <input
+                            type="number"
+                            value={editBaseFee}
+                            onChange={(e) => setEditBaseFee(e.target.value)}
+                            className="w-full bg-black/70 border border-white/20 rounded-lg px-2 py-1 text-white font-mono text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-white/70 block mb-0.5">
+                            ثمن الكيلوغرام الواحد (kg):
+                          </label>
+                          <input
+                            type="number"
+                            value={editRatePerKg}
+                            onChange={(e) => setEditRatePerKg(e.target.value)}
+                            className="w-full bg-black/70 border border-white/20 rounded-lg px-2 py-1 text-white font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSaveCustomRouteTariff}
+                        className="btn-gold w-full py-1.5 rounded-lg font-black text-[11px]"
+                      >
+                        حفظ تعريفة هذا الخط
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">عدد الطرود *</label>
-                <input
-                  type="number"
-                  min="1"
-                  required
-                  value={itemsCount}
-                  onChange={(e) => setItemsCount(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-1.5 text-white font-mono text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
+              {/* 5. Financial Details */}
+              <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[#F5D799] flex items-center gap-1.5 text-xs">
+                    <DollarSign className="w-3.5 h-3.5 text-[#F3A952]" />
+                    <span>المستحقات المالية وطريقة الأداء:</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAutoApplyPrice(!autoApplyPrice)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                      autoApplyPrice ? 'btn-gold' : 'btn-cancel'
+                    }`}
+                  >
+                    {autoApplyPrice ? '✓ حساب تلقائي مفعل' : 'تحديد يدوي'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">المبلغ الإجمالي *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      value={amountDue}
+                      onChange={(e) => {
+                        setAutoApplyPrice(false);
+                        handleAmountDueChange(e.target.value);
+                      }}
+                      className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">العملة:</label>
+                    <select
+                      value={currency}
+                      onChange={(e) => setCurrency(e.target.value)}
+                      className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
+                    >
+                      {currencies.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.code} ({c.label_ar})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">الطرف الملزم بالأداء *</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePayerChange('sender')}
+                        className={`py-2 rounded-xl text-xs font-black transition ${
+                          payer === 'sender' ? 'btn-gold' : 'btn-cancel'
+                        }`}
+                      >
+                        المرسل
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePayerChange('receiver')}
+                        className={`py-2 rounded-xl text-xs font-black transition ${
+                          payer === 'receiver' ? 'btn-gold' : 'btn-cancel'
+                        }`}
+                      >
+                        المستلم
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Amount Paid Upfront */}
+                <div className="grid grid-cols-1 gap-2 pt-1">
+                  <div>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">
+                      المبلغ المدفوع الآن في المحطة:
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max={amountDue}
+                      required
+                      value={amountPaid}
+                      onChange={(e) => setAmountPaid(e.target.value)}
+                      className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+
+                  <div className="bg-[#120a00] p-2.5 rounded-xl border border-[#D4AF37]/30 flex items-center justify-between">
+                    <span className="text-[11px] text-[#C8B08A]">المبلغ المتبقي للتحصيل:</span>
+                    <span
+                      className={`font-mono font-black text-xs ${
+                        remaining > 0 ? 'text-rose-400' : 'text-[#F5D799]'
+                      }`}
+                    >
+                      {remaining} {currency} {remaining === 0 ? '(خالص)' : '(متبقي)'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[#F5C84C] mb-1 text-[11px] font-black flex items-center gap-1">
-                  <Scale className="w-3 h-3" />
-                  <span>الوزن بالكيلوغرام (kg):</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  placeholder="مثال: 15"
-                  value={weightKg}
-                  onChange={(e) => setWeightKg(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#F5C84C]/60 rounded-xl px-3 py-1.5 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#F5C84C]"
-                />
-              </div>
-            </div>
+              {/* 6. Parcel Condition */}
+              <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[#F5D799] block text-xs">حالة وسلامة الكولي:</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#120a00] text-[#E6C37A] border border-[#D4AF37]/40">
+                    {condition === 'normal' ? '✓ سليم وعادي' : '⚠ غير عادي'}
+                  </span>
+                </div>
 
-            {/* Automatic Tariff Calculator Box */}
-            <div className="bg-black/60 p-2.5 rounded-xl border border-[#F5C84C]/40 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  <Calculator className="w-3.5 h-3.5 text-[#F5C84C]" />
-                  <span className="font-black text-[11px] text-[#F5C84C]">
-                    حاسبة التسعيرة التلقائية ({originSt?.city || 'الداخلة'} ➔ {destSt?.city || 'نواذيبو'}):
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCondition('normal')}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-black transition ${
+                      condition === 'normal' ? 'btn-gold' : 'btn-cancel'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>عادي (سليم)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCondition('abnormal')}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-black transition ${
+                      condition === 'abnormal' ? 'btn-gold' : 'btn-cancel'
+                    }`}
+                  >
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>غير عادي (قابل للكسر)</span>
+                  </button>
+                </div>
+
+                {condition === 'abnormal' && (
+                  <div className="pt-1 space-y-1">
+                    <label className="block text-[#F5D799] text-[11px] font-bold">
+                      وصف حالة الكسر أو العناية الخاصة *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="مثال: زجاج قابل للكسر / الكرتون مفتوح..."
+                      value={conditionNotes}
+                      onChange={(e) => setConditionNotes(e.target.value)}
+                      className="w-full bg-[#120a00] border border-[#D4AF37]/60 rounded-xl px-3 py-2 text-white text-xs placeholder-[#A68966] focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            /* =================================================================== */
+            /* MULTI-PARCEL BODY (بزاف ديال الكوليات من نفس المرسل) */
+            /* =================================================================== */
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between bg-black/55 px-3 py-2 rounded-2xl border border-[#F5C84C]/40">
+                <div>
+                  <span className="font-black text-[#F5C84C] text-xs block">
+                    قائمة الكوليات ({multiItems.length} كولي)
+                  </span>
+                  <span className="text-[10px] text-white/70">
+                    {multiSubMode === 'one_receiver'
+                      ? 'جميع الكوليات أسفله مرسلة لنفس المستلم أعلاه'
+                      : 'حدد لكل كولي المستلم الخاص به ومحطة الوصول'}
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowTariffEditor(!showTariffEditor)}
-                  className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] flex items-center gap-1"
+                  onClick={handleAddMultiItem}
+                  className="btn-gold px-3 py-1.5 rounded-xl font-black text-[11px] flex items-center gap-1"
                 >
-                  <Settings className="w-3 h-3" />
-                  <span>تعريفة الخط</span>
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>إضافة كولي آخر</span>
                 </button>
               </div>
 
-              <div className="flex items-center justify-between bg-black/50 px-2.5 py-2 rounded-xl border border-white/10">
-                <div>
-                  <span className="text-[10px] text-white/70 block">
-                    {shippingEstimate.breakdown}
-                  </span>
-                  <span className="font-mono font-black text-sm text-emerald-400">
-                    السعر المقترح: {shippingEstimate.total} {shippingEstimate.currency}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextVal = String(shippingEstimate.total);
-                      setAmountDue(nextVal);
-                      if (payer === 'sender') setAmountPaid(nextVal);
-                      setCurrency(shippingEstimate.currency);
-                      showToast(
-                        `تم اعتماد التسعيرة المحسوبة (${shippingEstimate.total} ${shippingEstimate.currency})`,
-                        'info'
-                      );
-                    }}
-                    className="btn-gold px-2.5 py-1.5 rounded-xl font-black text-[10px]"
+              {multiItems.map((item, idx) => {
+                const itemRem = Math.max(
+                  0,
+                  Math.round(((parseFloat(item.amountDue) || 0) - (parseFloat(item.amountPaid) || 0)) * 100) / 100
+                );
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-[#1a0f00]/90 p-3 rounded-2xl border border-[#D4AF37]/55 space-y-2.5 relative"
                   >
-                    اعتماد السعر ✓
-                  </button>
-                </div>
-              </div>
+                    <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+                      <span className="font-black text-[#F5C84C] text-xs flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5" />
+                        <span>الكولي رقم #{idx + 1}</span>
+                      </span>
+                      {multiItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMultiItem(item.id)}
+                          className="px-2 py-1 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-bold flex items-center gap-1 hover:bg-rose-500/30"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>حذف</span>
+                        </button>
+                      )}
+                    </div>
 
-              {showTariffEditor && (
-                <div className="pt-2 border-t border-white/15 space-y-2 animate-fadeIn">
-                  <span className="text-[10px] text-[#F5C84C] font-bold block">
-                    تعديل تسعيرة الخط ({originSt?.city} ➔ {destSt?.city}):
-                  </span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[9px] text-white/70 block mb-0.5">
-                        السعر الأساسي الأدنى:
-                      </label>
-                      <input
-                        type="number"
-                        value={editBaseFee}
-                        onChange={(e) => setEditBaseFee(e.target.value)}
-                        className="w-full bg-black/70 border border-white/20 rounded-lg px-2 py-1 text-white font-mono text-xs"
-                      />
+                    {/* Per-item Destination & Receiver if multi_receivers */}
+                    {multiSubMode === 'multi_receivers' && (
+                      <div className="bg-black/45 p-2.5 rounded-xl border border-white/10 space-y-2">
+                        <div>
+                          <label className="block text-[#C8B08A] mb-1 text-[10px] font-bold">
+                            محطة الوصول لهذا الكولي *:
+                          </label>
+                          <select
+                            value={item.destinationStationId}
+                            onChange={(e) =>
+                              updateMultiItem(item.id, { destinationStationId: e.target.value })
+                            }
+                            className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white font-bold text-xs"
+                          >
+                            {stations.map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name} ({st.city})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[#C8B08A] mb-1 text-[10px]">
+                              اسم المستلم *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="اسم المستلم"
+                              value={item.receiverName}
+                              onChange={(e) =>
+                                updateMultiItem(item.id, { receiverName: e.target.value })
+                              }
+                              className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[#C8B08A] mb-1 text-[10px]">
+                              هاتف المستلم *
+                            </label>
+                            <input
+                              type="tel"
+                              required
+                              dir="ltr"
+                              placeholder="2220000000"
+                              value={item.receiverPhone}
+                              onChange={(e) =>
+                                updateMultiItem(item.id, { receiverPhone: e.target.value })
+                              }
+                              className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Description & Qty/Weight */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="col-span-2">
+                        <label className="block text-[#C8B08A] mb-1 text-[10px]">
+                          وصف محتوى الكولي #{idx + 1} *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="نوع البضاعة أو المحتوى..."
+                          value={item.description}
+                          onChange={(e) =>
+                            updateMultiItem(item.id, { description: e.target.value })
+                          }
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[#C8B08A] mb-1 text-[10px]">عدد الطرود</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.itemsCount}
+                          onChange={(e) =>
+                            updateMultiItem(item.id, { itemsCount: e.target.value })
+                          }
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white font-mono text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[#F5C84C] mb-1 text-[10px] font-bold">
+                          الوزن (kg) اختياري
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          placeholder="مثال: 10"
+                          value={item.weightKg}
+                          onChange={(e) =>
+                            updateMultiItem(item.id, { weightKg: e.target.value })
+                          }
+                          className="w-full bg-[#120a00] border border-[#F5C84C]/50 rounded-xl px-2.5 py-1.5 text-white font-mono text-xs"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-[9px] text-white/70 block mb-0.5">
-                        ثمن الكيلوغرام الواحد (kg):
-                      </label>
-                      <input
-                        type="number"
-                        value={editRatePerKg}
-                        onChange={(e) => setEditRatePerKg(e.target.value)}
-                        className="w-full bg-black/70 border border-white/20 rounded-lg px-2 py-1 text-white font-mono text-xs"
-                      />
+
+                    {/* Financial per item */}
+                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-white/10">
+                      <div>
+                        <label className="block text-[#C8B08A] mb-1 text-[10px]">
+                          الواجب ({currency})
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.amountDue}
+                          onChange={(e) =>
+                            updateMultiItem(item.id, { amountDue: e.target.value })
+                          }
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2 py-1.5 text-white font-mono font-bold text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[#C8B08A] mb-1 text-[10px]">الدافع</label>
+                        <select
+                          value={item.payer}
+                          onChange={(e) =>
+                            updateMultiItem(item.id, { payer: e.target.value as ParcelPayer })
+                          }
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2 py-1.5 text-white font-bold text-xs"
+                        >
+                          <option value="sender">المرسل</option>
+                          <option value="receiver">المستلم</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[#C8B08A] mb-1 text-[10px]">
+                          المدفوع الآن
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.amountDue}
+                          step="0.01"
+                          value={item.amountPaid}
+                          onChange={(e) =>
+                            updateMultiItem(item.id, { amountPaid: e.target.value })
+                          }
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2 py-1.5 text-white font-mono font-bold text-xs"
+                        />
+                      </div>
                     </div>
+
+                    <div className="flex items-center justify-between text-[10px] pt-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateMultiItem(item.id, {
+                              condition: item.condition === 'normal' ? 'abnormal' : 'normal',
+                            })
+                          }
+                          className={`px-2 py-0.5 rounded-lg font-bold border ${
+                            item.condition === 'abnormal'
+                              ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                              : 'bg-black/40 border-white/15 text-white/70'
+                          }`}
+                        >
+                          {item.condition === 'abnormal' ? '⚠️ قابل للكسر' : '✓ سليم وعادي'}
+                        </button>
+                      </div>
+                      <span className={itemRem > 0 ? 'text-rose-300 font-mono font-bold' : 'text-emerald-300 font-mono font-bold'}>
+                        {itemRem > 0 ? `الباقي: ${itemRem} ${currency}` : `خالص ✓`}
+                      </span>
+                    </div>
+
+                    {item.condition === 'abnormal' && (
+                      <input
+                        type="text"
+                        required
+                        placeholder="ملاحظة الكسر أو العناية الخاصة..."
+                        value={item.conditionNotes}
+                        onChange={(e) =>
+                          updateMultiItem(item.id, { conditionNotes: e.target.value })
+                        }
+                        className="w-full bg-[#120a00] border border-amber-400/50 rounded-xl px-2.5 py-1.5 text-white text-xs"
+                      />
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSaveCustomRouteTariff}
-                    className="btn-gold w-full py-1.5 rounded-lg font-black text-[11px]"
-                  >
-                    حفظ تعريفة هذا الخط
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+                );
+              })}
 
-          {/* 5. Financial Details */}
-          <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-[#F5D799] flex items-center gap-1.5 text-xs">
-                <DollarSign className="w-3.5 h-3.5 text-[#F3A952]" />
-                <span>المستحقات المالية وطريقة الأداء:</span>
-              </span>
               <button
                 type="button"
-                onClick={() => setAutoApplyPrice(!autoApplyPrice)}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
-                  autoApplyPrice ? 'btn-gold' : 'btn-cancel'
-                }`}
+                onClick={handleAddMultiItem}
+                className="w-full py-2.5 rounded-2xl border-2 border-dashed border-[#F5C84C]/55 text-[#F5C84C] font-black text-xs flex items-center justify-center gap-1.5 hover:bg-[#F5C84C]/10 transition"
               >
-                {autoApplyPrice ? '✓ حساب تلقائي مفعل' : 'تحديد يدوي'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">المبلغ الإجمالي *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  required
-                  value={amountDue}
-                  onChange={(e) => {
-                    setAutoApplyPrice(false);
-                    handleAmountDueChange(e.target.value);
-                  }}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">العملة:</label>
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
-                >
-                  {currencies.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.code} ({c.label_ar})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="col-span-2">
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">الطرف الملزم بالأداء *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handlePayerChange('sender')}
-                    className={`py-2 rounded-xl text-xs font-black transition ${
-                      payer === 'sender' ? 'btn-gold' : 'btn-cancel'
-                    }`}
-                  >
-                    المرسل
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePayerChange('receiver')}
-                    className={`py-2 rounded-xl text-xs font-black transition ${
-                      payer === 'receiver' ? 'btn-gold' : 'btn-cancel'
-                    }`}
-                  >
-                    المستلم
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Amount Paid Upfront */}
-            <div className="grid grid-cols-1 gap-2 pt-1">
-              <div>
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">
-                  المبلغ المدفوع الآن في المحطة:
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max={amountDue}
-                  required
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
-                />
-              </div>
-
-              <div className="bg-[#120a00] p-2.5 rounded-xl border border-[#D4AF37]/30 flex items-center justify-between">
-                <span className="text-[11px] text-[#C8B08A]">المبلغ المتبقي للتحصيل:</span>
-                <span
-                  className={`font-mono font-black text-xs ${
-                    remaining > 0 ? 'text-rose-400' : 'text-[#F5D799]'
-                  }`}
-                >
-                  {remaining} {currency} {remaining === 0 ? '(خالص)' : '(متبقي)'}
+                <Plus className="w-4 h-4" />
+                <span>
+                  {multiSubMode === 'one_receiver'
+                    ? '+ إضافة كولي آخر لنفس المستلم'
+                    : '+ إضافة كولي آخر لمستلم جديد'}
                 </span>
-              </div>
-            </div>
-          </div>
-
-          {/* 6. Parcel Condition */}
-          <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-[#F5D799] block text-xs">حالة وسلامة الكولي:</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#120a00] text-[#E6C37A] border border-[#D4AF37]/40">
-                {condition === 'normal' ? '✓ سليم وعادي' : '⚠ غير عادي'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setCondition('normal')}
-                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-black transition ${
-                  condition === 'normal' ? 'btn-gold' : 'btn-cancel'
-                }`}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>عادي (سليم)</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setCondition('abnormal')}
-                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-black transition ${
-                  condition === 'abnormal' ? 'btn-gold' : 'btn-cancel'
-                }`}
-              >
-                <AlertCircle className="w-3.5 h-3.5" />
-                <span>غير عادي (قابل للكسر)</span>
-              </button>
-            </div>
-
-            {condition === 'abnormal' && (
-              <div className="pt-1 space-y-1">
-                <label className="block text-[#F5D799] text-[11px] font-bold">
-                  وصف حالة الكسر أو العناية الخاصة *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: زجاج قابل للكسر / الكرتون مفتوح..."
-                  value={conditionNotes}
-                  onChange={(e) => setConditionNotes(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/60 rounded-xl px-3 py-2 text-white text-xs placeholder-[#A68966] focus:outline-none"
-                />
+              {/* Multi Summary Box */}
+              <div className="bg-black/65 p-3 rounded-2xl border border-[#F5C84C]/40 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-black text-[#F5C84C] block">
+                    ملخص الدفعة ({multiItems.length} كوليات):
+                  </span>
+                  <span className="text-[10px] text-white/75 font-mono">
+                    المؤدى الآن: {multiTotalPaid} {currency} | الباقي:{' '}
+                    {Math.max(0, multiTotalDue - multiTotalPaid)} {currency}
+                  </span>
+                </div>
+                <div className="text-left font-mono font-black text-sm text-white">
+                  {multiTotalDue} {currency}
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Auto WhatsApp Toggle */}
           <div className="bg-black/50 p-2.5 rounded-2xl border border-emerald-500/35 flex items-center justify-between gap-2">
@@ -872,10 +1465,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
               <div>
                 <span className="text-[11px] font-black text-white block">
-                  إشعار واتساب تلقائي للمرسل مع رابط QR
+                  إشعار واتساب تلقائي للمرسل مع كود التتبع
                 </span>
                 <span className="text-[9px] text-white/65 block">
-                  فتح محادثة واتساب مع وصل الإيداع ورابط التتبع فور الحفظ
+                  فتح محادثة واتساب مع وصل الإيداع وكود التتبع فور الحفظ
                 </span>
               </div>
             </div>
@@ -911,7 +1504,11 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             >
               <Package className="w-4 h-4" />
               <span>
-                {isSubmitting ? 'جاري تسجيل الكولي...' : 'تأكيد التسجيل وطباعة التذكرة الحرارية'}
+                {isSubmitting
+                  ? 'جاري تسجيل الكوليات...'
+                  : registrationMode === 'multi'
+                  ? `تأكيد تسجيل (${multiItems.length}) كوليات وطباعة الملصقات`
+                  : 'تأكيد التسجيل وطباعة التذكرة الحرارية'}
               </span>
             </button>
           </div>

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { Parcel } from '../types/database';
 import { useApp } from '../context/AppContext';
+import { formatTrackingCodeNumeric } from '../utils/logisticsFeatures';
 import {
   Printer,
   ExternalLink,
@@ -256,6 +257,7 @@ function buildSingleStickerHtml(
 
   const dateFormatted = formatDateDDMMYYYY(parcel.created_at);
   const timeFormatted = formatTimeHHMM(parcel.created_at);
+  const numericCode = formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number);
 
   const originStationText = formatStationLabel(parcel.origin_station_name);
   const destStationText = formatStationLabel(parcel.destination_station_name);
@@ -268,37 +270,37 @@ function buildSingleStickerHtml(
   let codeAreaHtml = '';
   if (options.codeType === 'qr') {
     const qrImg = qrCodeDataUrl
-      ? `<img src="${qrCodeDataUrl}" alt="${escapeHtml(parcel.tracking_code)}" style="width:32mm;height:32mm;min-width:32mm;min-height:32mm;object-fit:contain;image-rendering:pixelated;display:block;" />`
-      : `<div style="width:32mm;height:32mm;border:1px solid #000000;display:flex;align-items:center;justify-content:center;font-size:9pt;font-weight:700;">QR</div>`;
+      ? `<img src="${qrCodeDataUrl}" alt="${escapeHtml(numericCode)}" style="width:31mm;height:31mm;min-width:31mm;min-height:31mm;object-fit:contain;image-rendering:pixelated;display:block;" />`
+      : `<div style="width:31mm;height:31mm;border:1px solid #000000;display:flex;align-items:center;justify-content:center;font-size:9pt;font-weight:700;">QR</div>`;
     codeAreaHtml = `
       ${qrImg}
-      <div dir="ltr" style="font-size:9pt;line-height:1.1;font-family:monospace;font-weight:900;color:#000000;margin-top:1mm;text-align:center;white-space:nowrap;">
-        #${escapeHtml(String(parcel.parcel_number))}
+      <div dir="ltr" style="font-size:9.5pt;line-height:1.1;font-family:monospace;font-weight:900;color:#000000;margin-top:0.8mm;text-align:center;white-space:nowrap;">
+        ${escapeHtml(numericCode)}
       </div>
     `;
   } else if (options.codeType === 'code128') {
-    const barcodeSvg = generateCode128SvgMarkup(parcel.tracking_code, '43mm', '20mm');
+    const barcodeSvg = generateCode128SvgMarkup(numericCode, '43mm', '20mm');
     codeAreaHtml = `
       <div style="padding:1mm 0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
         ${barcodeSvg}
       </div>
       <div dir="ltr" style="font-size:9pt;line-height:1.15;font-family:monospace;font-weight:900;color:#000000;margin-top:1mm;text-align:center;white-space:nowrap;">
-        #${escapeHtml(String(parcel.parcel_number))} - ${escapeHtml(parcel.tracking_code)}
+        ${escapeHtml(numericCode)}
       </div>
     `;
   } else {
     // QR + Code128 معاً
     const qrImg = qrCodeDataUrl
-      ? `<img src="${qrCodeDataUrl}" alt="${escapeHtml(parcel.tracking_code)}" style="width:20mm;height:20mm;object-fit:contain;image-rendering:pixelated;display:block;" />`
+      ? `<img src="${qrCodeDataUrl}" alt="${escapeHtml(numericCode)}" style="width:20mm;height:20mm;object-fit:contain;image-rendering:pixelated;display:block;" />`
       : `<div style="width:20mm;height:20mm;border:1px solid #000000;display:flex;align-items:center;justify-content:center;font-size:9pt;font-weight:700;">QR</div>`;
-    const barcodeSvg = generateCode128SvgMarkup(parcel.tracking_code, '42mm', '8.5mm');
+    const barcodeSvg = generateCode128SvgMarkup(numericCode, '42mm', '8.5mm');
     codeAreaHtml = `
       <div style="display:flex;flex-direction:column;align-items:center;gap:1mm;">
         ${qrImg}
         ${barcodeSvg}
       </div>
       <div dir="ltr" style="font-size:9pt;line-height:1.05;font-family:monospace;font-weight:900;color:#000000;margin-top:0.6mm;text-align:center;white-space:nowrap;">
-        #${escapeHtml(String(parcel.parcel_number))}
+        ${escapeHtml(numericCode)}
       </div>
     `;
   }
@@ -346,21 +348,16 @@ function buildSingleStickerHtml(
               : `<div></div>`
           }
 
-          <div style="display:flex;flex-direction:column;gap:0.6mm;font-size:9pt;line-height:1.15;font-weight:700;color:#000000;">
+          <div style="display:flex;flex-direction:column;gap:0.6mm;font-size:8.5pt;line-height:1.15;font-weight:700;color:#000000;">
             <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-              <span>رقم الكولي: </span>
-              <span dir="ltr" style="font-family:monospace;font-weight:900;">#${escapeHtml(String(parcel.parcel_number))}</span>
+              <span>الكود: </span>
+              <span dir="ltr" style="font-family:monospace;font-weight:900;">${escapeHtml(numericCode)} (#${escapeHtml(String(parcel.parcel_number))})</span>
             </div>
             ${
               options.showDateTime
                 ? `
             <div style="white-space:nowrap;">
-              <span>التاريخ: </span>
-              <span dir="ltr" style="font-family:monospace;font-weight:800;">${escapeHtml(dateFormatted)}</span>
-            </div>
-            <div style="white-space:nowrap;">
-              <span>الوقت: </span>
-              <span dir="ltr" style="font-family:monospace;font-weight:800;">${escapeHtml(timeFormatted)}</span>
+              <span dir="ltr" style="font-family:monospace;font-weight:800;">${escapeHtml(dateFormatted)} . ${escapeHtml(timeFormatted)}</span>
             </div>`
                 : ''
             }
@@ -845,7 +842,8 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
       for (const p of missingParcels) {
         if (cancelled) return;
         try {
-          const url = await QRCode.toDataURL(p.tracking_code, {
+          const numCode = formatTrackingCodeNumeric(p.tracking_code, p.parcel_number);
+          const url = await QRCode.toDataURL(numCode, {
             width: 260,
             margin: 0,
             color: { dark: '#000000', light: '#ffffff' },
@@ -972,7 +970,8 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
       for (let i = 0; i < expandedStickers.length; i++) {
         const p = expandedStickers[i];
         if (!nextQrMap[p.tracking_code]) {
-          nextQrMap[p.tracking_code] = await QRCode.toDataURL(p.tracking_code, {
+          const numCode = formatTrackingCodeNumeric(p.tracking_code, p.parcel_number);
+          nextQrMap[p.tracking_code] = await QRCode.toDataURL(numCode, {
             width: 260,
             margin: 0,
             color: { dark: '#000000', light: '#ffffff' },

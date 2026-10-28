@@ -11,8 +11,21 @@ import {
   CheckCircle2,
   Zap,
   Layers,
+  MapPin,
+  Package,
+  User,
+  Truck,
+  Clock,
 } from 'lucide-react';
 import { playSuccessBeep, playErrorBeep } from '../utils/audioFeedback';
+import { useApp } from '../context/AppContext';
+import { Parcel } from '../types/database';
+import {
+  extractTrackingQueryCode,
+  matchesTrackingCode,
+  formatTrackingCodeNumeric,
+  formatDateTimeStandard,
+} from '../utils/logisticsFeatures';
 
 interface BarcodeScannerModalProps {
   isOpen: boolean;
@@ -29,14 +42,19 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   onClose,
   onScan,
   title = 'مسح باركود (Code128) أو رمز (QR)',
-  subtitle = 'وجه الكاميرا نحو الملصق أو استخدم المسح الجماعي السريع (En Rafale)',
-  placeholder = 'أدخل رقم الكولي أو امسح كود التتبع (QR / Code128)...',
+  subtitle = 'وجه الكاميرا نحو الملصق لعرض جميع معلومات الكولي فوراً',
+  placeholder = 'أدخل كود الكولي (مثال: 0000466) أو امسح رمز QR...',
   defaultBurstMode = false,
 }) => {
+  const { parcels } = useApp();
+
   const [activeMode, setActiveMode] = useState<'camera' | 'manual'>('camera');
   const [isBurstMode, setIsBurstMode] = useState<boolean>(defaultBurstMode);
-  const [scannedHistory, setScannedHistory] = useState<{ code: string; time: string }[]>([]);
+  const [scannedHistory, setScannedHistory] = useState<
+    { code: string; time: string; parcel?: Parcel }[]
+  >([]);
   const [lastScannedFlash, setLastScannedFlash] = useState<string | null>(null);
+  const [lastScannedParcel, setLastScannedParcel] = useState<Parcel | null>(null);
   const [manualCode, setManualCode] = useState('');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -59,23 +77,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       isBurstModeRef.current = defaultBurstMode;
       setScannedHistory([]);
       setLastScannedFlash(null);
+      setLastScannedParcel(null);
       lastScanRef.current = { code: '', timestamp: 0 };
     }
   }, [isOpen, defaultBurstMode]);
 
   const extractCleanCode = (raw: string): string => {
-    const clean = raw.trim();
-    if (!clean) return '';
-
-    if (clean.startsWith('{') && clean.endsWith('}')) {
-      try {
-        const parsed = JSON.parse(clean);
-        if (parsed.code) return String(parsed.code).trim();
-        if (parsed.num) return String(parsed.num).trim();
-      } catch {}
-    }
-
-    return clean;
+    return extractTrackingQueryCode(raw);
   };
 
   const handleSuccessfulScan = (rawText: string) => {
@@ -95,20 +103,25 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
     lastScanRef.current = { code, timestamp: now };
 
+    const matched = parcels.find((p) => matchesTrackingCode(p, code));
+    const effectiveCode = matched
+      ? formatTrackingCodeNumeric(matched.tracking_code, matched.parcel_number)
+      : code;
+
     playSuccessBeep();
-    onScan(code);
+    onScan(matched ? matched.tracking_code : code);
 
-    const timeStr = new Date().toLocaleTimeString('ar-MA', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
+    const timeStr = formatDateTimeStandard(new Date());
 
-    setScannedHistory((prev) => [{ code, time: timeStr }, ...prev.slice(0, 49)]);
-    setLastScannedFlash(code);
+    setLastScannedParcel(matched || null);
+    setScannedHistory((prev) => [
+      { code: effectiveCode, time: timeStr, parcel: matched },
+      ...prev.slice(0, 49),
+    ]);
+    setLastScannedFlash(effectiveCode);
     setTimeout(() => {
-      setLastScannedFlash((curr) => (curr === code ? null : curr));
-    }, 1100);
+      setLastScannedFlash((curr) => (curr === effectiveCode ? null : curr));
+    }, 1500);
 
     if (!isBurstModeRef.current) {
       stopCamera();
@@ -250,7 +263,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       }}
     >
       <div
-        className="w-full max-w-[410px] luxury-card rounded-[24px] overflow-hidden flex flex-col text-right relative max-h-[92vh]"
+        className="w-full max-w-[420px] luxury-card rounded-[24px] overflow-hidden flex flex-col text-right relative max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -285,7 +298,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 وضع المسح الجماعي السريع (En Rafale)
               </span>
               <span className="text-[9px] text-white/65 block">
-                مسح متتالي لعشرات الكوليات دون إغلاق الكاميرا
+                مسح متتالي لعشرات الكوليات مع عرض معلومات كل كولي
               </span>
             </div>
           </div>
@@ -335,7 +348,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             }`}
           >
             <Keyboard className="w-3.5 h-3.5" />
-            <span>إدخال يدوي / قارئ خارجي</span>
+            <span>إدخال الكود (مثال: 0000466)</span>
           </button>
         </div>
 
@@ -348,9 +361,67 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span className="text-xs font-black">تم المسح بنجاح:</span>
               </div>
-              <span className="font-mono font-black text-xs text-white bg-black/40 px-2.5 py-0.5 rounded-lg">
+              <span className="font-mono font-black text-xs text-white bg-black/40 px-2.5 py-0.5 rounded-lg" dir="ltr">
                 {lastScannedFlash}
               </span>
+            </div>
+          )}
+
+          {/* Full Scanned Parcel Summary Card */}
+          {lastScannedParcel && (
+            <div className="p-3 rounded-2xl bg-[#1a0f00]/90 border-2 border-[#F5C84C]/65 space-y-2 text-xs animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-white/15 pb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Package className="w-4 h-4 text-[#F5C84C]" />
+                  <span className="font-black text-[#F5C84C]">
+                    كولي #{lastScannedParcel.parcel_number}
+                  </span>
+                  <span className="font-mono font-black text-white bg-black/60 px-2 py-0.5 rounded-lg border border-[#F5C84C]/40" dir="ltr">
+                    {formatTrackingCodeNumeric(lastScannedParcel.tracking_code, lastScannedParcel.parcel_number)}
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-white/75" dir="ltr">
+                  {formatDateTimeStandard(lastScannedParcel.created_at)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <div className="bg-black/50 p-2 rounded-xl border border-white/10">
+                  <span className="text-[9px] text-white/60 block">📍 منين جاية (الانطلاق):</span>
+                  <span className="font-black text-white">{lastScannedParcel.origin_station_name}</span>
+                </div>
+                <div className="bg-black/50 p-2 rounded-xl border border-white/10">
+                  <span className="text-[9px] text-white/60 block">🏁 فين غادية (الوجهة):</span>
+                  <span className="font-black text-[#F5C84C]">{lastScannedParcel.destination_station_name}</span>
+                </div>
+                <div className="bg-black/50 p-2 rounded-xl border border-white/10">
+                  <span className="text-[9px] text-white/60 block">👤 شكون مولاها (المرسل):</span>
+                  <span className="font-bold text-white block">{lastScannedParcel.sender_name}</span>
+                  <span className="font-mono text-[10px] text-white/70" dir="ltr">{lastScannedParcel.sender_phone}</span>
+                </div>
+                <div className="bg-black/50 p-2 rounded-xl border border-white/10">
+                  <span className="text-[9px] text-white/60 block">🎯 المستلم:</span>
+                  <span className="font-bold text-white block">{lastScannedParcel.receiver_name}</span>
+                  <span className="font-mono text-[10px] text-white/70" dir="ltr">{lastScannedParcel.receiver_phone}</span>
+                </div>
+              </div>
+
+              <div className="bg-black/50 p-2 rounded-xl border border-white/10 flex items-center justify-between text-[11px]">
+                <div>
+                  <span className="text-[9px] text-white/60 block">📦 المحتوى والعدد:</span>
+                  <span className="font-bold text-white">
+                    {lastScannedParcel.description} ({lastScannedParcel.items_count} طرد)
+                  </span>
+                </div>
+                <div className="text-left font-mono">
+                  <span className="text-[9px] text-white/60 block">💳 الأداء:</span>
+                  <span className="font-black text-[#F5C84C]">
+                    {Math.max(0, lastScannedParcel.amount_due - lastScannedParcel.amount_paid) <= 0
+                      ? `خالص (${lastScannedParcel.amount_due} ${lastScannedParcel.currency})`
+                      : `باقي: ${Math.max(0, lastScannedParcel.amount_due - lastScannedParcel.amount_paid)} ${lastScannedParcel.currency}`}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 
@@ -420,13 +491,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             <form onSubmit={handleManualSubmit} className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-[#F5C84C] block">
-                  رقم الكولي أو كود التتبع:
+                  كود الكولي الرقمي (مثال: 0000466) أو رقم الكولي:
                 </label>
                 <div className="flex gap-1.5">
                   <input
                     ref={manualInputRef}
                     type="text"
                     autoFocus
+                    dir="ltr"
                     value={manualCode}
                     onChange={(e) => setManualCode(e.target.value)}
                     placeholder={placeholder}
@@ -436,11 +508,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                     type="submit"
                     className="btn-gold px-4 py-2.5 rounded-xl font-black text-xs shrink-0"
                   >
-                    {isBurstMode ? '+ مسح وتالي' : 'تأكيد ➔'}
+                    {isBurstMode ? '+ مسح وتالي' : 'عرض الكولي ➔'}
                   </button>
                 </div>
                 <p className="text-[10px] text-white/65">
-                  💡 متوافق مع قارئ الباركود الليزري (USB/Bluetooth) — في وضع Rafale يبقى الحقل جاهزاً للكولي الموالي تلقائياً.
+                  💡 يمكنك كتابة الكود الرقمي (مثل 0000466) أو مسحه مباشرة لعرض كافة معلومات الكولي.
                 </p>
               </div>
             </form>
@@ -458,16 +530,30 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                   {scannedHistory.length} كولي
                 </span>
               </div>
-              <div className="max-h-28 overflow-y-auto space-y-1 pr-0.5">
+              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5">
                 {scannedHistory.map((item, idx) => (
                   <div
                     key={`${item.code}-${idx}`}
-                    className="flex items-center justify-between bg-black/45 px-2.5 py-1.5 rounded-xl border border-white/10 text-[11px]"
+                    className="bg-black/50 px-2.5 py-2 rounded-xl border border-white/10 text-[11px] space-y-1"
                   >
-                    <span className="font-mono font-black text-white">
-                      #{scannedHistory.length - idx} — {item.code}
-                    </span>
-                    <span className="text-[10px] font-mono text-emerald-300">{item.time} ✓</span>
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-black text-[#F5C84C]" dir="ltr">
+                        #{scannedHistory.length - idx} — {item.code}
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-300" dir="ltr">
+                        {item.time} ✓
+                      </span>
+                    </div>
+                    {item.parcel && (
+                      <div className="text-[10px] text-white/85 flex items-center justify-between">
+                        <span>
+                          {item.parcel.origin_station_name} ➔ {item.parcel.destination_station_name}
+                        </span>
+                        <span>
+                          المرسل: {item.parcel.sender_name} | المستلم: {item.parcel.receiver_name}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -58,6 +58,7 @@ const MainApp: React.FC = () => {
   const [showPublicTracking, setShowPublicTracking] = useState(false);
   const [initialTrackingCode, setInitialTrackingCode] = useState<string>('');
   const [stickerParcel, setStickerParcel] = useState<Parcel | null>(null);
+  const [stickerBatchParcels, setStickerBatchParcels] = useState<Parcel[] | undefined>(undefined);
   const [showGuidedTour, setShowGuidedTour] = useState(false);
 
   // Auto-open public tracking modal if URL has ?track=CODE
@@ -287,14 +288,21 @@ const MainApp: React.FC = () => {
         <NewParcelModal
           isOpen={showNewParcel}
           onClose={() => setShowNewParcel(false)}
-          onParcelCreated={(parcel) => setStickerParcel(parcel)}
+          onParcelCreated={(parcel, allCreated) => {
+            setStickerParcel(parcel);
+            setStickerBatchParcels(allCreated && allCreated.length > 1 ? allCreated : undefined);
+          }}
         />
 
         {/* 10cm x 10cm Parcel Sticker Modal */}
         <ParcelStickerModal
           parcel={stickerParcel}
+          initialSelectedParcels={stickerBatchParcels}
           isOpen={Boolean(stickerParcel)}
-          onClose={() => setStickerParcel(null)}
+          onClose={() => {
+            setStickerParcel(null);
+            setStickerBatchParcels(undefined);
+          }}
         />
 
         {/* Co-Admin Live Collaboration & Broadcast Room Modal */}

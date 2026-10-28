@@ -16,6 +16,7 @@ import {
 import { storageService, generateUUID, isValidUUID } from './storageService';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
 import { parcelService } from './parcelService';
+import { matchesTrackingCode } from '../utils/logisticsFeatures';
 
 export function mapTripToSupabaseRow(trip: Trip): Record<string, any> {
   return {
@@ -512,6 +513,7 @@ export const tripService = {
     const parcel = allParcels.find(p => {
       if (p.workspace_id && trip.workspace_id && p.workspace_id !== trip.workspace_id) return false;
       return (
+        matchesTrackingCode(p, parcelIdentifier) ||
         p.tracking_code.toUpperCase() === cleanId ||
         String(p.parcel_number) === cleanId ||
         (!isNaN(numericId) && p.parcel_number === numericId) ||
@@ -755,6 +757,7 @@ export const tripService = {
     const parcel = allParcels.find(p => {
       if (p.workspace_id && trip.workspace_id && p.workspace_id !== trip.workspace_id) return false;
       return (
+        matchesTrackingCode(p, parcelIdentifier) ||
         p.tracking_code.toUpperCase() === cleanId ||
         String(p.parcel_number) === cleanId ||
         (!isNaN(numericId) && p.parcel_number === numericId) ||

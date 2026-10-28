@@ -10,7 +10,14 @@ import { QuickDeliverModal } from './QuickDeliverModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { exportService } from '../services/exportService';
 import { playSuccessBeep, playErrorBeep } from '../utils/audioFeedback';
-import { printOfficialTripManifestPDF, printOfficialParcelBonPDF, openWhatsAppParcelNotification } from '../utils/logisticsFeatures';
+import {
+  printOfficialTripManifestPDF,
+  printOfficialParcelBonPDF,
+  openWhatsAppParcelNotification,
+  formatDateTimeStandard,
+  formatTrackingCodeNumeric,
+  matchesTrackingCode,
+} from '../utils/logisticsFeatures';
 import { 
   Package, 
   Search, 
@@ -35,7 +42,8 @@ import {
   ChevronDown,
   SlidersHorizontal,
   BarChart3,
-  Trash2
+  Trash2,
+  Copy
 } from 'lucide-react';
 
 interface ParcelsViewProps {
@@ -76,18 +84,24 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'settled' | 'unpaid'>('all');
-  const [stationFilter, setStationFilter] = useState<string>(() => selectedStationId || 'all');
+  const [stationFilter, setStationFilter] = useState<string>(() =>
+    userRole === 'worker' && userAssignedStationId
+      ? userAssignedStationId
+      : selectedStationId || 'all'
+  );
   const [dateFilter] = useState<string>('all');
   const [conditionFilter, setConditionFilter] = useState<string>('all');
 
-  // Keep station filter in sync with global station scope
+  // Keep station filter in sync with global station scope (and locked for workers)
   useEffect(() => {
-    if (selectedStationId) {
+    if (userRole === 'worker' && userAssignedStationId) {
+      setStationFilter(userAssignedStationId);
+    } else if (selectedStationId) {
       setStationFilter(selectedStationId);
     } else {
       setStationFilter('all');
     }
-  }, [selectedStationId]);
+  }, [selectedStationId, userRole, userAssignedStationId]);
 
   // Compact / Collapsible UI States (اختصارات بالسهم الصغير)
   const [isMoreToolsOpen, setIsMoreToolsOpen] = useState(false);
@@ -167,8 +181,8 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
       // Search Query (Number, Code, Sender, Receiver, Phone, Description, Driver, Plate)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
+        const matchCode = matchesTrackingCode(p, searchQuery) || p.tracking_code.toLowerCase().includes(q);
         const matchNum = p.parcel_number?.toString().includes(q);
-        const matchCode = p.tracking_code.toLowerCase().includes(q);
         const matchSender = p.sender_name.toLowerCase().includes(q) || p.sender_phone.includes(q);
         const matchReceiver = p.receiver_name.toLowerCase().includes(q) || p.receiver_phone.includes(q);
         const matchDesc = p.description.toLowerCase().includes(q);
@@ -261,14 +275,14 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     });
   }, [trips, stationFilter]);
 
-  // Export CSV
-  const handleExportCSV = () => {
+  // Export PDF
+  const handleExportPDF = () => {
     if (parcels.length === 0) {
       showToast('لا توجد كوليات لتصديرها حالياً', 'info');
       return;
     }
-    exportService.exportParcelsToCSV(parcels, currentWorkspace?.name || 'محطة الاتحادية');
-    showToast('تم تصدير سجل الكوليات إلى ملف CSV بنجاح', 'success');
+    exportService.exportParcelsToPDF(stationScopedParcels, currentWorkspace?.name || 'محطة الاتحادية');
+    showToast('تم فتح وتحميل سجل الكوليات بصيغة PDF بنجاح', 'success');
   };
 
   const getWhatsAppLink = (rawPhone: string) => {
@@ -277,17 +291,14 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
   };
 
   const handleGlobalScanResult = (code: string) => {
-    const clean = code.trim().toUpperCase();
-    const found = parcels.find(p => 
-      p.tracking_code.toUpperCase() === clean || 
-      String(p.parcel_number) === clean ||
-      p.id === clean
-    );
+    const found = parcels.find(p => matchesTrackingCode(p, code));
 
     if (found) {
       playSuccessBeep();
+      setIsBarcodeScannerOpen(false);
       setDetailParcel(found);
-      showToast(`تم العثور على الكولي #${found.parcel_number} (${found.tracking_code})`, 'success');
+      const numericCode = formatTrackingCodeNumeric(found.tracking_code, found.parcel_number);
+      showToast(`تم العثور على الكولي ${numericCode} (${found.sender_name} ➔ ${found.receiver_name})`, 'success');
     } else {
       playErrorBeep();
       showToast(`لم يتم العثور على أي كولي بالرقم [${code}]`, 'error');
@@ -450,11 +461,12 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
 
               <button
                 type="button"
-                onClick={handleExportCSV}
-                className="btn-cancel p-1.5 rounded-xl transition cursor-pointer"
-                title="تصدير السجل إلى Excel / CSV"
+                onClick={handleExportPDF}
+                className="btn-cancel px-2.5 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1 text-[11px] font-black"
+                title="تصدير سجل الكوليات بصيغة PDF"
               >
-                <FileSpreadsheet className="w-4 h-4" />
+                <FileText className="w-3.5 h-3.5 text-[#F5C84C]" />
+                <span>PDF</span>
               </button>
             </div>
           </div>
@@ -604,7 +616,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
               <div className="relative flex-1">
                 <input
                   type="text"
-                  placeholder="ابحث برقم الكولي، الكود، الزبون، الهاتف..."
+                  placeholder="ابحث بكود التتبع (0000466)، الزبون، الهاتف..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   className="w-full bg-black/60 border border-white/20 focus:border-[#F5C84C] rounded-xl px-3 py-1.5 text-xs text-white placeholder-white/65 focus:outline-none pl-8"
@@ -694,13 +706,16 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
 
                   <select
                     value={stationFilter}
+                    disabled={userRole === 'worker'}
                     onChange={e => setStationFilter(e.target.value)}
-                    className="w-full bg-black/60 border border-white/20 rounded-xl px-2 py-1.5 text-white text-[11px] font-bold focus:outline-none focus:border-[#F5C84C]"
+                    className="w-full bg-black/60 border border-white/20 rounded-xl px-2 py-1.5 text-white text-[11px] font-bold focus:outline-none focus:border-[#F5C84C] disabled:opacity-65"
                   >
-                    <option value="all">جميع المحطات</option>
-                    {stations.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
+                    {userRole !== 'worker' && <option value="all">جميع المحطات</option>}
+                    {stations
+                      .filter(s => userRole !== 'worker' || s.id === activeStationId)
+                      .map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
                   </select>
                 </div>
 
@@ -813,8 +828,11 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                           )}
                         </button>
 
-                        <span className="font-mono text-[11px] font-black text-[#F5C84C] bg-black/60 px-1.5 py-0.5 rounded-lg border border-[#F5C84C]/40 shrink-0">
-                          #{parcel.parcel_number}
+                        <span
+                          dir="ltr"
+                          className="font-mono text-[11px] font-black text-[#F5C84C] bg-black/60 px-1.5 py-0.5 rounded-lg border border-[#F5C84C]/40 shrink-0"
+                        >
+                          {formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number)}
                         </span>
 
                         <div className="min-w-0 flex-1 truncate">
@@ -862,18 +880,31 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                     {/* Expanded Details (Only shown when arrow/row is clicked) */}
                     {isExpanded && (
                       <div className="mt-2.5 pt-2.5 border-t border-white/15 space-y-2 animate-fadeIn">
-                        {/* Tracking Code, Status & Date */}
+                        {/* Tracking Code, Quick Copy, Status & Date */}
                         <div className="flex items-center justify-between flex-wrap gap-1.5 text-[11px]">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-white/85 bg-black/50 px-2 py-0.5 rounded-lg border border-white/10" dir="ltr">
-                              {parcel.tracking_code}
+                            <span className="font-mono font-black text-[#F5C84C] bg-black/60 px-2.5 py-0.5 rounded-lg border border-[#F5C84C]/40" dir="ltr">
+                              {formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number)}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const codeNum = formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number);
+                                navigator.clipboard?.writeText(codeNum);
+                                showToast(`تم نسخ كود التتبع (${codeNum})`, 'success');
+                              }}
+                              className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-black flex items-center gap-1 cursor-pointer"
+                              title="نسخ كود التتبع لإرساله يدوياً"
+                            >
+                              <Copy className="w-3 h-3 text-[#F5C84C]" />
+                              <span>نسخ الكود</span>
+                            </button>
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-black/60 text-[#F5C84C] border border-[#F5C84C]/40">
                               {statusNames[parcel.status] || parcel.status}
                             </span>
                           </div>
-                          <span className="text-white/75 font-mono text-[10px]" dir="ltr">
-                            {new Date(parcel.created_at).toLocaleDateString('ar-MA')}
+                          <span className="text-white/85 font-mono text-[10px]" dir="ltr">
+                            {formatDateTimeStandard(parcel.created_at)}
                           </span>
                         </div>
 
@@ -981,19 +1012,20 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                               <span>واتساب QR</span>
                             </button>
 
-                            {parcel.status !== 'delivered' && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setQuickDeliverParcel(parcel);
-                                  setIsQuickDeliverOpen(true);
-                                }}
-                                className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] transition"
-                              >
-                                <UserCheck className="w-3.5 h-3.5" />
-                                <span>تسليم</span>
-                              </button>
-                            )}
+                            {parcel.status !== 'delivered' &&
+                              (userRole !== 'worker' || parcel.destination_station_id === activeStationId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuickDeliverParcel(parcel);
+                                    setIsQuickDeliverOpen(true);
+                                  }}
+                                  className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] transition"
+                                >
+                                  <UserCheck className="w-3.5 h-3.5" />
+                                  <span>تسليم</span>
+                                </button>
+                              )}
 
                             <button
                               type="button"
@@ -1175,34 +1207,43 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
 
                         <div className="pt-1 space-y-1.5">
                           {trip.status === 'loading' ? (
-                            <button
-                              type="button"
-                              onClick={() => setDispatchTrip(trip)}
-                              className="btn-gold w-full py-2 rounded-xl font-black text-xs transition flex items-center justify-center gap-1.5"
-                            >
-                              <Scan className="w-4 h-4" />
-                              <span>فتح لشحن ومسح الكوليات (ديسباتش) ➔</span>
-                            </button>
-                          ) : (
-                            <div className="flex items-center gap-2 w-full">
+                            userRole !== 'worker' || trip.origin_station_id === activeStationId ? (
                               <button
                                 type="button"
                                 onClick={() => setDispatchTrip(trip)}
-                                className="btn-cancel flex-1 py-2 rounded-xl font-bold text-[11px] transition text-center"
+                                className="btn-gold w-full py-2 rounded-xl font-black text-xs transition flex items-center justify-center gap-1.5"
                               >
-                                مانيفست الشحن ({loadedCount})
+                                <Scan className="w-4 h-4" />
+                                <span>فتح لشحن ومسح الكوليات (ديسباتش) ➔</span>
                               </button>
-
-                              {trip.status !== 'closed' && (
+                            ) : (
+                              <div className="w-full py-2 px-3 rounded-xl bg-black/50 border border-white/15 text-center text-[11px] text-white/75 font-bold">
+                                رحلة قيد التحميل من محطة ({trip.origin_station_name})
+                              </div>
+                            )
+                          ) : (
+                            <div className="flex items-center gap-2 w-full">
+                              {(userRole !== 'worker' || trip.origin_station_id === activeStationId) && (
                                 <button
                                   type="button"
-                                  onClick={() => setArrivalTrip(trip)}
-                                  className="btn-gold flex-1 py-2 rounded-xl font-black text-[11px] transition text-center flex items-center justify-center gap-1"
+                                  onClick={() => setDispatchTrip(trip)}
+                                  className="btn-cancel flex-1 py-2 rounded-xl font-bold text-[11px] transition text-center"
                                 >
-                                  <Inbox className="w-3.5 h-3.5" />
-                                  <span>استقبال وتفريغ</span>
+                                  مانيفست الشحن ({loadedCount})
                                 </button>
                               )}
+
+                              {trip.status !== 'closed' &&
+                                (userRole !== 'worker' || trip.destination_station_id === activeStationId) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setArrivalTrip(trip)}
+                                    className="btn-gold flex-1 py-2 rounded-xl font-black text-[11px] transition text-center flex items-center justify-center gap-1"
+                                  >
+                                    <Inbox className="w-3.5 h-3.5" />
+                                    <span>استقبال وتفريغ</span>
+                                  </button>
+                                )}
                             </div>
                           )}
 
@@ -1294,14 +1335,16 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                         </p>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setArrivalTrip(trip)}
-                        className="px-3 py-2 rounded-xl font-black text-xs transition flex items-center gap-1"
-                      >
-                        <Scan className="w-3.5 h-3.5" />
-                        <span>مسح الاستقبال</span>
-                      </button>
+                      {(userRole !== 'worker' || trip.destination_station_id === activeStationId) && (
+                        <button
+                          type="button"
+                          onClick={() => setArrivalTrip(trip)}
+                          className="px-3 py-2 rounded-xl font-black text-xs transition flex items-center gap-1"
+                        >
+                          <Scan className="w-3.5 h-3.5" />
+                          <span>مسح الاستقبال</span>
+                        </button>
+                      )}
                     </div>
 
                     <div className="text-[11px] text-[#F5C84C] font-bold">

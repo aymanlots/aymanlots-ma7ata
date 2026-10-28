@@ -15,7 +15,7 @@ import {
   CheckCircle2,
   Printer 
 } from 'lucide-react';
-import { printOfficialCashVoucherBonPDF } from '../utils/logisticsFeatures';
+import { printOfficialCashVoucherBonPDF, formatDateTimeStandard } from '../utils/logisticsFeatures';
 
 interface TransactionDetailModalProps {
   transaction: Transaction | null;
@@ -58,21 +58,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
   const badge = getTypeLabel(transaction.type);
 
-  const formatExactDateTime = (dateStr: string) => {
-    try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return dateStr;
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      const seconds = String(d.getSeconds()).padStart(2, '0');
-      return `${year}/${month}/${day} - ${hours}:${minutes}:${seconds}`;
-    } catch {
-      return dateStr;
-    }
-  };
+  const formatExactDateTime = (dateStr: string) => formatDateTimeStandard(dateStr);
 
   return (
     <div

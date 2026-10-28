@@ -45,6 +45,7 @@ import { tripService, mapSupabaseRowToTrip } from '../services/tripService';
 import { cashService, mapSupabaseRowToTransaction } from '../services/cashService';
 import { storageService, generateUUID, isValidUUID } from '../services/storageService';
 import { firebaseSyncService } from '../services/firebaseSyncService';
+import { matchesTrackingCode, extractTrackingQueryCode, formatTrackingCodeNumeric } from '../utils/logisticsFeatures';
 import { auth as firebaseAuth, googleProvider } from '../lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { 
@@ -1116,8 +1117,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const userAssignedStationId = useMemo(() => {
     if (!currentUser) return null;
     const assignment = stationWorkers.find(sw => sw.user_id === currentUser.id);
-    return assignment?.station_id || visibleStations[0]?.id || null;
-  }, [currentUser, stationWorkers, visibleStations]);
+    const memberEntry = workspaceMembers.find(m => m.user_id === currentUser.id);
+    return assignment?.station_id || memberEntry?.station_id || visibleStations[0]?.id || null;
+  }, [currentUser, stationWorkers, workspaceMembers, visibleStations]);
 
   useEffect(() => {
     if (userRole === 'worker' && userAssignedStationId) {
@@ -1593,6 +1595,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         created_at: new Date().toISOString(),
       };
       setCurrentUser(newProfile);
+      try {
+        localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
+      } catch {}
 
       // Persist account credentials in local accounts map for offline/local session recovery
       try {
@@ -1772,6 +1777,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!password || password.trim().length < 8) {
         return { success: false, error: 'كلمة المرور يجب أن لا تقل عن 8 أحرف أو أرقام' };
       }
+      try {
+        localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
+      } catch {}
 
       const syntheticEmail = phoneToEmail(cleanPhone);
       const supabase = getSupabaseClient();
@@ -2097,6 +2105,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const logout = () => {
+    if (currentUser?.phone) {
+      try {
+        localStorage.setItem('ittihadiya_saved_login_phone', currentUser.phone);
+      } catch {}
+    }
     const supabase = getSupabaseClient();
     if (supabase) {
       if (realtimeChannelRef.current) {
@@ -2108,7 +2121,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setIsPlatformOwner(false);
     setCurrentUser(null);
     localStorage.removeItem('aman_user');
-    showToast('تم تسجيل الخروج بنجاح', 'info');
+    showToast('تم تسجيل الخروج بنجاح (رقم هاتفك محفوظ لتسجيل الدخول السريع)', 'info');
   };
 
   // ============================================================================
@@ -2628,7 +2641,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const st = stations.find(s => s.id === data.station_id);
+    // قيد صلاحية العامل: العامل يتحكم في محطته المخصصة فقط (استثناء: عند تسليم حوالة واردة لمحطته أو استلام طرد في محطته)
+    const effectiveStationId =
+      userRole === 'worker' && userAssignedStationId ? userAssignedStationId : data.station_id;
+    if (userRole === 'worker' && userAssignedStationId && data.station_id !== userAssignedStationId) {
+      const msg = 'لا تملك صلاحية التحكم أو تسجيل عمليات مالية في محطة أخرى غير محطتك المخصصة';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    const st = stations.find(s => s.id === effectiveStationId);
     const wsId = currentWorkspace?.id || 'ws-default';
     const txId = isSupabaseConfigured()
       ? generateUUID()
@@ -2918,9 +2940,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
+    const targetStationId =
+      userRole === 'worker' && userAssignedStationId ? userAssignedStationId : params.stationId;
+    if (userRole === 'worker' && userAssignedStationId && params.stationId !== userAssignedStationId) {
+      const msg = 'لا يمكنك تنفيذ صرف العملة في محطة أخرى غير محطة عملك';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const cleanFrom = Math.round(Number(params.fromAmount) * 100) / 100;
     const cleanTo = Math.round(Number(params.toAmount) * 100) / 100;
-    if (!params.stationId || cleanFrom <= 0 || cleanTo <= 0) {
+    if (!targetStationId || cleanFrom <= 0 || cleanTo <= 0) {
       return { success: false, error: 'يرجى تحديد المحطة وإدخال مبلغ صحيح للصرف' };
     }
     if (params.fromCurrency === params.toCurrency) {
@@ -3070,6 +3100,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const payoutAmt = Math.round(Number(params.payout_amount) * 100) / 100;
     const commAmt = Math.max(0, Math.round((Number(params.commission_amount) || 0) * 100) / 100);
 
+    if (userRole === 'worker' && userAssignedStationId && params.origin_station_id !== userAssignedStationId) {
+      const msg = 'لا يمكنك إرسال حوالة مالية باسم محطة أخرى؛ يمكنك الإرسال من محطتك فقط';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     if (!params.origin_station_id || !params.destination_station_id) {
       return { success: false, error: 'يرجى تحديد محطة الإرسال ومحطة الاستلام' };
     }
@@ -3154,6 +3190,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const target = moneyTransfers.find(t => t.id === transferId);
     if (!target) return { success: false, error: 'الحوالة غير موجودة' };
     if (target.status === 'paid_out') return { success: false, error: 'تم تسليم وصرف هذه الحوالة مسبقاً' };
+
+    if (userRole === 'worker' && userAssignedStationId && target.destination_station_id !== userAssignedStationId) {
+      const msg = `لا تملك صلاحية تسليم هذه الحوالة لأنها موجهة إلى محطة "${target.destination_station_name}" فقط`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
 
     const paidAt = new Date().toISOString();
     const updatedTransfer: MoneyTransfer = {
@@ -3241,21 +3283,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
+    if (userRole === 'worker' && userAssignedStationId && data.origin_station_id !== userAssignedStationId) {
+      const msg = 'لا يمكنك تسجيل إرسالية من محطة أخرى؛ يمكنك الإرسال من محطة عملك فقط';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const originSt = stations.find(s => s.id === data.origin_station_id);
     const destSt = stations.find(s => s.id === data.destination_station_id);
     const wsId = currentWorkspace?.id || 'ws-default';
 
     let parcelNumber: number;
     let tracking_code: string;
-    const codeNumber = Math.floor(1000 + Math.random() * 9000);
+    const codeNumber = Math.floor(100 + Math.random() * 9900);
 
     if (isSupabaseConfigured()) {
       const seq = await parcelService.getNextParcelNumberAsync(wsId, allParcels);
       parcelNumber = seq.parcelNumber;
-      tracking_code = seq.trackingCode;
+      tracking_code = formatTrackingCodeNumeric(seq.trackingCode, seq.parcelNumber);
     } else {
-      parcelNumber = allParcels.filter(p => p.workspace_id === wsId).length + 1;
-      tracking_code = `ITT-${new Date().getFullYear()}-${codeNumber}`;
+      const seq = parcelService.getNextParcelNumber(wsId, allParcels);
+      parcelNumber = seq.parcelNumber;
+      tracking_code = formatTrackingCodeNumeric(seq.trackingCode, seq.parcelNumber);
     }
 
     const amountDue = Math.round(Number(data.amount_due ?? data.shipping_fee ?? 0) * 100) / 100;
@@ -3376,6 +3425,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const msg = 'لا يمكن تعديل حالة طرد تابع لمساحة عمل أخرى (صلاحية قراءة وتتبع فقط)';
       showToast(msg, 'error');
       return { success: false, error: msg };
+    }
+
+    // قيد صلاحية العامل حسب محطته فقط
+    if (userRole === 'worker' && userAssignedStationId) {
+      if ((status === 'arrived' || status === 'delivered') && parcel.destination_station_id !== userAssignedStationId) {
+        const msg = `لا يمكنك استلام أو تسليم هذا الكولي لأنه موجه إلى محطة "${parcel.destination_station_name}"`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (status === 'in_transit' && parcel.origin_station_id !== userAssignedStationId) {
+        const msg = `لا يمكنك إطلاق هذا الكولي لأنه صادر من محطة "${parcel.origin_station_name}"`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
     }
 
     const noteText = typeof notesOrMeta === 'string' ? notesOrMeta : notesOrMeta?.notes;
@@ -3506,8 +3569,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.syncParcel(updated.workspace_id, updated).catch(() => {});
     }
 
+    const paymentStationId =
+      userRole === 'worker' && userAssignedStationId
+        ? userAssignedStationId
+        : parcel.status === 'arrived' || parcel.status === 'delivered'
+        ? parcel.destination_station_id
+        : parcel.origin_station_id;
+
     await createTransaction({
-      station_id: parcel.origin_station_id,
+      station_id: paymentStationId,
       type: 'parcel_shipping_fee',
       amount: paymentAmount,
       currency: parcel.currency,
@@ -3694,6 +3764,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const parcel = allParcels.find(p => p.id === parcelId);
     if (!parcel) return { success: false, error: 'الطرد غير موجود' };
 
+    if (userRole === 'worker' && userAssignedStationId && parcel.origin_station_id !== userAssignedStationId) {
+      const msg = `يمكن فقط لعامل محطة الانطلاق الأصلية (${parcel.origin_station_name}) أو المدير تسليم الطرد المرتجع للمرسل`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const recipientSenderName = data.senderReceivedByName.trim() || parcel.sender_name;
     const feePaid = Math.max(0, Math.round((Number(data.returnFeePaid) || 0) * 100) / 100);
     const now = new Date().toISOString();
@@ -3809,27 +3885,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const getParcelByTrackingCode = (code: string): Parcel | undefined => {
     if (!code) return undefined;
-    const clean = code.trim().toUpperCase();
-    return parcels.find(p => p.tracking_code.toUpperCase() === clean);
+    return parcels.find(p => matchesTrackingCode(p, code));
   };
 
   const fetchPublicParcelTracking = async (
     code: string
   ): Promise<{ success: boolean; error?: string; parcel?: Partial<Parcel> & { workspace_name?: string } }> => {
-    const clean = (code || '').trim().toUpperCase().replace(/^#/, '');
-    if (!clean || clean.length < 2) {
-      return { success: false, error: 'يرجى إدخال رقم التتبع أو رقم الكولي بشكل صحيح' };
+    const clean = extractTrackingQueryCode(code).toUpperCase();
+    if (!clean || clean.length < 1) {
+      return { success: false, error: 'يرجى إدخال كود التتبع (مثال: 0000466) بشكل صحيح' };
     }
 
     // 1. Check all local parcels first
-    const localFound = allParcels.find(
-      p => p.tracking_code.toUpperCase() === clean || String(p.parcel_number) === clean
-    );
+    const localFound = allParcels.find(p => matchesTrackingCode(p, clean));
     if (localFound) {
       return {
         success: true,
         parcel: {
           ...localFound,
+          tracking_code: formatTrackingCodeNumeric(localFound.tracking_code, localFound.parcel_number),
           workspace_name:
             currentWorkspace?.custom_brand_name ||
             currentWorkspace?.name ||
@@ -3962,6 +4036,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    if (userRole === 'worker' && userAssignedStationId && params.originStationId !== userAssignedStationId) {
+      const msg = 'لا يمكنك إنشاء رحلة شحن من محطة أخرى؛ يمكنك الإنشاء من محطة عملك فقط';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
 
     const originSt = stations.find(s => s.id === params.originStationId);
     const destSt = stations.find(s => s.id === params.destinationStationId);
@@ -4099,6 +4179,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
+    const targetTripForLoad = allTrips.find(t => t.id === tripId);
+    if (userRole === 'worker' && userAssignedStationId && targetTripForLoad && targetTripForLoad.origin_station_id !== userAssignedStationId) {
+      const msg = `لا يمكنك شحن الكوليات في هذه الرحلة لأنها تنطلق من محطة "${targetTripForLoad.origin_station_name}"`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const res = tripService.loadParcelToTrip(
       tripId,
       parcelIdentifier,
@@ -4134,6 +4221,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
+    const targetTripForUnload = allTrips.find(t => t.id === tripId);
+    if (userRole === 'worker' && userAssignedStationId && targetTripForUnload && targetTripForUnload.origin_station_id !== userAssignedStationId) {
+      const msg = `لا يمكنك تعديل شحن هذه الرحلة لأنها تنطلق من محطة "${targetTripForUnload.origin_station_name}"`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const res = tripService.unloadParcelFromTrip(
       tripId,
       parcelId,
@@ -4161,6 +4255,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
+    const targetTripForDepart = allTrips.find(t => t.id === tripId);
+    if (userRole === 'worker' && userAssignedStationId && targetTripForDepart && targetTripForDepart.origin_station_id !== userAssignedStationId) {
+      const msg = `لا يمكنك إطلاق هذه الرحلة لأنها تابعة لمحطة "${targetTripForDepart.origin_station_name}"`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const res = tripService.departTrip(
       tripId,
       { id: currentUser.id, name: currentUser.name },
@@ -4186,6 +4287,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!currentUser) return { success: false, error: 'غير مسجل الدخول' };
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const targetTripForReceive = allTrips.find(t => t.id === tripId);
+    if (userRole === 'worker' && userAssignedStationId && targetTripForReceive && targetTripForReceive.destination_station_id !== userAssignedStationId) {
+      const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTripForReceive.destination_station_name}"`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
 
     const res = tripService.receiveParcelAtDestination(
       tripId,
@@ -4221,6 +4329,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!currentUser) return { success: false, error: 'غير مسجل الدخول' };
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const targetTripForClose = allTrips.find(t => t.id === tripId);
+    if (userRole === 'worker' && userAssignedStationId && targetTripForClose && targetTripForClose.destination_station_id !== userAssignedStationId) {
+      const msg = `لا يمكنك إغلاق هذه الرحلة لأنها متجهة إلى محطة "${targetTripForClose.destination_station_name}"`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
 
     const res = tripService.closeTrip(
       tripId,
@@ -5270,6 +5385,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       whatsapp_number: cleanNewWhatsapp,
     };
     setCurrentUser(updatedProfile);
+    try {
+      localStorage.setItem('ittihadiya_saved_login_phone', cleanNewPhone);
+    } catch {}
 
     setWorkspaceMembers(prev =>
       prev.map(m =>

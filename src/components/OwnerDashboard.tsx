@@ -24,6 +24,11 @@ import { NewVoucherModal } from './NewVoucherModal';
 import { MoneyTransferModal } from './MoneyTransferModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { ParcelDetailModal } from './ParcelDetailModal';
+import {
+  formatDateTimeStandard,
+  formatTrackingCodeNumeric,
+  matchesTrackingCode,
+} from '../utils/logisticsFeatures';
 
 interface OwnerDashboardProps {
   onNavigateToParcel?: (parcelId: string) => void;
@@ -219,6 +224,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     return baseParcels
       .filter(
         p =>
+          matchesTrackingCode(p, searchQuery) ||
           p.tracking_code.toLowerCase().includes(q) ||
           String(p.parcel_number || '').includes(q) ||
           p.sender_name.toLowerCase().includes(q) ||
@@ -301,13 +307,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   };
 
   const handleBarcodeScanned = (code: string) => {
-    const cleaned = code.trim().toUpperCase();
-    const found = parcels.find(
-      p =>
-        p.tracking_code.toUpperCase() === cleaned ||
-        `#${p.parcel_number}` === cleaned ||
-        String(p.parcel_number) === cleaned
-    );
+    const found = parcels.find(p => matchesTrackingCode(p, code));
     setScannerOpen(false);
     if (found) {
       setSelectedParcelDetail(found);
@@ -329,8 +329,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             onChange={e => setSearchQuery(e.target.value)}
             placeholder={
               activeStation
-                ? `ابحث عن كولي في ${activeStation.name} (رقم، مرسل، مستلم)...`
-                : 'ابحث برقم الكولي، الرمز (ITT-) أو اسم المرسل/المستلم...'
+                ? `ابحث عن كولي في ${activeStation.name} (كود 0000466، مرسل، مستلم)...`
+                : 'ابحث بكود التتبع (مثال: 0000466) أو اسم المرسل/المستلم...'
             }
             className="flex-1 bg-transparent text-xs font-bold text-white placeholder-white/75 focus:outline-none py-2 px-1"
           />
@@ -372,12 +372,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono font-black text-[#F5C84C]" dir="ltr">
-                      #{parcel.parcel_number} ({parcel.tracking_code})
+                      {formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number)}
                     </span>
                     <span className="text-xs font-bold text-white">{parcel.description}</span>
                   </div>
                   <p className="text-[11px] text-white/80 mt-0.5">
-                    من: {parcel.sender_name} ⬅ إلى: {parcel.receiver_name}
+                    من: {parcel.sender_name} ({parcel.origin_station_name}) ⬅ إلى: {parcel.receiver_name} ({parcel.destination_station_name})
                   </p>
                 </div>
                 <Eye className="w-4 h-4 text-[#F5C84C]" />
@@ -938,10 +938,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         </p>
                         <p className="text-[10px] text-white/70 mt-0.5">
                           {tx.station_name} • {tx.creator_name} •{' '}
-                          {new Date(tx.created_at).toLocaleTimeString('ar-MA', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          <span dir="ltr" className="font-mono">
+                            {formatDateTimeStandard(tx.created_at)}
+                          </span>
                         </p>
                       </div>
 

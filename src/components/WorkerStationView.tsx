@@ -7,6 +7,11 @@ import { TransactionDetailModal } from './TransactionDetailModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { MoneyTransferModal } from './MoneyTransferModal';
 import {
+  formatDateTimeStandard,
+  formatTrackingCodeNumeric,
+  matchesTrackingCode,
+} from '../utils/logisticsFeatures';
+import {
   Plus,
   Minus,
   Store,
@@ -44,6 +49,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     currentWorkspace,
     stations,
     selectedStationId,
+    userAssignedStationId,
     stationBalances,
     currencies,
     transactions,
@@ -86,7 +92,8 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   }, [searchQuery]);
 
   const unclaimedDaysThreshold = currentWorkspace?.unclaimed_days_threshold ?? 7;
-  const currentStation = stations.find((s) => s.id === selectedStationId) || stations[0];
+  const currentStation =
+    stations.find((s) => s.id === (userAssignedStationId || selectedStationId)) || stations[0];
   const balances = currentStation ? stationBalances[currentStation.id] || {} : {};
   const activeCurrencies = currencies.filter((c) => c.is_active);
 
@@ -128,6 +135,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     return stationParcels
       .filter(
         (p) =>
+          matchesTrackingCode(p, searchQuery) ||
           p.tracking_code.toLowerCase().includes(q) ||
           String(p.parcel_number || '').includes(q) ||
           p.sender_name.toLowerCase().includes(q) ||
@@ -167,7 +175,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
       id: `p-${p.id}`,
       kind: 'parcel' as const,
       created_at: p.created_at,
-      title: `كولي #${p.parcel_number || p.tracking_code} — ${p.receiver_name}`,
+      title: `كولي ${formatTrackingCodeNumeric(p.tracking_code, p.parcel_number)} — ${p.receiver_name}`,
       subtitle:
         p.status === 'pending' || p.status === 'registered'
           ? 'في المحطة'
@@ -194,13 +202,9 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   }, [transactions, stationParcels, currentStation?.id]);
 
   const handleScanCode = (code: string) => {
-    const cleaned = code.trim().toUpperCase();
-    const found = stationParcels.find(
-      (p) =>
-        p.tracking_code.toUpperCase() === cleaned ||
-        `#${p.parcel_number}` === cleaned ||
-        String(p.parcel_number) === cleaned
-    );
+    const found =
+      stationParcels.find((p) => matchesTrackingCode(p, code)) ||
+      parcels.find((p) => matchesTrackingCode(p, code));
     setShowScanner(false);
     if (found) {
       setSelectedParcelDetail(found);
@@ -561,24 +565,30 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                       </strong>
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const destBal =
-                        stationBalances[t.destination_station_id]?.[t.payout_currency] || 0;
-                      if (destBal <= 0 || destBal - t.payout_amount < 0) {
-                        setPendingPayoutWarningTransfer(t);
-                        return;
-                      }
-                      await payoutMoneyTransfer(t.id);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>
-                      تم الاستلام (-{t.payout_amount} {t.payout_currency})
+                  {t.destination_station_id === currentStation.id ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const destBal =
+                          stationBalances[t.destination_station_id]?.[t.payout_currency] || 0;
+                        if (destBal <= 0 || destBal - t.payout_amount < 0) {
+                          setPendingPayoutWarningTransfer(t);
+                          return;
+                        }
+                        await payoutMoneyTransfer(t.id);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>
+                        تم الاستلام (-{t.payout_amount} {t.payout_currency})
+                      </span>
+                    </button>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-xl bg-black/55 border border-amber-500/40 text-amber-300 font-bold text-[10px] shrink-0">
+                      ⏳ بانتظار الاستلام في {t.destination_station_name}
                     </span>
-                  </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -727,11 +737,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                               dir="ltr"
                               style={{ direction: 'ltr', unicodeBidi: 'isolate' }}
                             >
-                              {(() => {
-                                const d = new Date(item.created_at);
-                                if (isNaN(d.getTime())) return item.created_at;
-                                return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                              })()}
+                              {formatDateTimeStandard(item.created_at)}
                             </span>
                           </p>
                         </div>
@@ -902,7 +908,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                       >
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-black text-[#F5C84C] font-mono" dir="ltr">
-                            #{p.parcel_number || '—'} • {p.tracking_code}
+                            {formatTrackingCodeNumeric(p.tracking_code, p.parcel_number)}
                           </p>
                           <p className="text-xs font-bold text-white mt-0.5 line-clamp-2 break-words">
                             المستلم: {p.receiver_name} ← المرسل: {p.sender_name}

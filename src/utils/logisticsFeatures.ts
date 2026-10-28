@@ -9,9 +9,99 @@ export type WhatsAppTemplateType =
   | 'delivered_sender'
   | 'dormant_reminder';
 
-export function getPublicTrackingLink(trackingCode: string): string {
-  if (typeof window === 'undefined') return trackingCode;
-  return `${window.location.origin}${window.location.pathname}?track=${encodeURIComponent(trackingCode)}`;
+export function formatDateTimeStandard(iso?: string | Date | null): string {
+  if (!iso) return '—';
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} . ${hours}:${minutes}`;
+}
+
+export function formatDateStandard(iso?: string | Date | null): string {
+  if (!iso) return '—';
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+export function formatTimeStandard(iso?: string | Date | null): string {
+  if (!iso) return '—';
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+export function formatTrackingCodeNumeric(code?: string | null, parcelNumber?: number): string {
+  const raw = String(code || '').trim();
+  if (/^\d+$/.test(raw)) {
+    return raw.padStart(7, '0');
+  }
+  const ittMatch = raw.match(/ITT-\d{4}-(\d+)/i);
+  if (ittMatch && ittMatch[1]) {
+    return ittMatch[1].padStart(7, '0');
+  }
+  const trailingDigits = raw.match(/(\d+)$/);
+  if (trailingDigits && trailingDigits[1]) {
+    return trailingDigits[1].padStart(7, '0');
+  }
+  if (parcelNumber !== undefined && parcelNumber !== null && !isNaN(Number(parcelNumber))) {
+    return String(parcelNumber).padStart(7, '0');
+  }
+  return raw || '0000101';
+}
+
+export function extractTrackingQueryCode(rawInput: string): string {
+  const raw = String(rawInput || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('{') && raw.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.code) return extractTrackingQueryCode(String(parsed.code));
+      if (parsed.num) return extractTrackingQueryCode(String(parsed.num));
+    } catch {}
+  }
+  if (raw.includes('track=')) {
+    try {
+      const match = raw.match(/[?&]track=([^&#\s]+)/i);
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]).trim();
+      }
+    } catch {}
+  }
+  return raw.replace(/^#/, '').trim();
+}
+
+export function matchesTrackingCode(parcel: Parcel, rawQuery: string): boolean {
+  const q = extractTrackingQueryCode(rawQuery).toUpperCase();
+  if (!q) return false;
+  const pCode = (parcel.tracking_code || '').toUpperCase().trim();
+  const numericCode = formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number);
+  const pNumStr = String(parcel.parcel_number || '');
+
+  if (pCode === q || numericCode === q || pNumStr === q) return true;
+
+  // Compare numeric values if query is purely digits or ITT-YYYY-XXXX
+  const qDigits = q.replace(/^ITT-\d{4}-/i, '').replace(/^0+/, '');
+  const pDigits = numericCode.replace(/^0+/, '');
+  if (qDigits && pDigits && /^\d+$/.test(qDigits) && qDigits === pDigits) {
+    return true;
+  }
+  return false;
+}
+
+export function getPublicTrackingLink(trackingCode: string, parcelNumber?: number): string {
+  const numericCode = formatTrackingCodeNumeric(trackingCode, parcelNumber);
+  if (typeof window === 'undefined') return numericCode;
+  return `${window.location.origin}${window.location.pathname}?track=${encodeURIComponent(numericCode)}`;
 }
 
 export function buildWhatsAppParcelMessage(
@@ -20,7 +110,8 @@ export function buildWhatsAppParcelMessage(
   workspaceName: string = 'إكسبريس الصحراء لوجستيك',
   daysWaiting?: number
 ): { phone: string; message: string; recipientLabel: string } {
-  const trackUrl = getPublicTrackingLink(parcel.tracking_code);
+  const numericCode = formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number);
+  const trackUrl = getPublicTrackingLink(numericCode, parcel.parcel_number);
   const remaining = Math.max(0, Math.round(((parcel.amount_due || 0) - (parcel.amount_paid || 0)) * 100) / 100);
   const paymentLine =
     remaining > 0
@@ -28,6 +119,7 @@ export function buildWhatsAppParcelMessage(
       : `✅ *الأداء:* خالص بالكامل (${parcel.amount_due} ${parcel.currency})`;
 
   const weightText = parcel.weight_kg ? ` | الوزن: ${parcel.weight_kg} kg` : '';
+  const dateText = formatDateTimeStandard(parcel.created_at);
 
   switch (templateType) {
     case 'registered_sender':
@@ -37,11 +129,13 @@ export function buildWhatsAppParcelMessage(
         message:
           `📦 *${workspaceName} — وصل إيداع رسمي*\n` +
           `مرحباً السيد(ة) *${parcel.sender_name}*، تم تسجيل إرساليتكم بنجاح:\n` +
-          `• *رقم الكولي:* #${parcel.parcel_number} (${parcel.tracking_code})\n` +
-          `• *المسار:* ${parcel.origin_station_name || 'الداخلة'} ➔ ${parcel.destination_station_name || 'نواذيبو'}\n` +
+          `• *كود التتبع:* ${numericCode}\n` +
+          `• *التاريخ:* ${dateText}\n` +
+          `• *المسار:* ${parcel.origin_station_name || 'الانطلاق'} ➔ ${parcel.destination_station_name || 'الوصول'}\n` +
           `• *المستلم:* ${parcel.receiver_name} (${parcel.receiver_phone})\n` +
           `• *البضاعة:* ${parcel.description} (${parcel.items_count} طرد${weightText})\n` +
           `• ${paymentLine}\n\n` +
+          `🔢 *كود تتبع الكولي (للبحث في التطبيق):* ${numericCode}\n` +
           `🔍 *رابط التتبع المباشر والـ QR:*\n${trackUrl}\n` +
           `شكراً لثقتكم بنا!`,
       };
@@ -53,10 +147,12 @@ export function buildWhatsAppParcelMessage(
         message:
           `📦 *${workspaceName} — إشعار إرسالية جديدة*\n` +
           `مرحباً السيد(ة) *${parcel.receiver_name}*، أرسل إليكم السيد(ة) *${parcel.sender_name}* كولي جديد:\n` +
-          `• *رقم الكولي:* #${parcel.parcel_number} (${parcel.tracking_code})\n` +
-          `• *محطة الوصول:* ${parcel.destination_station_name || 'نواذيبو'}\n` +
+          `• *كود التتبع:* ${numericCode}\n` +
+          `• *التاريخ:* ${dateText}\n` +
+          `• *من محطة:* ${parcel.origin_station_name || 'الانطلاق'} ➔ *إلى:* ${parcel.destination_station_name || 'الوصول'}\n` +
           `• *المحتوى:* ${parcel.description} (${parcel.items_count} طرد${weightText})\n` +
           `• ${paymentLine}\n\n` +
+          `🔢 *كود تتبع الكولي:* ${numericCode}\n` +
           `🔍 *تتبع الكولي مباشرة عبر الرابط:*\n${trackUrl}`,
       };
 
@@ -66,9 +162,10 @@ export function buildWhatsAppParcelMessage(
         recipientLabel: `المستلم (${parcel.receiver_name})`,
         message:
           `🚚 *${workspaceName} — الكولي في الطريق إليكم*\n` +
-          `مرحباً السيد(ة) *${parcel.receiver_name}*، نعلمكم أن الكولي رقم *#${parcel.parcel_number}* (${parcel.tracking_code}) انطلق في الرحلة نحو محطة *${parcel.destination_station_name}*.\n` +
+          `مرحباً السيد(ة) *${parcel.receiver_name}*، نعلمكم أن الكولي كود *${numericCode}* انطلق في الرحلة نحو محطة *${parcel.destination_station_name}*.\n` +
           (parcel.driver_name ? `• *السائق:* ${parcel.driver_name} (${parcel.vehicle_plate || ''})\n` : '') +
           `• ${paymentLine}\n\n` +
+          `🔢 *كود التتبع:* ${numericCode}\n` +
           `🔍 *تتبع مسار الكولي بالـ QR:*\n${trackUrl}`,
       };
 
@@ -79,10 +176,10 @@ export function buildWhatsAppParcelMessage(
         message:
           `🎉 *${workspaceName} — إشعار وصول الكولي للمحطة*\n` +
           `مرحباً السيد(ة) *${parcel.receiver_name}*، وصل الكولي الخاص بكم إلى محطة *${parcel.destination_station_name}* وهو جاهز للاستلام الآن!\n` +
-          `• *رقم الكولي:* #${parcel.parcel_number} (${parcel.tracking_code})\n` +
+          `• *كود التتبع:* ${numericCode}\n` +
           `• *المرسل:* ${parcel.sender_name}\n` +
           `• ${paymentLine}\n\n` +
-          `📌 يرجى الإدلاء برقم الكولي أو رمز QR في الرابط التالي عند الحضور للمحطة:\n${trackUrl}`,
+          `📌 يرجى الإدلاء بكود الكولي (${numericCode}) أو رمز QR في الرابط التالي عند الحضور للمحطة:\n${trackUrl}`,
       };
 
     case 'delivered_sender':
@@ -91,7 +188,7 @@ export function buildWhatsAppParcelMessage(
         recipientLabel: `المرسل (${parcel.sender_name})`,
         message:
           `✅ *${workspaceName} — تأكيد تسليم الأمانة*\n` +
-          `مرحباً السيد(ة) *${parcel.sender_name}*، نحيطكم علماً أنه تم تسليم الكولي رقم *#${parcel.parcel_number}* (${parcel.tracking_code}) بنجاح إلى المستلم *${parcel.delivered_to || parcel.receiver_name}* في محطة *${parcel.destination_station_name}*.\n` +
+          `مرحباً السيد(ة) *${parcel.sender_name}*، نحيطكم علماً أنه تم تسليم الكولي كود *${numericCode}* بنجاح إلى المستلم *${parcel.delivered_to || parcel.receiver_name}* في محطة *${parcel.destination_station_name}*.\n` +
           `شكراً لتعاملكم مع ${workspaceName}!`,
       };
 
@@ -101,9 +198,10 @@ export function buildWhatsAppParcelMessage(
         recipientLabel: `المستلم (${parcel.receiver_name})`,
         message:
           `⚠️ *${workspaceName} — تذكير هام باستلام كولي متأخر*\n` +
-          `مرحباً السيد(ة) *${parcel.receiver_name}*، نذكركم بأن الكولي رقم *#${parcel.parcel_number}* (${parcel.tracking_code}) المرسل من طرف *${parcel.sender_name}* متواجد في محطة *${parcel.destination_station_name}* منذ *${daysWaiting || 5} أيام*.\n` +
+          `مرحباً السيد(ة) *${parcel.receiver_name}*، نذكركم بأن الكولي كود *${numericCode}* المرسل من طرف *${parcel.sender_name}* متواجد في محطة *${parcel.destination_station_name}* منذ *${daysWaiting || 5} أيام*.\n` +
           `• ${paymentLine}\n` +
           `يرجى الحضور لاستلامه في أقرب وقت تفادياً لإرجاعه تلقائياً للمرسل.\n` +
+          `🔢 *كود الكولي:* ${numericCode}\n` +
           `🔍 *بطاقة الكولي والـ QR:*\n${trackUrl}`,
       };
   }
@@ -291,10 +389,11 @@ export async function printOfficialTripManifestPDF(
   const rowsHtml = loadedParcels
     .map((p, idx) => {
       const rem = Math.max(0, Math.round(((p.amount_due || 0) - (p.amount_paid || 0)) * 100) / 100);
+      const numCode = formatTrackingCodeNumeric(p.tracking_code, p.parcel_number);
       return `
         <tr>
           <td style="text-align:center;font-weight:900;">${idx + 1}</td>
-          <td style="font-family:monospace;font-weight:900;">#${p.parcel_number}<br/><span style="font-size:10px;color:#444;">${p.tracking_code}</span></td>
+          <td style="font-family:monospace;font-weight:900;">#${p.parcel_number}<br/><span style="font-size:10px;color:#444;">${numCode}</span></td>
           <td><strong>${p.sender_name}</strong><br/><span style="font-family:monospace;font-size:10px;">${p.sender_phone}</span></td>
           <td><strong>${p.receiver_name}</strong><br/><span style="font-family:monospace;font-size:10px;">${p.receiver_phone}</span></td>
           <td>${p.description}${p.condition === 'abnormal' ? ' <strong style="color:#b91c1c;">[حذر/كسر]</strong>' : ''}</td>
@@ -358,7 +457,7 @@ export async function printOfficialTripManifestPDF(
     </div>
     <div class="doc-title">
       <h2>ورقة الطريق الرسمية وبيان الحمولة (MANIFESTE DE VOYAGE & DOUANE)</h2>
-      <span>كود الرحلة: <strong>${trip.trip_code}</strong> | التاريخ: ${new Date(trip.created_at).toLocaleDateString('ar-MA')}</span>
+      <span dir="ltr">كود الرحلة: <strong>${trip.trip_code}</strong> | التاريخ: ${formatDateTimeStandard(trip.created_at)}</span>
     </div>
     <div>
       ${tripQrDataUrl ? `<img src="${tripQrDataUrl}" style="width:70px;height:70px;border:1px solid #000;padding:2px;border-radius:4px;" />` : ''}
@@ -453,10 +552,10 @@ export async function printOfficialParcelBonPDF(
     logoUrl?: string;
   }
 ): Promise<void> {
-  const trackUrl = getPublicTrackingLink(parcel.tracking_code);
+  const numericCode = formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number);
   let qrDataUrl = '';
   try {
-    qrDataUrl = await QRCode.toDataURL(trackUrl || parcel.tracking_code, {
+    qrDataUrl = await QRCode.toDataURL(numericCode, {
       width: 150,
       margin: 1,
     });
@@ -521,8 +620,8 @@ export async function printOfficialParcelBonPDF(
 
       <div class="bon-badge">
         <h2>بون إيداع وشحن كولي (BON D'EXPÉDITION)</h2>
-        <span dir="ltr">#${parcel.parcel_number} — ${parcel.tracking_code}</span>
-        <div style="font-size:10px;color:#ddd;margin-top:2px;">التاريخ: ${new Date(parcel.created_at).toLocaleString('ar-MA')}</div>
+        <span dir="ltr">#${parcel.parcel_number} — ${numericCode}</span>
+        <div dir="ltr" style="font-size:10px;color:#ddd;margin-top:2px;">التاريخ: ${formatDateTimeStandard(parcel.created_at)}</div>
       </div>
 
       <div>
@@ -694,7 +793,7 @@ export async function printOfficialCashVoucherBonPDF(
       </div>
     </div>
 
-    <div class="row"><span>التاريخ والتوقيت:</span><strong dir="ltr" style="font-family:monospace;">${new Date(tx.created_at).toLocaleString('ar-MA')}</strong></div>
+    <div class="row"><span>التاريخ والتوقيت:</span><strong dir="ltr" style="font-family:monospace;">${formatDateTimeStandard(tx.created_at)}</strong></div>
     <div class="row"><span>البيان والسبب:</span><strong>${tx.reason || 'سند صندوق نقدي'}</strong></div>
     ${tx.phone_number ? `<div class="row"><span>رقم الهاتف:</span><strong dir="ltr" style="font-family:monospace;">${tx.phone_number}</strong></div>` : ''}
     ${tx.note ? `<div class="row"><span>ملاحظات إضافية:</span><strong>${tx.note}</strong></div>` : ''}

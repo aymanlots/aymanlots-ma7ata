@@ -28,6 +28,8 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
   const {
     stations,
     selectedStationId,
+    userRole,
+    userAssignedStationId,
     stationBalances,
     exchangeRate,
     moneyTransfers,
@@ -35,8 +37,9 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
     payoutMoneyTransfer,
   } = useApp();
 
+  const workerStationId = userRole === 'worker' ? (userAssignedStationId || selectedStationId || stations[0]?.id || null) : null;
   const activeStationId =
-    selectedStationId && selectedStationId !== 'all' ? selectedStationId : null;
+    workerStationId || (selectedStationId && selectedStationId !== 'all' ? selectedStationId : null);
 
   const [activeTab, setActiveTab] = useState<'send' | 'list'>(initialTab);
   const [originStationId, setOriginStationId] = useState<string>(
@@ -292,7 +295,9 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                 </label>
                 <select
                   value={originStationId}
+                  disabled={userRole === 'worker'}
                   onChange={e => {
+                    if (userRole === 'worker') return;
                     const nextOrigin = e.target.value;
                     setOriginStationId(nextOrigin);
                     if (nextOrigin === destStationId) {
@@ -305,9 +310,12 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                       setSendCurrency(c);
                     }
                   }}
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white font-bold focus:outline-none focus:border-[#F5C84C]"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white font-bold focus:outline-none focus:border-[#F5C84C] disabled:opacity-75"
                 >
-                  {stations.map(s => (
+                  {(userRole === 'worker' && workerStationId
+                    ? stations.filter(s => s.id === workerStationId)
+                    : stations
+                  ).map(s => (
                     <option key={s.id} value={s.id}>
                       {s.name} ({s.city})
                     </option>
@@ -592,29 +600,38 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
 
                       {t.status === 'pending' ? (
                         <div className="flex flex-col gap-2 pt-1">
-                          <div className="text-[11px] text-white/80 font-bold">
-                            رصيد لاكيس {t.destination_station_name} الحالي:{' '}
-                            <span
-                              dir="ltr"
-                              className={`font-mono font-black ${
-                                destBal <= 0 ? 'text-rose-400' : 'text-emerald-400'
-                              }`}
-                            >
-                              {destBal.toLocaleString('en-US')} {t.payout_currency}
-                            </span>
-                            {' • '}كود الحوالة: <span className="font-mono text-[#F5C84C]">{t.secret_pin}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRequestPayout(t)}
-                            className="btn-gold w-full py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>
-                              تم الاستلام (خصم -{t.payout_amount.toLocaleString('en-US')} {t.payout_currency} من{' '}
-                              {t.destination_station_name})
-                            </span>
-                          </button>
+                          {userRole !== 'worker' || t.destination_station_id === workerStationId ? (
+                            <>
+                              <div className="text-[11px] text-white/80 font-bold">
+                                رصيد لاكيس {t.destination_station_name} الحالي:{' '}
+                                <span
+                                  dir="ltr"
+                                  className={`font-mono font-black ${
+                                    destBal <= 0 ? 'text-rose-400' : 'text-emerald-400'
+                                  }`}
+                                >
+                                  {destBal.toLocaleString('en-US')} {t.payout_currency}
+                                </span>
+                                {' • '}كود الحوالة: <span className="font-mono text-[#F5C84C]">{t.secret_pin}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRequestPayout(t)}
+                                className="btn-gold w-full py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>
+                                  تم الاستلام (خصم -{t.payout_amount.toLocaleString('en-US')} {t.payout_currency} من{' '}
+                                  {t.destination_station_name})
+                                </span>
+                              </button>
+                            </>
+                          ) : (
+                            <div className="p-2.5 rounded-xl bg-black/50 border border-amber-500/35 text-[11px] text-amber-300 font-bold flex items-center justify-between gap-2">
+                              <span>⏳ مرسلة إلى محطة {t.destination_station_name} (يتم الاستلام والصرف في محطة الوصول فقط)</span>
+                              <span className="font-mono text-[#F5C84C]" dir="ltr">PIN: {t.secret_pin}</span>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="text-[11px] text-emerald-400 font-bold flex items-center gap-1.5">
