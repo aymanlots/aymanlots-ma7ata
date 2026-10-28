@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import { Analytics } from '@vercel/analytics/react';
 import '@fontsource/cairo/400.css';
 import '@fontsource/cairo/600.css';
 import '@fontsource/cairo/700.css';
@@ -15,4 +16,9 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <>
+    <App />
+    <Analytics />
+  </>
+);
