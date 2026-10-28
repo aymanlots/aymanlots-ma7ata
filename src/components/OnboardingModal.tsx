@@ -62,14 +62,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
               style={{ background: 'transparent', borderRadius: '50%', padding: 0, overflow: 'hidden' }}
             >
               <img 
-                src="/logo.png" 
-                alt="شعار محطة الاتحادية" 
+                src="/assets/aistudio/image_9c11f636.png" 
+                alt="Sahara📦 Express" 
                 style={{ borderRadius: '50%', width: '100%', height: '100%', objectFit: 'cover', background: 'transparent', display: 'block' }}
               />
             </div>
 
             <h2 className="text-lg font-black text-[#F5D799] text-center mb-1">
-              مرحباً بك في محطة الاتحادية
+              مرحباً بك في Sahara📦 Express
             </h2>
             <p className="text-xs text-[#C8B08A] text-center mb-5">
               لكل فريق عمل خصوصية تامة بنسبة 100% ومحطات منفصلة. كيف ترغب في البدء؟

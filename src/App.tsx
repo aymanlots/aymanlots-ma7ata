@@ -41,7 +41,9 @@ const MainApp: React.FC = () => {
     currentWorkspace, 
     stations,
     daysUntilExpiry, 
-    isSubscriptionExpired 
+    subscriptionRemainingLabel,
+    isSubscriptionExpired,
+    showToast
   } = useApp();
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
@@ -165,35 +167,39 @@ const MainApp: React.FC = () => {
           onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
         />
 
-        {/* 3-Day Expiry Warning Banner */}
+        {/* 3-Day Pre-Expiry Reminder Banner */}
         {!isSubscriptionExpired && daysUntilExpiry <= 3 && (
           <div 
             onClick={() => setShowPaywall(true)}
-            className="luxury-card border-b border-[#D4AF37]/40 px-3.5 py-2 text-xs font-semibold text-[#E6C37A] flex items-center justify-between cursor-pointer transition text-right"
+            className="luxury-card border-b border-[#D4AF37]/40 px-3.5 py-2 text-xs font-semibold text-[#E6C37A] flex items-center justify-between gap-2 cursor-pointer transition text-right"
           >
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-[#D4AF37] shrink-0" />
               <span>
-                تنبيه: يتبقى <strong>{daysUntilExpiry} أيام</strong> على انتهاء اشتراك مساحة العمل. انقر للتجديد.
+                🔔 تذكير قبل الانتهاء: متبقي <strong className="font-mono text-[#F5C84C]">{subscriptionRemainingLabel}</strong> على انتهاء الـ 30 يوماً.
               </span>
             </div>
-            <span className="text-[10px] underline font-bold text-[#F5C84C]">تجديد الاشتراك</span>
+            <span className="text-[10px] font-black text-[#111111] bg-[#F5C84C] px-2 py-0.5 rounded-lg shrink-0">
+              {userRole !== 'worker' ? 'تجديد الاشتراك' : 'مرتبط بالمدير'}
+            </span>
           </div>
         )}
 
-        {/* Expired Paywall Warning Banner */}
+        {/* Expired Paywall Warning Banner (Full Write Lock for Admin & Worker) */}
         {isSubscriptionExpired && (
           <div 
             onClick={() => setShowPaywall(true)}
-            className="bg-rose-950/80 border-b border-rose-500/40 px-3.5 py-2 text-xs font-bold text-rose-300 flex items-center justify-between cursor-pointer hover:bg-rose-950 transition text-right"
+            className="bg-rose-950/90 border-b border-rose-500/50 px-3.5 py-2.5 text-xs font-bold text-rose-200 flex items-center justify-between gap-2 cursor-pointer hover:bg-rose-950 transition text-right"
           >
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
               <span>
-                انتهت صلاحية الاشتراك. يرجى تجديد الاشتراك لمتابعة تسجيل الكوليات والسندات النقدية.
+                انتهت مدة 30 يوماً — تم إيقاف الإضافة والإرسال والاستقبال للأدمين والعامل حتى التجديد.
               </span>
             </div>
-            <span className="text-[10px] underline font-bold">تجديد الآن</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-lg bg-rose-500/30 border border-rose-400/40 text-white font-black shrink-0">
+              {userRole !== 'worker' ? 'تجديد الآن' : 'مرتبط بالمدير'}
+            </span>
           </div>
         )}
 
@@ -206,10 +212,22 @@ const MainApp: React.FC = () => {
             userRole === 'owner' || userRole === 'platform_owner' || userRole === 'admin' ? (
               <OwnerDashboard
                 onOpenNewVoucher={(type) => {
+                  if (isSubscriptionExpired) {
+                    showToast('انتهت صلاحية الاشتراك (30 يوماً) — لا يمكن إضافة أو إرسال أو استقبال أي عملية حتى التجديد.', 'error');
+                    setShowPaywall(true);
+                    return;
+                  }
                   setVoucherInitialType(type || 'cash_in');
                   setShowNewVoucher(true);
                 }}
-                onOpenNewParcel={() => setShowNewParcel(true)}
+                onOpenNewParcel={() => {
+                  if (isSubscriptionExpired) {
+                    showToast('انتهت صلاحية الاشتراك (30 يوماً) — لا يمكن تسجيل أو إرسال أي كولي حتى التجديد.', 'error');
+                    setShowPaywall(true);
+                    return;
+                  }
+                  setShowNewParcel(true);
+                }}
                 onOpenLedger={() => setCurrentTab('cash')}
                 onOpenParcels={() => setCurrentTab('parcels')}
                 onOpenSettings={() => setCurrentTab('settings')}
@@ -225,10 +243,20 @@ const MainApp: React.FC = () => {
             ) : (
               <WorkerStationView
                 onOpenNewVoucher={(type) => {
+                  if (isSubscriptionExpired) {
+                    showToast('انتهت صلاحية اشتراك المدير (30 يوماً) — لا يمكن إضافة أو إرسال أو استقبال أي عملية.', 'error');
+                    return;
+                  }
                   setVoucherInitialType(type || 'cash_in');
                   setShowNewVoucher(true);
                 }}
-                onOpenNewParcel={() => setShowNewParcel(true)}
+                onOpenNewParcel={() => {
+                  if (isSubscriptionExpired) {
+                    showToast('انتهت صلاحية اشتراك المدير (30 يوماً) — لا يمكن تسجيل أو إرسال أي كولي.', 'error');
+                    return;
+                  }
+                  setShowNewParcel(true);
+                }}
                 onGoToParcels={() => setCurrentTab('parcels')}
                 onGoToCash={() => setCurrentTab('cash')}
               />
@@ -237,7 +265,14 @@ const MainApp: React.FC = () => {
 
           {currentTab === 'parcels' && (
             <ParcelsView 
-              onOpenNewParcel={() => setShowNewParcel(true)}
+              onOpenNewParcel={() => {
+                if (isSubscriptionExpired) {
+                  showToast('انتهت صلاحية الاشتراك (30 يوماً) — لا يمكن تسجيل أو إرسال أي كولي حتى التجديد.', 'error');
+                  if (userRole !== 'worker') setShowPaywall(true);
+                  return;
+                }
+                setShowNewParcel(true);
+              }}
               onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
               onOpenCollabRoom={() => setShowCollabRoom(true)}
             />
@@ -246,6 +281,11 @@ const MainApp: React.FC = () => {
           {currentTab === 'cash' && (
             <LedgerView 
               onOpenNewVoucher={(type) => {
+                if (isSubscriptionExpired) {
+                  showToast('انتهت صلاحية الاشتراك (30 يوماً) — لا يمكن إضافة أي سند مالي حتى التجديد.', 'error');
+                  if (userRole !== 'worker') setShowPaywall(true);
+                  return;
+                }
                 setVoucherInitialType(type || 'cash_in');
                 setShowNewVoucher(true);
               }}
@@ -273,11 +313,30 @@ const MainApp: React.FC = () => {
           currentTab={currentTab}
           onSelectTab={setCurrentTab}
           onOpenNewVoucher={() => {
+            if (isSubscriptionExpired) {
+              showToast('انتهت صلاحية الاشتراك (30 يوماً) — لا يمكن إضافة أي سند مالي حتى التجديد.', 'error');
+              if (userRole !== 'worker') setShowPaywall(true);
+              return;
+            }
             setVoucherInitialType('cash_in');
             setShowNewVoucher(true);
           }}
-          onOpenNewParcel={() => setShowNewParcel(true)}
-          onOpenQuickDeliver={() => setShowQuickDeliver(true)}
+          onOpenNewParcel={() => {
+            if (isSubscriptionExpired) {
+              showToast('انتهت صلاحية الاشتراك (30 يوماً) — لا يمكن تسجيل أو إرسال أي كولي حتى التجديد.', 'error');
+              if (userRole !== 'worker') setShowPaywall(true);
+              return;
+            }
+            setShowNewParcel(true);
+          }}
+          onOpenQuickDeliver={() => {
+            if (isSubscriptionExpired) {
+              showToast('انتهت صلاحية الاشتراك (30 يوماً) — لا يمكن استقبال أو تسليم أي كولي حتى التجديد.', 'error');
+              if (userRole !== 'worker') setShowPaywall(true);
+              return;
+            }
+            setShowQuickDeliver(true);
+          }}
         />
 
         {/* Quick Deliver Modal (Single or Multi-Parcel Batch Delivery) */}

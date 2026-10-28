@@ -107,7 +107,7 @@ export function getPublicTrackingLink(trackingCode: string, parcelNumber?: numbe
 export function buildWhatsAppParcelMessage(
   parcel: Parcel,
   templateType: WhatsAppTemplateType,
-  workspaceName: string = 'إكسبريس الصحراء لوجستيك',
+  workspaceName: string = 'Sahara📦 Express',
   daysWaiting?: number
 ): { phone: string; message: string; recipientLabel: string } {
   const numericCode = formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number);
@@ -350,11 +350,64 @@ export function getDormantParcels(parcels: Parcel[], minDays: number = 3): Dorma
   return list.sort((a, b) => b.daysWaiting - a.daysWaiting);
 }
 
+export function resolveOfficialPrintBranding(input?: {
+  name?: string;
+  subtitle?: string;
+  phone?: string;
+  logoUrl?: string;
+}): {
+  agencyName: string;
+  agencySubtitle: string;
+  agencyPhone: string;
+  logoSrc: string;
+  isPack1Basic99: boolean;
+} {
+  const defaultAppLogo = `${typeof window !== 'undefined' ? window.location.origin : ''}/assets/aistudio/image_9c11f636.png`;
+  const officialAppName = 'Sahara📦 Express';
+  const officialAppSubtitle = 'للسفر ونقل البضائع والكوليات';
+  let isPack1Basic99 = false;
+  try {
+    const ws = JSON.parse(localStorage.getItem('aman_workspace') || 'null');
+    if (
+      ws &&
+      (ws.plan_tier === 'plan_2_two_stations' ||
+        ws.max_stations === 2 ||
+        ws.max_workers_per_station === 1)
+    ) {
+      isPack1Basic99 = true;
+    }
+  } catch {}
+
+  if (isPack1Basic99) {
+    return {
+      agencyName: officialAppName,
+      agencySubtitle: officialAppSubtitle,
+      agencyPhone: input?.phone?.trim() || '',
+      logoSrc: defaultAppLogo,
+      isPack1Basic99: true,
+    };
+  }
+
+  const rawCustomName = input?.name?.trim() || '';
+  const finalAgencyName =
+    !rawCustomName || rawCustomName === 'محطة الاتحادية'
+      ? officialAppName
+      : rawCustomName;
+
+  return {
+    agencyName: finalAgencyName,
+    agencySubtitle: input?.subtitle?.trim() || officialAppSubtitle,
+    agencyPhone: input?.phone?.trim() || '',
+    logoSrc: input?.logoUrl?.trim() || defaultAppLogo,
+    isPack1Basic99: false,
+  };
+}
+
 // Official Trip & Customs Manifest PDF (Manifeste de Voyage PDF)
 export async function printOfficialTripManifestPDF(
   trip: Trip,
   loadedParcels: Parcel[],
-  workspaceName: string = 'إكسبريس الصحراء لوجستيك',
+  workspaceName: string = 'Sahara📦 Express',
   brandPhone: string = '',
   brandLogoUrl?: string,
   brandSubtitle?: string
@@ -367,9 +420,15 @@ export async function printOfficialTripManifestPDF(
     });
   } catch {}
 
-  const logoSrc = brandLogoUrl?.trim() || '';
-  const subtitleText =
-    brandSubtitle?.trim() || 'النقل الدولي للبضائع والأمانات (المغرب ➔ الكركرات ➔ موريتانيا)';
+  const resolvedBrand = resolveOfficialPrintBranding({
+    name: workspaceName,
+    subtitle: brandSubtitle || 'النقل الدولي للبضائع والأمانات (المغرب ➔ الكركرات ➔ موريتانيا)',
+    phone: brandPhone,
+    logoUrl: brandLogoUrl,
+  });
+  const effectiveWorkspaceName = resolvedBrand.agencyName;
+  const logoSrc = resolvedBrand.logoSrc;
+  const subtitleText = resolvedBrand.agencySubtitle;
 
   const totalWeightKg = loadedParcels.reduce((acc, p) => acc + (Number(p.weight_kg) || 0), 0);
   const totalItemsQty = loadedParcels.reduce((acc, p) => acc + (Number(p.items_count) || 1), 0);
@@ -448,11 +507,11 @@ export async function printOfficialTripManifestPDF(
 
   <div class="header">
     <div class="brand-wrap">
-      ${logoSrc ? `<img src="${logoSrc}" alt="${workspaceName}" class="brand-logo" onerror="this.style.display='none'" />` : ''}
+      ${logoSrc ? `<img src="${logoSrc}" alt="${effectiveWorkspaceName}" class="brand-logo" onerror="this.style.display='none'" />` : ''}
       <div class="brand">
-        <h1>${workspaceName}</h1>
+        <h1>${effectiveWorkspaceName}</h1>
         <p>${subtitleText}</p>
-        ${brandPhone ? `<p dir="ltr" style="font-family:monospace;">Tel: ${brandPhone}</p>` : ''}
+        ${resolvedBrand.agencyPhone ? `<p dir="ltr" style="font-family:monospace;">Tel: ${resolvedBrand.agencyPhone}</p>` : ''}
       </div>
     </div>
     <div class="doc-title">
@@ -561,11 +620,16 @@ export async function printOfficialParcelBonPDF(
     });
   } catch {}
 
-  const agencyName = branding?.name?.trim() || 'محطة الاتحادية';
-  const agencySubtitle =
-    branding?.subtitle?.trim() || 'خدمات الشحن السريع ونقل البضائع والأمانات بين المحطات';
-  const agencyPhone = branding?.phone?.trim() || '';
-  const logoSrc = branding?.logoUrl?.trim() || '';
+  const resolvedBrand = resolveOfficialPrintBranding({
+    name: branding?.name,
+    subtitle: branding?.subtitle || 'خدمات الشحن السريع ونقل البضائع والأمانات بين المحطات',
+    phone: branding?.phone,
+    logoUrl: branding?.logoUrl,
+  });
+  const agencyName = resolvedBrand.agencyName;
+  const agencySubtitle = resolvedBrand.agencySubtitle;
+  const agencyPhone = resolvedBrand.agencyPhone;
+  const logoSrc = resolvedBrand.logoSrc;
 
   const remaining = Math.max(0, Math.round(((parcel.amount_due || 0) - (parcel.amount_paid || 0)) * 100) / 100);
   const isSettled = remaining <= 0 || parcel.payment_status === 'paid';
@@ -724,11 +788,16 @@ export async function printOfficialCashVoucherBonPDF(
     });
   } catch {}
 
-  const agencyName = branding?.name?.trim() || 'محطة الاتحادية';
-  const agencySubtitle =
-    branding?.subtitle?.trim() || 'الإدارة المالية وصندوق المحطات النقدية (LA CAISSE)';
-  const agencyPhone = branding?.phone?.trim() || '';
-  const logoSrc = branding?.logoUrl?.trim() || '';
+  const resolvedBrand = resolveOfficialPrintBranding({
+    name: branding?.name,
+    subtitle: branding?.subtitle || 'الإدارة المالية وصندوق المحطات النقدية (LA CAISSE)',
+    phone: branding?.phone,
+    logoUrl: branding?.logoUrl,
+  });
+  const agencyName = resolvedBrand.agencyName;
+  const agencySubtitle = resolvedBrand.agencySubtitle;
+  const agencyPhone = resolvedBrand.agencyPhone;
+  const logoSrc = resolvedBrand.logoSrc;
 
   const isInflow = ['cash_in', 'parcel_shipping_fee', 'parcel_cod_collection'].includes(tx.type);
   const typeTitle = isInflow

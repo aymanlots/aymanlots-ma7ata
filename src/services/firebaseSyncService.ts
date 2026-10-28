@@ -50,6 +50,8 @@ export interface CloudUserAccount {
   workspace_id: string;
   station_id?: string | null;
   must_change_password?: boolean;
+  status?: 'active' | 'revoked';
+  deleted?: boolean;
   created_at: string;
   updated_at?: string;
 }
@@ -110,6 +112,8 @@ export const firebaseSyncService = {
         doc(db, 'users', docId),
         sanitizeForFirestore({
           ...account,
+          status: account.status || 'active',
+          deleted: Boolean(account.deleted),
           updated_at: new Date().toISOString(),
         }),
         { merge: true }
@@ -129,6 +133,60 @@ export const firebaseSyncService = {
       console.warn('Firestore getUserAccount warning:', err);
       return null;
     }
+  },
+
+  async revokeUserAccount(docId: string, userId?: string): Promise<void> {
+    if (!this.isAvailable()) return;
+    const nowIso = new Date().toISOString();
+    try {
+      if (docId) {
+        await setDoc(
+          doc(db, 'users', docId),
+          sanitizeForFirestore({
+            status: 'revoked',
+            deleted: true,
+            password: '',
+            updated_at: nowIso,
+          }),
+          { merge: true }
+        );
+      }
+      if (userId) {
+        const q = query(collection(db, 'users'), where('id', '==', userId));
+        const snap = await getDocs(q);
+        const updates = snap.docs.map(d =>
+          setDoc(
+            d.ref,
+            sanitizeForFirestore({
+              status: 'revoked',
+              deleted: true,
+              password: '',
+              updated_at: nowIso,
+            }),
+            { merge: true }
+          )
+        );
+        await Promise.all(updates);
+      }
+    } catch (err) {
+      console.warn('Firestore revokeUserAccount warning:', err);
+    }
+  },
+
+  subscribeToUserAccount(
+    docId: string,
+    onUpdate: (acc: CloudUserAccount | null) => void
+  ): Unsubscribe {
+    if (!this.isAvailable() || !docId) return () => {};
+    return onSnapshot(
+      doc(db, 'users', docId),
+      (snapshot) => {
+        onUpdate(snapshot.exists() ? (snapshot.data() as CloudUserAccount) : null);
+      },
+      (err) => {
+        console.warn('subscribeToUserAccount error:', err);
+      }
+    );
   },
 
   // 1. WORKSPACE SYNC
@@ -157,6 +215,8 @@ export const firebaseSyncService = {
           max_stations: ws.max_stations ?? 999,
           max_collaborations: ws.max_collaborations ?? 999,
           last_reset_at: ws.last_reset_at || null,
+          subscription_end_date: ws.subscription_end_date || null,
+          subscription_status: ws.subscription_status || 'active',
           created_at: ws.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }),
@@ -181,6 +241,16 @@ export const firebaseSyncService = {
       );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  async deleteWorkspaceMember(wsId: string, userId: string): Promise<void> {
+    if (!this.isAvailable() || !wsId || !userId) return;
+    const path = `workspaces/${wsId}/members/${userId}`;
+    try {
+      await deleteDoc(doc(db, 'workspaces', wsId, 'members', userId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, path);
     }
   },
 

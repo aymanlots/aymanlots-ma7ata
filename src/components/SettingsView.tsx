@@ -25,7 +25,9 @@ import {
   ImagePlus,
   Pencil,
   Plus,
-  X
+  X,
+  Clock,
+  CheckCircle2
 } from 'lucide-react';
 import { exportService } from '../services/exportService';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -80,7 +82,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     joinRequests,
     deleteDemoData,
     daysUntilExpiry,
+    subscriptionRemainingLabel,
     isSubscriptionExpired,
+    extendSubscription,
+    startFiveMinuteSubscriptionTest,
     showToast
   } = useApp();
 
@@ -101,7 +106,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [openBrandingSection, setOpenBrandingSection] = useState(false);
   const [openExportSection, setOpenExportSection] = useState(false);
   const [openLangSection, setOpenLangSection] = useState(false);
-  const [openPwaSection, setOpenPwaSection] = useState(false);
   const [openTeamSection, setOpenTeamSection] = useState<boolean>(Boolean(initialOpenTeam));
   const [openContactSection, setOpenContactSection] = useState(false);
 
@@ -123,7 +127,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Custom thermal sticker branding state
   const [brandNameInput, setBrandNameInput] = useState(
-    currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'محطة الاتحادية'
+    currentWorkspace?.custom_brand_name ||
+      (!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
+        ? 'Sahara📦 Express'
+        : currentWorkspace.name)
   );
   const [brandPhoneInput, setBrandPhoneInput] = useState(
     currentWorkspace?.custom_brand_phone || currentUser?.phone || ''
@@ -135,7 +142,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   useEffect(() => {
     if (currentWorkspace) {
-      setBrandNameInput(currentWorkspace.custom_brand_name || currentWorkspace.name || 'محطة الاتحادية');
+      const defaultName =
+        !currentWorkspace.name || currentWorkspace.name === 'محطة الاتحادية'
+          ? 'Sahara📦 Express'
+          : currentWorkspace.name;
+      setBrandNameInput(currentWorkspace.custom_brand_name || defaultName);
       setBrandPhoneInput(currentWorkspace.custom_brand_phone || currentUser?.phone || '');
       setBrandLogoUrlInput(currentWorkspace.custom_brand_logo_url || '');
     }
@@ -309,6 +320,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </p>
               </div>
             </div>
+            <PWAInstallButton />
           </div>
 
           {/* Connection status badge */}
@@ -326,11 +338,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <ShieldCheck className="w-3 h-3 text-[#F5C84C]" />
               <span>مزامنة سحابية نشطة ⚡</span>
             </div>
+
+            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border shadow-sm ${
+              isSubscriptionExpired
+                ? 'bg-rose-950/70 text-rose-300 border-rose-500/40'
+                : daysUntilExpiry <= 3
+                ? 'bg-amber-950/70 text-[#F5C84C] border-[#F5C84C]/50'
+                : 'bg-black/60 text-white/90 border-white/20'
+            }`}>
+              <Clock className="w-3 h-3 text-[#F5C84C]" />
+              <span>
+                {isSubscriptionExpired
+                  ? 'اشتراك المحطة (المدير): منتهٍ'
+                  : `صلاحية اشتراك المحطة (المدير): ${subscriptionRemainingLabel}`}
+              </span>
+            </div>
           </div>
         </div>
-
-        {/* 2. Prominent Download / Install PWA Button Card */}
-        <PWAInstallButton variant="card" />
 
         {/* 3. Worker Personal Profile Editor (Name and Phone only - visible to manager) */}
         <div className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#F5C84C]/40">
@@ -445,10 +469,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div>
               <h2 className="text-sm font-black text-white">إعدادات النظام ومساحة العمل</h2>
               <p className="text-[11px] text-white/80 font-medium">
-                {currentWorkspace?.name || 'محطة الاتحادية'}
+                {!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
+                  ? 'Sahara📦 Express'
+                  : currentWorkspace.name}
               </p>
             </div>
           </div>
+          <PWAInstallButton />
         </div>
 
         {/* Connection status badge */}
@@ -467,10 +494,176 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span>قاعدة بيانات Firebase السحابية: متصلة ونشطة ⚡</span>
           </div>
         </div>
+
+        {/* Live 30-Day Subscription Timer & Status Bar */}
+        <div className="pt-2 border-t border-white/15 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs font-black flex-wrap">
+            <Clock className={`w-4 h-4 ${isSubscriptionExpired ? 'text-rose-400' : 'text-[#F5C84C]'}`} />
+            <span className="text-white/85">مدة الاشتراك (30 يوماً):</span>
+            <span className={`px-2 py-0.5 rounded-lg font-mono text-[11px] border ${
+              isSubscriptionExpired
+                ? 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                : daysUntilExpiry <= 3
+                ? 'bg-amber-950/80 text-[#F5C84C] border-[#F5C84C]/50'
+                : 'bg-[#F5C84C]/20 text-[#F5C84C] border-[#F5C84C]/40'
+            }`}>
+              {isSubscriptionExpired ? 'منتهي (متوقف عن الإضافة والإرسال)' : `متبقي ${subscriptionRemainingLabel}`}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenPaywall}
+            className="px-3 py-1 rounded-xl bg-[#F5C84C] text-[#111111] text-[11px] font-black transition active:scale-95 cursor-pointer flex items-center gap-1"
+          >
+            <Crown className="w-3.5 h-3.5" />
+            <span>تفاصيل الباقات والتجديد</span>
+          </button>
+        </div>
       </div>
 
-      {/* Prominent PWA Download Card for Manager & Workers */}
-      <PWAInstallButton variant="card" />
+      {/* 1.2 باقات الاشتراك والفترة التجريبية (ظاهرة بوضوح في الإعدادات) */}
+      {(userRole === 'owner' || userRole === 'platform_owner') && (
+        <div className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#F5C84C]/55 shadow-xl">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-xl bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] flex items-center justify-center shrink-0">
+                <Crown className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-white">
+                  باقات الاشتراك المعتمدة والفترة التجريبية
+                </h3>
+                <p className="text-[10px] text-[#E6C37A] font-bold">
+                  الفترة التجريبية 30 يوماً مفتوحة بجميع الخصائص مع تذكير قبل 3 أيام
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px] font-black shrink-0">
+              {isPlan2TwoStations ? 'مفعل: الباك الأول (99 DH)' : 'مفعل: الباك الثاني / التجريبي (199 DH)'}
+            </span>
+          </div>
+
+          {/* شريط الفترة التجريبية 30 يوماً */}
+          <div className="p-3 rounded-xl bg-gradient-to-l from-emerald-950/70 via-black/70 to-amber-950/50 border border-[#F5C84C]/40 space-y-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[11px] font-black text-[#F5C84C]">
+                🎁 الفترة التجريبية: 30 يوماً مجاناً (مفتوحة بجميع الخصائص)
+              </span>
+              <span className="text-[10px] font-black text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-lg border border-emerald-500/30">
+                🔔 تذكير تلقائي قبل 3 أيام
+              </span>
+            </div>
+            <p className="text-[10px] text-white/85 leading-relaxed">
+              تستفيد خلال الـ 30 يوماً من جميع الخصائص كاملة. وعند انتهاء الـ 30 يوماً يتوقف حساب الأدمين والعامل عن إضافة أو إرسال أو استقبال أي كولي أو سند مالي حتى التجديد.
+            </p>
+          </div>
+
+          {/* بطاقتا الباك الأول (99 درهم) والباك الثاني (199 درهم) */}
+          <div className="grid grid-cols-1 gap-2.5">
+            {/* الباك الأول: 99 درهم */}
+            <div
+              onClick={() => switchWorkspacePlan('plan_2_two_stations')}
+              className={`rounded-2xl p-3.5 border-2 transition cursor-pointer space-y-2 ${
+                isPlan2TwoStations
+                  ? 'bg-gradient-to-b from-[#2b1d05]/90 to-black/90 border-[#F5C84C] shadow-lg'
+                  : 'bg-black/55 border-white/15 hover:border-white/30'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-white/15 text-white text-[10px] font-black">
+                    الباك الأول
+                  </span>
+                  <h4 className="text-xs font-black text-white">
+                    جوج محطات فقط + عامل في كل محطة
+                  </h4>
+                </div>
+                <div className="px-2.5 py-1 rounded-xl bg-black/80 border border-[#F5C84C]/45 text-[#F5C84C] font-mono font-black text-xs shrink-0">
+                  99 درهم <span className="text-[9px] font-sans text-white/70">/ شهر</span>
+                </div>
+              </div>
+              <ul className="text-[11px] text-white/90 space-y-1 pr-1">
+                <li className="flex items-start gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>فتح <strong>جوج محطات (2) فقط</strong>، وفي كل محطة <strong>عامل واحد (1) فقط</strong>.</span>
+                </li>
+                <li className="flex items-start gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                  <span><strong>الملصقات والبونات تخرج باسم التطبيق (<span dir="ltr">Sahara📦 Express</span>) ولوغو التطبيق الرسمي</strong> ولا يمكن تغييرهما.</span>
+                </li>
+              </ul>
+              <div className="pt-1 flex items-center justify-between gap-2">
+                <span className="text-[10px] text-white/70 font-bold">
+                  الحد الأقصى: 2 محطات | 2 عمال
+                </span>
+                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
+                  isPlan2TwoStations
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-white/10 text-white/80'
+                }`}>
+                  {isPlan2TwoStations ? '✓ الباك المفعل حالياً' : 'اضغط لتجربة نظام الباك الأول (99 درهم)'}
+                </span>
+              </div>
+            </div>
+
+            {/* الباك الثاني: 199 درهم */}
+            <div
+              onClick={() => switchWorkspacePlan('plan_1_full')}
+              className={`rounded-2xl p-3.5 border-2 transition cursor-pointer space-y-2 ${
+                !isPlan2TwoStations
+                  ? 'bg-gradient-to-b from-[#2b1d05]/90 to-black/90 border-[#F5C84C] shadow-lg'
+                  : 'bg-black/55 border-white/15 hover:border-white/30'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#F5C84C] text-[#111111] text-[10px] font-black">
+                    👑 الباك الثاني
+                  </span>
+                  <h4 className="text-xs font-black text-white">
+                    محطات وعمال غير محدودين + لوغو خاص بك
+                  </h4>
+                </div>
+                <div className="px-2.5 py-1 rounded-xl bg-black/80 border border-[#F5C84C]/45 text-[#F5C84C] font-mono font-black text-xs shrink-0">
+                  199 درهم <span className="text-[9px] font-sans text-white/70">/ شهر</span>
+                </div>
+              </div>
+              <ul className="text-[11px] text-white/90 space-y-1 pr-1">
+                <li className="flex items-start gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>فتح <strong>بزاف ديال المحطات (غير محدود)</strong> و<strong>بزاف ديال العمال (غير محدود)</strong> مرتبطين بأدمين واحد.</span>
+                </li>
+                <li className="flex items-start gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#F5C84C] shrink-0 mt-0.5" />
+                  <span><strong>وضع اللوغو (الشعار) الخاص بك واسم وكالتك</strong> في جميع الملصقات الحرارية وبونات الـ PDF.</span>
+                </li>
+              </ul>
+              <div className="pt-1 flex items-center justify-between gap-2">
+                <span className="text-[10px] text-[#E6C37A] font-bold">
+                  مفتوح بجميع الخصائص بدون قيود
+                </span>
+                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
+                  !isPlan2TwoStations
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-[#F5C84C]/20 text-[#F5C84C]'
+                }`}>
+                  {!isPlan2TwoStations ? '✓ الباك المفعل حالياً' : 'اضغط لتفعيل نظام الباك الثاني (199 درهم)'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenPaywall}
+            className="btn-gold w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+          >
+            <Crown className="w-4 h-4" />
+            <span>فتح نافذة الاشتراك وطلب التفعيل عبر واتساب</span>
+          </button>
+        </div>
+      )}
 
       {/* 1.5 إدارة المحطات وتعديل الأسماء (الوكالة والمحطات في مكان واحد منظم) */}
       {(userRole === 'owner' || userRole === 'platform_owner') && (
@@ -503,36 +696,56 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {/* تعديل الاسم العام للوكالة / مساحة العمل */}
               <div className="bg-black/40 border border-white/15 rounded-xl p-3 space-y-2">
                 <label className="block text-[11px] font-black text-[#F5C84C]">
-                  اسم الوكالة / المحطة الرئيسي (أعلى التطبيق):
+                  اسم الوكالة / المحطة الرئيسي (في الملصقات والبونات):
                 </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={brandNameInput}
-                    onChange={e => setBrandNameInput(e.target.value)}
-                    placeholder="مثال: محطة الاتحادية"
-                    className="flex-1 px-3 py-2 rounded-xl text-xs font-bold bg-black/60 border border-white/20 text-white focus:border-[#F5C84C] focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    disabled={isSavingBranding || !brandNameInput.trim()}
-                    onClick={async () => {
-                      setIsSavingBranding(true);
-                      try {
-                        await updateWorkspaceBranding({
-                          custom_brand_name: brandNameInput.trim(),
-                          custom_brand_phone: brandPhoneInput.trim(),
-                          custom_brand_logo_url: brandLogoUrlInput.trim(),
-                        });
-                      } finally {
-                        setIsSavingBranding(false);
-                      }
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-xs shrink-0 cursor-pointer"
-                  >
-                    {isSavingBranding ? 'حفظ...' : 'حفظ الاسم'}
-                  </button>
-                </div>
+                {isPlan2TwoStations ? (
+                  <div className="p-2.5 rounded-xl bg-amber-950/50 border border-[#F5C84C]/40 text-[11px] text-[#F5C84C] font-bold flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <img
+                        src="/assets/aistudio/image_9c11f636.png"
+                        alt="Sahara📦 Express"
+                        className="w-9 h-9 rounded-full object-cover border border-[#F5C84C] shrink-0"
+                      />
+                      <span>🔒 في الباك الأول (99 درهم) تخرج الملصقات والبونات باسم ولوغو التطبيق الرسمي (<strong dir="ltr">Sahara📦 Express</strong>).</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => switchWorkspacePlan('plan_1_full')}
+                      className="px-2.5 py-1 rounded-lg bg-[#F5C84C] text-[#111111] text-[10px] font-black shrink-0 cursor-pointer"
+                    >
+                      تفعيل الباك الثاني (199 درهم)
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={brandNameInput}
+                      onChange={e => setBrandNameInput(e.target.value)}
+                      placeholder="مثال: محطة الاتحادية"
+                      className="flex-1 px-3 py-2 rounded-xl text-xs font-bold bg-black/60 border border-white/20 text-white focus:border-[#F5C84C] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={isSavingBranding || !brandNameInput.trim()}
+                      onClick={async () => {
+                        setIsSavingBranding(true);
+                        try {
+                          await updateWorkspaceBranding({
+                            custom_brand_name: brandNameInput.trim(),
+                            custom_brand_phone: brandPhoneInput.trim(),
+                            custom_brand_logo_url: brandLogoUrlInput.trim(),
+                          });
+                        } finally {
+                          setIsSavingBranding(false);
+                        }
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-xs shrink-0 cursor-pointer"
+                    >
+                      {isSavingBranding ? 'حفظ...' : 'حفظ الاسم'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* قائمة المحطات مع تعديل الاسم أو الحذف */}
@@ -975,8 +1188,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <Crown className="w-4 h-4 text-[#F5C84C] shrink-0" />
                   <span className="font-black text-white text-[11px]">
                     {isPlan2TwoStations
-                      ? 'الباك الثاني: محطتين فقط + عامل واحد في كل محطة'
-                      : 'الباك الأول: الباقة الشاملة (كل المحطات والعمال مفتوحين)'}
+                      ? 'الباك الأول (99 درهم): جوج محطات فقط + عامل في كل محطة'
+                      : 'الباك الثاني (199 درهم) / التجريبي: محطات وعمال غير محدودين'}
                   </span>
                 </div>
                 <button
@@ -992,13 +1205,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="bg-black/60 p-2 rounded-xl border border-white/15 flex items-center justify-between">
                   <span className="text-white/75">المحطات المفتوحة:</span>
                   <span className="font-mono font-black text-[#F5C84C]">
-                    {stations.length} / {isPlan2TwoStations ? '2 محطات' : 'مفتوح'}
+                    {stations.length} / {isPlan2TwoStations ? '2 محطات' : 'غير محدود'}
                   </span>
                 </div>
                 <div className="bg-black/60 p-2 rounded-xl border border-white/15 flex items-center justify-between">
                   <span className="text-white/75">العمال بالمحطات:</span>
                   <span className="font-mono font-black text-emerald-400">
-                    {activeWorkersList.length} / {isPlan2TwoStations ? '2 (عامل/محطة)' : 'مفتوح'}
+                    {activeWorkersList.length} / {isPlan2TwoStations ? '2 (عامل/محطة)' : 'غير محدود'}
                   </span>
                 </div>
               </div>
@@ -1007,21 +1220,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                   <button
                     type="button"
-                    onClick={() => switchWorkspacePlan('plan_1_full')}
-                    className={`py-1.5 px-2 rounded-xl text-[10px] font-black transition cursor-pointer ${
-                      !isPlan2TwoStations ? 'btn-gold' : 'btn-cancel'
-                    }`}
-                  >
-                    👑 الباك الأول (شامل كل شيء)
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => switchWorkspacePlan('plan_2_two_stations')}
                     className={`py-1.5 px-2 rounded-xl text-[10px] font-black transition cursor-pointer ${
                       isPlan2TwoStations ? 'btn-gold' : 'btn-cancel'
                     }`}
                   >
-                    🏪 الباك الثاني (2 محطات + عامل/محطة)
+                    🏪 الباك الأول (99 DH — محطتين)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchWorkspacePlan('plan_1_full')}
+                    className={`py-1.5 px-2 rounded-xl text-[10px] font-black transition cursor-pointer ${
+                      !isPlan2TwoStations ? 'btn-gold' : 'btn-cancel'
+                    }`}
+                  >
+                    👑 الباك الثاني (199 DH — مفتوح)
                   </button>
                 </div>
               )}
@@ -1420,6 +1633,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <form
             onSubmit={async (e) => {
               e.preventDefault();
+              if (isPlan2TwoStations) return;
               setIsSavingBranding(true);
               try {
                 await updateWorkspaceBranding({
@@ -1433,138 +1647,166 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             }}
             className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs"
           >
-            <p className="text-[11px] text-white/80 leading-relaxed">
-              تظهر هذه البيانات (الاسم، الهاتف، وصورة الشعار المخصص) مباشرة على <strong>الملصقات الحرارية (10×10)</strong> وفي <strong>جميع بونات الـ PDF</strong> (بون الكولي، بون الصندوق، المانيفست، والحوالة).
-            </p>
-            {onOpenGuidedTour && (
-              <button
-                type="button"
-                onClick={onOpenGuidedTour}
-                className="btn-cancel w-full py-2 rounded-xl text-[11px] font-black text-[#F5C84C] border border-[#F5C84C]/40"
-              >
-                🧭 فتح جولة الإعداد التلقائي (المحطات ➔ الفلوس ➔ الكوليات ➔ الشعار)
-              </button>
-            )}
-
-            <div>
-              <label className="block text-white/90 font-bold mb-1">
-                اسم الوكالة / المحطة على الملصق الحراري:
-              </label>
-              <input
-                type="text"
-                value={brandNameInput}
-                onChange={e => setBrandNameInput(e.target.value)}
-                placeholder="مثال: وكالة الاتحادية السريعة"
-                className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="block text-white/90 font-bold mb-1">
-                رقم هاتف المحطة على الملصق (للتواصل والاستعلام):
-              </label>
-              <input
-                type="tel"
-                dir="ltr"
-                value={brandPhoneInput}
-                onChange={e => setBrandPhoneInput(e.target.value)}
-                placeholder="مثال: +212600000000"
-                className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs text-right"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-white/90 font-bold">
-                شعار خاص لملصقات QR Code وبونات الـ PDF والمانيفست فقط (اختياري):
-              </label>
-
-              {/* معاينة الشعار المخصص للمطبوعات فقط بدون المساس بصورة التطبيق الرسمية */}
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/60 border border-white/15">
-                {brandLogoUrlInput ? (
-                  <div className="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 overflow-hidden border border-[#F5C84C]/50">
-                    <img
-                      src={brandLogoUrlInput}
-                      alt="شعار الملصق والبونات"
-                      className="max-w-full max-h-full object-contain"
-                    />
+            {isPlan2TwoStations ? (
+              <div className="p-3.5 rounded-2xl bg-amber-950/60 border border-[#F5C84C]/50 space-y-2.5 text-xs">
+                <div className="flex items-center gap-2.5 text-[#F5C84C] font-black">
+                  <img
+                    src="/assets/aistudio/image_9c11f636.png"
+                    alt="Sahara📦 Express"
+                    className="w-12 h-12 rounded-full object-cover border-2 border-[#F5C84C] shrink-0"
+                  />
+                  <div>
+                    <div className="text-xs font-black text-white" dir="ltr">Sahara📦 Express</div>
+                    <div className="text-[11px] text-[#F5C84C]">الباك الأول (99 درهم): الملصقات والبونات تخرج باسم ولوغو التطبيق الرسمي</div>
                   </div>
-                ) : (
-                  <div className="w-14 h-14 rounded-xl bg-black/70 border border-dashed border-[#F5C84C]/50 flex items-center justify-center shrink-0 text-[#F5C84C]">
-                    <ImagePlus className="w-6 h-6" />
-                  </div>
+                </div>
+                <p className="text-[11px] text-white/85 leading-relaxed">
+                  في <strong>الباك الأول (99 درهم)</strong> تخرج جميع الملصقات الحرارية وبونات الـ PDF باسم التطبيق الرسمي <strong dir="ltr">Sahara📦 Express</strong> ولوغو التطبيق الرسمي المعتمد أعلاه ولا يمكن تغييرهما. لوضع اللوغو والاسم الخاص بك في الملصقات والبونات، قم بتفعيل <strong>الباك الثاني (199 درهم)</strong>.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => switchWorkspacePlan('plan_1_full')}
+                  className="btn-gold w-full py-2.5 rounded-xl font-black text-xs cursor-pointer"
+                >
+                  👑 تفعيل الباك الثاني (199 درهم) لفتح تخصيص اللوغو والاسم
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-[11px] text-white/80 leading-relaxed">
+                  تظهر هذه البيانات (الاسم، الهاتف، وصورة الشعار المخصص) مباشرة على <strong>الملصقات الحرارية (10×10)</strong> وفي <strong>جميع بونات الـ PDF</strong> (بون الكولي، بون الصندوق، المانيفست، والحوالة).
+                </p>
+                {onOpenGuidedTour && (
+                  <button
+                    type="button"
+                    onClick={onOpenGuidedTour}
+                    className="btn-cancel w-full py-2 rounded-xl text-[11px] font-black text-[#F5C84C] border border-[#F5C84C]/40"
+                  >
+                    🧭 فتح جولة الإعداد التلقائي (المحطات ➔ الفلوس ➔ الكوليات ➔ الشعار)
+                  </button>
                 )}
 
-                <div className="flex-1 space-y-1.5">
-                  <label className="w-full py-2 px-3 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition">
-                    <ImagePlus className="w-4 h-4 shrink-0" />
-                    <span>اختر شعاراً خاصاً للملصقات والبونات</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = (ev) => {
-                          const dataUrl = ev.target?.result as string;
-                          if (!dataUrl) return;
-                          const img = new Image();
-                          img.onload = () => {
-                            const canvas = document.createElement('canvas');
-                            const maxSize = 220;
-                            let w = img.width;
-                            let h = img.height;
-                            if (w > h && w > maxSize) {
-                              h = Math.round((h * maxSize) / w);
-                              w = maxSize;
-                            } else if (h >= w && h > maxSize) {
-                              w = Math.round((w * maxSize) / h);
-                              h = maxSize;
-                            }
-                            canvas.width = w;
-                            canvas.height = h;
-                            const ctx = canvas.getContext('2d');
-                            if (ctx) {
-                              ctx.drawImage(img, 0, 0, w, h);
-                              const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
-                              setBrandLogoUrlInput(compressedDataUrl);
-                              showToast('تم تحميل شعار الملصقات والبونات بنجاح — اضغط حفظ لتثبيته', 'success');
-                            }
-                          };
-                          img.src = dataUrl;
-                        };
-                        reader.readAsDataURL(file);
-                        e.target.value = '';
-                      }}
-                    />
+                <div>
+                  <label className="block text-white/90 font-bold mb-1">
+                    اسم الوكالة / المحطة على الملصق الحراري والبونات:
+                  </label>
+                  <input
+                    type="text"
+                    value={brandNameInput}
+                    onChange={e => setBrandNameInput(e.target.value)}
+                    placeholder="مثال: وكالة الاتحادية السريعة"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-white/90 font-bold mb-1">
+                    رقم هاتف المحطة على الملصق (للتواصل والاستعلام):
+                  </label>
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    value={brandPhoneInput}
+                    onChange={e => setBrandPhoneInput(e.target.value)}
+                    placeholder="مثال: +212600000000"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs text-right"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-white/90 font-bold">
+                    شعار خاص لملصقات QR Code وبونات الـ PDF والمانيفست فقط (ميزة الباك الثاني 199 درهم):
                   </label>
 
-                  {brandLogoUrlInput ? (
-                    <button
-                      type="button"
-                      onClick={() => setBrandLogoUrlInput('')}
-                      className="btn-delete w-full py-1.5 px-2.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      <span>حذف الشعار المخصص للمطبوعات</span>
-                    </button>
-                  ) : (
-                    <span className="block text-[10px] text-white/70 text-center">
-                      يظهر فقط في ملصقات QR Code والبونات والمانيفست (صورة التطبيق ثابتة)
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
+                  {/* معاينة الشعار المخصص للمطبوعات فقط بدون المساس بصورة التطبيق الرسمية */}
+                  <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/60 border border-white/15">
+                    {brandLogoUrlInput ? (
+                      <div className="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 overflow-hidden border border-[#F5C84C]/50">
+                        <img
+                          src={brandLogoUrlInput}
+                          alt="شعار الملصق والبونات"
+                          className="max-w-full max-h-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl bg-black/70 border border-dashed border-[#F5C84C]/50 flex items-center justify-center shrink-0 text-[#F5C84C]">
+                        <ImagePlus className="w-6 h-6" />
+                      </div>
+                    )}
 
-            <button
-              type="submit"
-              disabled={isSavingBranding}
-              className="btn-gold w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50"
-            >
-              {isSavingBranding ? 'جاري حفظ الهوية...' : 'حفظ هوية وشعار الملصق الحراري'}
-            </button>
+                    <div className="flex-1 space-y-1.5">
+                      <label className="w-full py-2 px-3 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition">
+                        <ImagePlus className="w-4 h-4 shrink-0" />
+                        <span>اختر شعاراً خاصاً للملصقات والبونات</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const dataUrl = ev.target?.result as string;
+                              if (!dataUrl) return;
+                              const img = new Image();
+                              img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                const maxSize = 220;
+                                let w = img.width;
+                                let h = img.height;
+                                if (w > h && w > maxSize) {
+                                  h = Math.round((h * maxSize) / w);
+                                  w = maxSize;
+                                } else if (h >= w && h > maxSize) {
+                                  w = Math.round((w * maxSize) / h);
+                                  h = maxSize;
+                                }
+                                canvas.width = w;
+                                canvas.height = h;
+                                const ctx = canvas.getContext('2d');
+                                if (ctx) {
+                                  ctx.drawImage(img, 0, 0, w, h);
+                                  const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
+                                  setBrandLogoUrlInput(compressedDataUrl);
+                                  showToast('تم تحميل شعار الملصقات والبونات بنجاح — اضغط حفظ لتثبيته', 'success');
+                                }
+                              };
+                              img.src = dataUrl;
+                            };
+                            reader.readAsDataURL(file);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+
+                      {brandLogoUrlInput ? (
+                        <button
+                          type="button"
+                          onClick={() => setBrandLogoUrlInput('')}
+                          className="btn-delete w-full py-1.5 px-2.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>حذف الشعار المخصص للمطبوعات</span>
+                        </button>
+                      ) : (
+                        <span className="block text-[10px] text-white/70 text-center">
+                          يظهر في ملصقات QR Code والبونات والمانيفست (صورة التطبيق الرسمية ثابتة)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSavingBranding}
+                  className="btn-gold w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50"
+                >
+                  {isSavingBranding ? 'جاري حفظ الهوية...' : 'حفظ هوية وشعار الملصق الحراري والبونات'}
+                </button>
+              </>
+            )}
           </form>
         )}
       </div>
@@ -1688,43 +1930,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <span className="w-2 h-2 rounded-full bg-[#2ECC71] shrink-0"></span>
                 <span>العربية الفصحى (اللغة الرسمية المعتمدة)</span>
               </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 8. Collapsible: PWA Install Card */}
-      <div className="luxury-card rounded-[22px] p-4">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setOpenPwaSection(prev => !prev)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setOpenPwaSection(prev => !prev);
-            }
-          }}
-          className="flex items-center justify-between gap-2 cursor-pointer select-none"
-        >
-          <div className="flex items-center gap-2">
-            <Smartphone className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h3 className="text-xs sm:text-sm font-black text-white">تثبيت التطبيق على الشاشة الرئيسية (PWA)</h3>
-          </div>
-          <ChevronDown
-            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
-              openPwaSection ? 'rotate-180' : ''
-            }`}
-          />
-        </div>
-
-        {openPwaSection && (
-          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-2.5">
-            <p className="text-[11px] text-white/80">
-              يعمل كتطبيق هاتف أصلي وسريع بدون إنترنت
-            </p>
-            <div>
-              <PWAInstallButton />
             </div>
           </div>
         )}

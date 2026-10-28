@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { PWAInstallButton } from './PWAInstallButton';
 import { 
   Store, 
   User, 
@@ -39,7 +38,8 @@ export const Header: React.FC<HeaderProps> = ({
     stations, 
     selectedStationId, 
     setSelectedStationId,
-    daysUntilExpiry,
+    userAssignedStationId,
+    subscriptionRemainingLabel,
     isSubscriptionExpired,
     logout,
     hideAmounts,
@@ -59,7 +59,9 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Right Section (RTL): Large Golden Title + Quick Pills */}
           <div className="flex flex-col items-start text-right min-w-0 flex-1">
             <h1 className="text-[20px] sm:text-[22px] font-black tracking-tight text-[#E6C37A] leading-tight truncate max-w-full drop-shadow-[0_2px_8px_rgba(212,175,55,0.25)]">
-              {currentWorkspace?.name || 'محطة الاتحادية'}
+              {!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
+                ? 'Sahara📦 Express'
+                : currentWorkspace.name}
             </h1>
             <div className="flex items-center gap-1.5 mt-1">
               <button
@@ -91,8 +93,8 @@ export const Header: React.FC<HeaderProps> = ({
             title="القائمة الرئيسية"
           >
             <img 
-              src="/logo.png" 
-              alt="شعار محطة الاتحادية" 
+              src="/assets/aistudio/image_9c11f636.png" 
+              alt="Sahara📦 Express" 
               style={{ borderRadius: '50%', width: '68px', height: '68px', objectFit: 'cover', background: 'transparent', display: 'block' }}
             />
           </div>
@@ -119,14 +121,14 @@ export const Header: React.FC<HeaderProps> = ({
                   style={{ background: 'transparent', borderRadius: '50%', padding: 0, overflow: 'hidden' }}
                 >
                   <img 
-                    src="/logo.png" 
-                    alt="محطة الاتحادية" 
+                    src="/assets/aistudio/image_9c11f636.png" 
+                    alt="Sahara📦 Express" 
                     style={{ borderRadius: '50%', width: '100%', height: '100%', objectFit: 'cover', background: 'transparent', display: 'block' }} 
                   />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-[#E6C37A]">محطة الاتحادية</h3>
-                  <p className="text-[10px] text-[#D9B36C] font-semibold">السفر ونقل البضائع والكوليات</p>
+                  <h3 className="text-sm font-black text-[#E6C37A]" dir="ltr">Sahara📦 Express</h3>
+                  <p className="text-[10px] text-[#D9B36C] font-semibold">للسفر ونقل البضائع والكوليات</p>
                 </div>
               </div>
               <button 
@@ -143,7 +145,9 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="min-w-0">
                 <p className="text-xs font-black text-white truncate">{currentUser?.name || 'مستخدم مسجل'}</p>
                 <p className="text-[11px] text-[#C8B08A] font-medium mt-0.5 truncate">
-                  {currentWorkspace?.name || 'محطة الاتحادية'}
+                  {!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
+                    ? 'Sahara📦 Express'
+                    : currentWorkspace.name}
                 </p>
                 <p className="text-[10px] text-[#E6C37A] font-bold mt-1">
                   {userRole === 'owner' ? '👑 مالك المحطة (المشرف العام)' : '💼 عامل مكتب المحطة'}
@@ -156,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Quick Feature Launchers (Collaboration Room, Customer Accounts, Public Tracking, Hide Amounts) */}
             <div className="grid grid-cols-2 gap-2">
-              {onOpenCollabRoom && (
+              {onOpenCollabRoom && userRole !== 'worker' && (
                 <button
                   type="button"
                   onClick={() => {
@@ -210,13 +214,20 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Station Selection */}
             <div>
-              <span className="text-[11px] font-bold text-[#E6C37A] block mb-2">المحطة الحالية النشطة:</span>
+              <span className="text-[11px] font-bold text-[#E6C37A] block mb-2">
+                {userRole === 'worker' ? 'محطتك المخصصة للعمل:' : 'المحطة الحالية النشطة:'}
+              </span>
               <div className="grid grid-cols-2 gap-2">
-                {stations.map(station => (
+                {(userRole === 'worker'
+                  ? stations.filter(s => !userAssignedStationId || s.id === userAssignedStationId)
+                  : stations
+                ).map(station => (
                   <button
                     key={station.id}
                     onClick={() => {
-                      setSelectedStationId(station.id);
+                      if (userRole !== 'worker') {
+                        setSelectedStationId(station.id);
+                      }
                       setMobileMenuOpen(false);
                     }}
                     className={`p-2.5 rounded-xl border text-right transition ${
@@ -268,20 +279,23 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Subscription & System Actions */}
             <div className="pt-2 border-t border-[#D4AF37]/25 space-y-2">
               <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#1a0f00]/80 border border-[#D4AF37]/35 text-xs">
-                <span className="text-[#C8B08A]">حالة الاشتراك:</span>
+                <span className="text-[#C8B08A]">
+                  {userRole === 'worker' ? 'اشتراك المحطة (المدير):' : 'حالة الاشتراك:'}
+                </span>
                 <button
                   onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenPaywall();
+                    if (userRole !== 'worker') {
+                      setMobileMenuOpen(false);
+                      onOpenPaywall();
+                    }
                   }}
                   className="px-2.5 py-1 rounded-lg font-bold text-[11px]"
                 >
-                  {isSubscriptionExpired ? 'منتهٍ (تجديد الآن)' : `${daysUntilExpiry} يوم متبقية`}
+                  {isSubscriptionExpired ? 'منتهٍ (يتطلب تجديد المدير)' : subscriptionRemainingLabel}
                 </button>
               </div>
 
               <div className="flex items-center gap-2">
-                <PWAInstallButton />
                 <button
                   onClick={() => {
                     setMobileMenuOpen(false);

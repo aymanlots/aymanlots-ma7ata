@@ -132,17 +132,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
           style={{ background: 'transparent', borderRadius: '50%', padding: 0, overflow: 'hidden' }}
         >
           <img 
-            src="/logo.png" 
-            alt="شعار محطة الاتحادية" 
+            src="/assets/aistudio/image_9c11f636.png" 
+            alt="Sahara📦 Express" 
             style={{ borderRadius: '50%', width: '100%', height: '100%', objectFit: 'cover', background: 'transparent', display: 'block' }}
           />
         </div>
 
         <h2 className="text-lg font-black text-[#F5D799] text-center mb-1">
-          {isSignUp ? 'إنشاء حساب جديد في محطة الاتحادية' : 'تسجيل الدخول إلى محطة الاتحادية'}
+          {isSignUp ? 'إنشاء حساب جديد في Sahara📦 Express' : 'تسجيل الدخول إلى Sahara📦 Express'}
         </h2>
         <p className="text-xs font-bold text-[#E6C37A] text-center mb-4 tracking-wide">
-          السفر ونقل البضائع والكوليات
+          للسفر ونقل البضائع والكوليات
         </p>
 
         {error && (

@@ -79,6 +79,8 @@ export interface Workspace {
   stations_count?: number;
   collaborations_count?: number;
   last_reset_at?: string;
+  subscription_end_date?: string;
+  subscription_status?: SubscriptionStatus;
 }
 
 // التوافق مع الكود السابق

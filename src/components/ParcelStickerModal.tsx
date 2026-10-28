@@ -318,8 +318,8 @@ function buildSingleStickerHtml(
     : '50%';
   const part2Height = options.showStampBox ? '40%' : '50%';
 
-  const logoSrc = branding.logoUrl?.trim() || '';
-  const agencyName = branding.agencyName?.trim() || 'محطة الاتحادية';
+  const logoSrc = branding.logoUrl?.trim() || '/assets/aistudio/image_9c11f636.png';
+  const agencyName = branding.agencyName?.trim() || 'Sahara📦 Express';
   const agencyPhone = branding.agencyPhone?.trim() || '';
 
   return `
@@ -660,6 +660,12 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
 }) => {
   const { parcels: allWorkspaceParcels, currentWorkspace, currentUser } = useApp();
 
+  const isPack1Basic99 = Boolean(
+    currentWorkspace?.plan_tier === 'plan_2_two_stations' ||
+      currentWorkspace?.max_stations === 2 ||
+      currentWorkspace?.max_workers_per_station === 1
+  );
+
   // خيارات الطباعة المحفوظة بين الجلسات
   const [options, setOptions] = useState<StickerPrintOptions>(() => loadSavedStickerOptions());
 
@@ -667,26 +673,53 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
   const [branding, setBranding] = useState<StickerBrandingConfig>(() => {
     try {
       const raw = JSON.parse(localStorage.getItem('alittihadia_sticker_branding_v1') || '{}');
+      const fallbackName =
+        !currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
+          ? 'Sahara📦 Express'
+          : currentWorkspace.name;
       return {
-        agencyName: raw.agencyName || currentWorkspace?.name || 'محطة الاتحادية',
+        agencyName: raw.agencyName || fallbackName,
         agencyPhone: raw.agencyPhone || currentUser?.phone || '',
         logoUrl: raw.logoUrl || '',
       };
     } catch {
       return {
-        agencyName: currentWorkspace?.name || 'محطة الاتحادية',
+        agencyName: 'Sahara📦 Express',
         agencyPhone: currentUser?.phone || '',
         logoUrl: '',
       };
     }
   });
 
+  const effectiveBranding: StickerBrandingConfig = useMemo(
+    () =>
+      isPack1Basic99
+        ? {
+            agencyName: 'Sahara📦 Express',
+            agencyPhone: branding.agencyPhone || currentUser?.phone || '',
+            logoUrl: '/assets/aistudio/image_9c11f636.png',
+          }
+        : {
+            agencyName:
+              !branding.agencyName || branding.agencyName === 'محطة الاتحادية'
+                ? 'Sahara📦 Express'
+                : branding.agencyName,
+            agencyPhone: branding.agencyPhone || currentUser?.phone || '',
+            logoUrl: branding.logoUrl || '/assets/aistudio/image_9c11f636.png',
+          },
+    [isPack1Basic99, branding, currentWorkspace?.name, currentUser?.phone]
+  );
+
   useEffect(() => {
     const syncBranding = () => {
       try {
         const raw = JSON.parse(localStorage.getItem('alittihadia_sticker_branding_v1') || '{}');
+        const fallbackName =
+          !currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
+            ? 'Sahara📦 Express'
+            : currentWorkspace.name;
         setBranding({
-          agencyName: raw.agencyName || currentWorkspace?.name || 'محطة الاتحادية',
+          agencyName: raw.agencyName || fallbackName,
           agencyPhone: raw.agencyPhone || currentUser?.phone || '',
           logoUrl: raw.logoUrl || '',
         });
@@ -706,6 +739,9 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
 
   // حفظ هوية المحطة المخصصة تلقائياً عند التعديل من داخل نافذة الطابعة
   const updateBrandingField = (field: keyof StickerBrandingConfig, value: string) => {
+    if (isPack1Basic99 && (field === 'agencyName' || field === 'logoUrl')) {
+      return;
+    }
     const next = { ...branding, [field]: value };
     setBranding(next);
     try {
@@ -717,6 +753,7 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
   };
 
   const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isPack1Basic99) return;
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -891,14 +928,14 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
           showNewTabToolbar: true,
           autoPrintOnLoad: true,
         },
-        branding
+        effectiveBranding
       );
       localStorage.setItem(BATCH_PRINT_STORAGE_KEY, fullHtml);
       setBatchPrintReadyUrl(
         `${window.location.origin}${window.location.pathname}?standalone_sticker_batch=1&t=${Date.now()}`
       );
     } catch {}
-  }, [isOpen, expandedStickers, qrMap, options, branding]);
+  }, [isOpen, expandedStickers, qrMap, options, effectiveBranding]);
 
   if (!isOpen) return null;
 
@@ -993,7 +1030,7 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
           showNewTabToolbar: false,
           autoPrintOnLoad: false,
         },
-        branding
+        effectiveBranding
       );
 
       const newTabHtml = buildBatchStickersDocument(
@@ -1004,7 +1041,7 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
           showNewTabToolbar: true,
           autoPrintOnLoad: true,
         },
-        branding
+        effectiveBranding
       );
       try {
         localStorage.setItem(BATCH_PRINT_STORAGE_KEY, newTabHtml);
@@ -1195,7 +1232,7 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
                           qrMap[item.tracking_code] || '',
                           options,
                           previewDimensions,
-                          branding
+                          effectiveBranding
                         ),
                       }}
                     />
@@ -1633,58 +1670,66 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
 
               {showBrandingEditor && (
                 <div className="bg-black/60 border border-[#F5C84C]/35 rounded-xl p-3 space-y-2.5">
-                  <div>
-                    <label className="text-[10px] text-white/80 font-bold block mb-1">
-                      اسم المحطة / الوكالة على الملصق:
-                    </label>
-                    <input
-                      type="text"
-                      value={branding.agencyName}
-                      onChange={e => updateBrandingField('agencyName', e.target.value)}
-                      placeholder="محطة الاتحادية"
-                      className="w-full bg-black/70 border border-white/20 rounded-xl px-3 py-1.5 text-xs text-white font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] text-white/80 font-bold block mb-1">
-                      رقم هاتف المحطة على الملصق:
-                    </label>
-                    <input
-                      type="text"
-                      dir="ltr"
-                      value={branding.agencyPhone}
-                      onChange={e => updateBrandingField('agencyPhone', e.target.value)}
-                      placeholder="+212 600 000 000"
-                      className="w-full bg-black/70 border border-white/20 rounded-xl px-3 py-1.5 text-xs text-white font-mono text-right"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] text-white/80 font-bold block">
-                      شعار المحطة (صورة من الجهاز أو رابط):
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <label className="btn-cancel px-3 py-1.5 rounded-xl text-[11px] font-bold cursor-pointer shrink-0">
-                        <span>رفع شعار</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleLogoFileUpload}
-                          className="hidden"
-                        />
-                      </label>
-                      {branding.logoUrl && (
-                        <button
-                          type="button"
-                          onClick={() => updateBrandingField('logoUrl', '')}
-                          className="btn-delete px-2.5 py-1.5 rounded-xl text-[11px] font-bold"
-                        >
-                          حذف الشعار
-                        </button>
-                      )}
+                  {isPack1Basic99 ? (
+                    <div className="p-2.5 rounded-xl bg-amber-950/60 border border-[#F5C84C]/45 text-[11px] text-[#F5C84C] font-bold leading-relaxed">
+                      🔒 أنت حالياً على <strong>الباك الأول (99 درهم)</strong>: تخرج جميع الملصقات والبونات باسم التطبيق الرسمي (<strong>Sahara📦 Express</strong>) ولوغو التطبيق الرسمي. لتخصيص اللوغو والاسم الخاص بك، انتقل إلى <strong>الباك الثاني (199 درهم)</strong> من صفحة الإعدادات.
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="text-[10px] text-white/80 font-bold block mb-1">
+                          اسم المحطة / الوكالة على الملصق:
+                        </label>
+                        <input
+                          type="text"
+                          value={branding.agencyName}
+                          onChange={e => updateBrandingField('agencyName', e.target.value)}
+                          placeholder="Sahara📦 Express"
+                          className="w-full bg-black/70 border border-white/20 rounded-xl px-3 py-1.5 text-xs text-white font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-white/80 font-bold block mb-1">
+                          رقم هاتف المحطة على الملصق:
+                        </label>
+                        <input
+                          type="text"
+                          dir="ltr"
+                          value={branding.agencyPhone}
+                          onChange={e => updateBrandingField('agencyPhone', e.target.value)}
+                          placeholder="+212 600 000 000"
+                          className="w-full bg-black/70 border border-white/20 rounded-xl px-3 py-1.5 text-xs text-white font-mono text-right"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-white/80 font-bold block">
+                          شعار المحطة (صورة من الجهاز أو رابط):
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <label className="btn-cancel px-3 py-1.5 rounded-xl text-[11px] font-bold cursor-pointer shrink-0">
+                            <span>رفع شعار</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleLogoFileUpload}
+                              className="hidden"
+                            />
+                          </label>
+                          {branding.logoUrl && (
+                            <button
+                              type="button"
+                              onClick={() => updateBrandingField('logoUrl', '')}
+                              className="btn-delete px-2.5 py-1.5 rounded-xl text-[11px] font-bold"
+                            >
+                              حذف الشعار
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

@@ -1,5 +1,9 @@
 import { Parcel, Station, Transaction, Workspace } from '../types/database';
-import { formatDateTimeStandard, formatTrackingCodeNumeric } from '../utils/logisticsFeatures';
+import {
+  formatDateTimeStandard,
+  formatTrackingCodeNumeric,
+  resolveOfficialPrintBranding,
+} from '../utils/logisticsFeatures';
 
 const STATUS_AR: Record<string, string> = {
   pending: 'مسجل في المحطة',
@@ -36,6 +40,15 @@ function openPrintablePDFWindow(title: string, bodyHtml: string): void {
   if (!printWin) return;
 
   const nowFormatted = formatDateTimeStandard(new Date().toISOString());
+  let savedBranding: { agencyName?: string; logoUrl?: string; agencyPhone?: string } = {};
+  try {
+    savedBranding = JSON.parse(localStorage.getItem('alittihadia_sticker_branding_v1') || '{}');
+  } catch {}
+  const resolved = resolveOfficialPrintBranding({
+    name: savedBranding.agencyName,
+    phone: savedBranding.agencyPhone,
+    logoUrl: savedBranding.logoUrl,
+  });
 
   const html = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -83,6 +96,21 @@ function openPrintablePDFWindow(title: string, bodyHtml: string): void {
       align-items: center;
       justify-content: space-between;
       background: #f9fafb;
+      gap: 14px;
+    }
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header-logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid #111827;
+      background: #fff;
+      flex-shrink: 0;
     }
     .header-title {
       font-size: 20px;
@@ -170,9 +198,12 @@ function openPrintablePDFWindow(title: string, bodyHtml: string): void {
     </div>
   </div>
   <div class="header-box">
-    <div>
-      <h1 class="header-title">${escapeHtml(title)}</h1>
-      <p class="header-sub">نظام محطة الاتحادية للنقل واللوجيستيك والصرافة</p>
+    <div class="header-brand">
+      ${resolved.logoSrc ? `<img src="${escapeHtml(resolved.logoSrc)}" alt="${escapeHtml(resolved.agencyName)}" class="header-logo" onerror="this.style.display='none'" />` : ''}
+      <div>
+        <h1 class="header-title">${escapeHtml(title)}</h1>
+        <p class="header-sub">${escapeHtml(resolved.agencyName)} — ${escapeHtml(resolved.agencySubtitle)}</p>
+      </div>
     </div>
     <div style="text-align:left;">
       <p class="header-sub">تاريخ استخراج التقرير:</p>

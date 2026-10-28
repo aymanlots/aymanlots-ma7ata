@@ -415,7 +415,10 @@ interface AppContextType {
   subscription: Subscription | null;
   isSubscriptionExpired: boolean;
   daysUntilExpiry: number;
+  secondsUntilExpiry: number;
+  subscriptionRemainingLabel: string;
   extendSubscription: (days?: number) => void;
+  startFiveMinuteSubscriptionTest: () => void;
 
   // Feedback & Status
   isSupabaseLive: boolean;
@@ -627,22 +630,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return tripService.getRememberedPlates();
   });
 
-  // 11. Subscription
+  // 11. Subscription (Strictly linked to Manager's Workspace)
   const [subscription, setSubscription] = useState<Subscription | null>(() => {
+    const wsId = currentWorkspace?.id || 'ws-default';
+    const wsEndDate =
+      currentWorkspace?.subscription_end_date ||
+      (currentWorkspace?.created_at
+        ? new Date(new Date(currentWorkspace.created_at).getTime() + 30 * 86400000).toISOString()
+        : undefined);
     const saved = localStorage.getItem('aman_subscription');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved) as Subscription;
+        if (!currentWorkspace || parsed.workspace_id === wsId || parsed.team_id === wsId) {
+          return {
+            ...parsed,
+            workspace_id: wsId,
+            team_id: wsId,
+            status: currentWorkspace?.subscription_status || parsed.status || 'active',
+            end_date: currentWorkspace?.subscription_end_date || parsed.end_date,
+          };
+        }
       } catch {}
     }
     return {
-      id: 'sub-active',
-      workspace_id: currentWorkspace?.id || 'ws-default',
-      team_id: currentWorkspace?.id || 'ws-default',
-      status: 'active',
-      start_date: new Date().toISOString(),
-      end_date: new Date(Date.now() + 30 * 86400000).toISOString(),
-      created_at: new Date().toISOString(),
+      id: `sub-${wsId}`,
+      workspace_id: wsId,
+      team_id: wsId,
+      status: currentWorkspace?.subscription_status || 'active',
+      start_date: currentWorkspace?.created_at || new Date().toISOString(),
+      end_date: wsEndDate || new Date(Date.now() + 30 * 86400000).toISOString(),
+      created_at: currentWorkspace?.created_at || new Date().toISOString(),
     };
   });
 
@@ -1094,7 +1112,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return member?.role || (currentWorkspace.created_by === currentUser.id ? 'owner' : 'worker');
   }, [currentUser, currentWorkspace, workspaceMembers, isPlatformOwner]);
 
-  // أول 30 يوماً مجانية بالكامل (الباك الأول الشامل مفتوح بدون قيود على المحطات أو العمال)
+  // الفترة التجريبية 30 يوماً مفتوحة بجميع الخصائص (ما لم يقم المدير باختيار الباك الأول 99 درهم يدوياً)
   const isInFree30DayMonth = useMemo(() => {
     if (!currentWorkspace?.created_at) return true;
     const createdMs = new Date(currentWorkspace.created_at).getTime();
@@ -1103,12 +1121,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return daysSinceCreation <= 30;
   }, [currentWorkspace?.created_at]);
 
-  // Plan limits check: خلال الشهر الأول (30 يوماً) كل شيء مفتوح ومجاني 100%
+  // الباك الأول (99 درهم): محطتين (2) فقط + عامل واحد (1) لكل محطة + الملصقات والبونات باسم ولوغو التطبيق الرسمي
   const isPlan2TwoStations = useMemo(() => {
     if (!currentWorkspace) return false;
-    if (isInFree30DayMonth) return false;
     return currentWorkspace.plan_tier === 'plan_2_two_stations';
-  }, [currentWorkspace, isInFree30DayMonth]);
+  }, [currentWorkspace]);
 
   // Visible Stations: Filter by currentWorkspace.id
   const visibleStations: Station[] = useMemo(() => {
@@ -1378,6 +1395,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('aman_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
+  // Helper to check if a user ID or phone is locally marked as revoked
+  const isAccountRevokedLocally = useCallback((userId?: string, phone?: string): boolean => {
+    try {
+      const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
+      if (userId && revokedMap[userId]) return true;
+      const cleanP = phone ? cleanPhoneNumber(phone) : '';
+      if (cleanP && revokedMap[cleanP]) return true;
+    } catch {}
+    return false;
+  }, []);
+
+  // Force immediate logout when a worker account is deleted/revoked by manager
+  const forceRevokedWorkerLogout = useCallback(() => {
+    setIsPlatformOwner(false);
+    setCurrentUser(null);
+    localStorage.removeItem('aman_user');
+    showToast('تم إيقاف أو حذف حسابك من طرف مدير المحطة. لم يعد بإمكانك الوصول إلى النظام.', 'error');
+  }, [showToast]);
+
   // Real-time Authoritative Firebase Sync Listener (Prevents Ghost Data Resurrection Across Devices)
   useEffect(() => {
     if (!currentWorkspace?.id || !firebaseSyncService.isAvailable()) return;
@@ -1391,7 +1427,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (cloudData.workspace.last_reset_at) {
           localStorage.setItem(`aman_last_reset_${wsId}`, cloudData.workspace.last_reset_at);
         }
-        setCurrentWorkspace(prev => (prev ? { ...prev, ...cloudData.workspace } : cloudData.workspace));
+        const remoteWs = cloudData.workspace;
+        const derivedEndDate =
+          remoteWs.subscription_end_date ||
+          (subscription?.workspace_id === wsId ? subscription.end_date : undefined) ||
+          (remoteWs.created_by ? new Date(new Date(remoteWs.created_at).getTime() + 30 * 86400000).toISOString() : undefined);
+        const derivedStatus = remoteWs.subscription_status || subscription?.status || 'active';
+
+        setCurrentWorkspace(prev => {
+          const merged = prev ? { ...prev, ...remoteWs } : remoteWs;
+          return {
+            ...merged,
+            subscription_end_date: remoteWs.subscription_end_date || merged.subscription_end_date || derivedEndDate,
+            subscription_status: remoteWs.subscription_status || merged.subscription_status || derivedStatus,
+          };
+        });
+
+        if (derivedEndDate) {
+          setSubscription(prev => ({
+            id: prev?.id || `sub-${wsId}`,
+            workspace_id: wsId,
+            team_id: wsId,
+            status: remoteWs.subscription_status || prev?.status || 'active',
+            start_date: remoteWs.created_at || prev?.start_date || new Date().toISOString(),
+            end_date:
+              remoteWs.subscription_end_date ||
+              (remoteWs.created_by === currentUser?.id && prev?.workspace_id === wsId
+                ? prev.end_date
+                : new Date(new Date(remoteWs.created_at || Date.now()).getTime() + 30 * 86400000).toISOString()),
+            created_at: remoteWs.created_at || prev?.created_at || new Date().toISOString(),
+          }));
+        }
+
+        // If manager's workspace in Firestore is missing subscription_end_date, push it so workers receive the exact remaining days
+        if (!remoteWs.subscription_end_date && remoteWs.created_by === currentUser?.id && derivedEndDate) {
+          firebaseSyncService
+            .syncWorkspace({
+              ...remoteWs,
+              subscription_end_date: derivedEndDate,
+              subscription_status: derivedStatus,
+            })
+            .catch(() => {});
+        }
+
         setStations(cloudData.stations.map(s => ({ ...s, workspace_id: wsId, team_id: wsId })));
         setAllParcels(prev => {
           const otherWsParcels = prev.filter(p => p.workspace_id && p.workspace_id !== wsId && p.team_id !== wsId);
@@ -1411,11 +1489,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         );
         if (cloudData.members.length > 0) {
-          setWorkspaceMembers(cloudData.members.map(m => ({ ...m, workspace_id: wsId })));
+          const syncedMembers = cloudData.members.map(m => ({ ...m, workspace_id: wsId }));
+          setWorkspaceMembers(syncedMembers);
+          setStationWorkers(
+            syncedMembers
+              .filter(m => m.role === 'worker' && m.station_id && m.status === 'active')
+              .map(m => ({
+                station_id: m.station_id!,
+                workspace_id: wsId,
+                user_id: m.user_id,
+                assigned_at: m.joined_at || new Date().toISOString(),
+                profile: m.profile,
+              }))
+          );
         }
       } else {
         // Workspace does not exist in Firestore yet -> push initial workspace & local items
-        firebaseSyncService.syncWorkspace(currentWorkspace).catch(() => {});
+        const wsWithSub: Workspace = {
+          ...currentWorkspace,
+          subscription_end_date:
+            currentWorkspace.subscription_end_date ||
+            subscription?.end_date ||
+            new Date(new Date(currentWorkspace.created_at || Date.now()).getTime() + 30 * 86400000).toISOString(),
+          subscription_status: currentWorkspace.subscription_status || subscription?.status || 'active',
+        };
+        firebaseSyncService.syncWorkspace(wsWithSub).catch(() => {});
         stations
           .filter(s => (!s.workspace_id || s.workspace_id === wsId || s.team_id === wsId) && !s.is_demo)
           .forEach(s => firebaseSyncService.syncStation(wsId, s).catch(() => {}));
@@ -1447,6 +1545,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           storageService.remove('TRIPS');
         }
         setCurrentWorkspace(prev => (prev ? { ...prev, ...remoteWs } : remoteWs));
+        if (remoteWs.subscription_end_date || remoteWs.created_at) {
+          setSubscription(prev => ({
+            id: prev?.id || `sub-${wsId}`,
+            workspace_id: wsId,
+            team_id: wsId,
+            status: remoteWs.subscription_status || prev?.status || 'active',
+            start_date: remoteWs.created_at || prev?.start_date || new Date().toISOString(),
+            end_date:
+              remoteWs.subscription_end_date ||
+              (remoteWs.created_by === currentUser?.id && prev?.workspace_id === wsId
+                ? prev.end_date
+                : new Date(new Date(remoteWs.created_at || Date.now()).getTime() + 30 * 86400000).toISOString()),
+            created_at: remoteWs.created_at || prev?.created_at || new Date().toISOString(),
+          }));
+        }
       },
       onStations: (remoteStations) => {
         const cleanList = (remoteStations || []).map(s => ({
@@ -1487,7 +1600,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       },
       onMembers: (remoteMembers) => {
         if (remoteMembers && remoteMembers.length > 0) {
-          setWorkspaceMembers(remoteMembers.map(m => ({ ...m, workspace_id: wsId })));
+          const syncedMembers = remoteMembers.map(m => ({ ...m, workspace_id: wsId }));
+          setWorkspaceMembers(syncedMembers);
+          setStationWorkers(
+            syncedMembers
+              .filter(m => m.role === 'worker' && m.station_id && m.status === 'active')
+              .map(m => ({
+                station_id: m.station_id!,
+                workspace_id: wsId,
+                user_id: m.user_id,
+                assigned_at: m.joined_at || new Date().toISOString(),
+                profile: m.profile,
+              }))
+          );
         }
       },
     });
@@ -1498,31 +1623,273 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [currentWorkspace?.id]);
 
+  // Real-time Worker Revocation & Deletion Enforcement (Cross-Device Firestore + Cross-Tab Storage + Member Check)
+  useEffect(() => {
+    if (!currentUser) return;
+    const isWorkerSession =
+      userRole === 'worker' ||
+      Boolean(
+        currentWorkspace &&
+          currentWorkspace.created_by &&
+          currentWorkspace.created_by !== currentUser.id &&
+          !isPlatformOwner
+      );
+
+    if (!isWorkerSession) return;
+
+    // 1. Check local revocation list
+    if (isAccountRevokedLocally(currentUser.id, currentUser.phone)) {
+      forceRevokedWorkerLogout();
+      return;
+    }
+
+    // 2. Check if workspaceMembers has loaded the workspace's admin/owner, and this worker is missing or removed
+    if (currentWorkspace) {
+      const wsId = currentWorkspace.id;
+      const wsMembers = workspaceMembers.filter(m => !m.workspace_id || m.workspace_id === wsId);
+      const hasAdminLoaded = wsMembers.some(m => m.role === 'admin' || m.role === 'owner');
+      if (hasAdminLoaded) {
+        const myActiveMember = wsMembers.find(
+          m =>
+            (m.user_id === currentUser.id ||
+              (currentUser.phone &&
+                cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhoneNumber(currentUser.phone))) &&
+            m.status === 'active'
+        );
+        if (!myActiveMember) {
+          forceRevokedWorkerLogout();
+          return;
+        }
+      }
+    }
+  }, [
+    currentUser,
+    userRole,
+    currentWorkspace,
+    workspaceMembers,
+    isPlatformOwner,
+    isAccountRevokedLocally,
+    forceRevokedWorkerLogout,
+  ]);
+
+  // Subscribe in real-time to the worker's user document in Firestore + browser storage events (for instant kick-out)
+  useEffect(() => {
+    if (!currentUser) return;
+    const isWorkerSession =
+      userRole === 'worker' ||
+      Boolean(
+        currentWorkspace &&
+          currentWorkspace.created_by &&
+          currentWorkspace.created_by !== currentUser.id &&
+          !isPlatformOwner
+      );
+
+    if (!isWorkerSession) return;
+
+    const cleanPhone = cleanPhoneNumber(currentUser.phone);
+    const unsubCloudUser = firebaseSyncService.subscribeToUserAccount(cleanPhone, (acc) => {
+      if (acc && (acc.deleted || acc.status === 'revoked')) {
+        forceRevokedWorkerLogout();
+      }
+    });
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'alittihadia_revoked_accounts_v1') {
+        if (isAccountRevokedLocally(currentUser.id, currentUser.phone)) {
+          forceRevokedWorkerLogout();
+        }
+      } else if (e.key === 'aman_workspace_members' && e.newValue) {
+        try {
+          const updatedMembers = JSON.parse(e.newValue) as WorkspaceMember[];
+          setWorkspaceMembers(updatedMembers);
+          const stillActive = updatedMembers.some(
+            m =>
+              (m.user_id === currentUser.id ||
+                cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone) &&
+              m.status === 'active'
+          );
+          if (!stillActive) {
+            forceRevokedWorkerLogout();
+          }
+        } catch {}
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      unsubCloudUser();
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [
+    currentUser,
+    userRole,
+    currentWorkspace?.created_by,
+    isPlatformOwner,
+    isAccountRevokedLocally,
+    forceRevokedWorkerLogout,
+  ]);
+
+  // Live 1-second clock ticker so 5-minute subscription tests count down and expire in real time
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  // Authoritative workspace subscription status & end_date (shared identically between Manager and Worker)
+  const effectiveSubscriptionEndDate = useMemo(() => {
+    if (currentWorkspace?.subscription_end_date) {
+      return currentWorkspace.subscription_end_date;
+    }
+    if (
+      subscription &&
+      (!currentWorkspace ||
+        subscription.workspace_id === currentWorkspace.id ||
+        subscription.team_id === currentWorkspace.id)
+    ) {
+      return subscription.end_date;
+    }
+    if (currentWorkspace?.created_at) {
+      return new Date(new Date(currentWorkspace.created_at).getTime() + 30 * 86400000).toISOString();
+    }
+    return subscription?.end_date || new Date(Date.now() + 30 * 86400000).toISOString();
+  }, [currentWorkspace?.subscription_end_date, currentWorkspace?.id, currentWorkspace?.created_at, subscription]);
+
+  const effectiveSubscriptionStatus = useMemo(() => {
+    return currentWorkspace?.subscription_status || subscription?.status || 'active';
+  }, [currentWorkspace?.subscription_status, subscription?.status]);
+
+  // Restore workspace subscription to 30 full days after the 5-minute test
+  useEffect(() => {
+    if (!currentWorkspace?.id) return;
+    const wsId = currentWorkspace.id;
+    const restoreKey = `alittihadia_30day_restored_v2_${wsId}`;
+    if (localStorage.getItem(restoreKey)) return;
+
+    const isManager =
+      userRole === 'owner' ||
+      userRole === 'platform_owner' ||
+      !currentWorkspace.created_by ||
+      currentWorkspace.created_by === currentUser?.id;
+    if (!isManager) return;
+
+    localStorage.setItem(restoreKey, 'true');
+    const thirtyDaysEnd = new Date(Date.now() + 30 * 86400000).toISOString();
+    const updatedSub: Subscription = {
+      id: subscription?.id || `sub-${wsId}`,
+      workspace_id: wsId,
+      team_id: wsId,
+      status: 'active',
+      is_trial: true,
+      start_date: new Date().toISOString(),
+      end_date: thirtyDaysEnd,
+      created_at: subscription?.created_at || new Date().toISOString(),
+    };
+    setSubscription(updatedSub);
+    localStorage.setItem('aman_subscription', JSON.stringify(updatedSub));
+    const updatedWs: Workspace = {
+      ...currentWorkspace,
+      subscription_end_date: thirtyDaysEnd,
+      subscription_status: 'active',
+    };
+    setCurrentWorkspace(updatedWs);
+    if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService.syncWorkspace(updatedWs).catch(() => {});
+    }
+  }, [currentWorkspace?.id, userRole, currentUser?.id]);
+
   // Subscription calculation (expired OR suspended blocks all writes)
   const isSubscriptionExpired = useMemo(() => {
-    if (!subscription) return false;
-    if (subscription.status === 'suspended' || subscription.status === 'expired') return true;
-    const end = new Date(subscription.end_date).getTime();
-    return end < Date.now();
-  }, [subscription]);
+    if (effectiveSubscriptionStatus === 'suspended' || effectiveSubscriptionStatus === 'expired') return true;
+    const end = new Date(effectiveSubscriptionEndDate).getTime();
+    return end <= nowMs;
+  }, [effectiveSubscriptionStatus, effectiveSubscriptionEndDate, nowMs]);
 
   const checkWriteAllowed = useCallback((): { allowed: boolean; error?: string } => {
+    // 1. Block deleted/revoked workers immediately before any write action
+    if (currentUser) {
+      const isWorkerSession =
+        userRole === 'worker' ||
+        Boolean(
+          currentWorkspace &&
+            currentWorkspace.created_by &&
+            currentWorkspace.created_by !== currentUser.id &&
+            !isPlatformOwner
+        );
+      if (isWorkerSession) {
+        const wsId = currentWorkspace?.id;
+        const wsMembers = wsId
+          ? workspaceMembers.filter(m => !m.workspace_id || m.workspace_id === wsId)
+          : workspaceMembers;
+        const hasAdminLoaded = wsMembers.some(m => m.role === 'admin' || m.role === 'owner');
+        const isStillMember =
+          !hasAdminLoaded ||
+          wsMembers.some(
+            m =>
+              (m.user_id === currentUser.id ||
+                cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhoneNumber(currentUser.phone)) &&
+              m.status === 'active'
+          );
+
+        if (isAccountRevokedLocally(currentUser.id, currentUser.phone) || !isStillMember) {
+          forceRevokedWorkerLogout();
+          return {
+            allowed: false,
+            error: 'تم إيقاف أو حذف حسابك من طرف مدير المحطة. لم يعد بإمكانك إجراء أي عملية.',
+          };
+        }
+      }
+    }
+
+    // 2. Check workspace subscription (blocks BOTH Admin/Manager and Worker from adding, sending, or receiving anything)
     if (isSubscriptionExpired) {
-      const msg = subscription?.status === 'suspended'
-        ? 'وضع القراءة فقط: تم تعليق اشتراك مساحة العمل. يرجى التواصل مع إدارة المنصة لتجديد الاشتراك.'
-        : 'وضع القراءة فقط: انتهت صلاحية اشتراك مساحة العمل. يرجى تجديد الاشتراك لمتابعة الإضافة والتعديل.';
+      const msg =
+        effectiveSubscriptionStatus === 'suspended'
+          ? 'تم تعليق اشتراك مساحة العمل: لا يمكن للمدير أو العامل إضافة أو إرسال أو استقبال أي عملية حتى يتم تفعيل الاشتراك.'
+          : 'انتهت فترة الـ 30 يوماً للاشتراك: لا يمكن للمدير أو العامل إضافة أو إرسال أو استقبال أي شيء حتى يتم تجديد الاشتراك.';
       showToast(msg, 'error');
       return { allowed: false, error: msg };
     }
     return { allowed: true };
-  }, [isSubscriptionExpired, subscription?.status, showToast]);
+  }, [
+    currentUser,
+    userRole,
+    currentWorkspace,
+    workspaceMembers,
+    isPlatformOwner,
+    isAccountRevokedLocally,
+    forceRevokedWorkerLogout,
+    isSubscriptionExpired,
+    effectiveSubscriptionStatus,
+    showToast,
+  ]);
+
+  const secondsUntilExpiry = useMemo(() => {
+    if (effectiveSubscriptionStatus === 'suspended' || effectiveSubscriptionStatus === 'expired') return 0;
+    const diff = new Date(effectiveSubscriptionEndDate).getTime() - nowMs;
+    return Math.max(0, Math.ceil(diff / 1000));
+  }, [effectiveSubscriptionStatus, effectiveSubscriptionEndDate, nowMs]);
 
   const daysUntilExpiry = useMemo(() => {
-    if (!subscription) return 30;
-    if (subscription.status === 'suspended' || subscription.status === 'expired') return 0;
-    const diff = new Date(subscription.end_date).getTime() - Date.now();
-    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-  }, [subscription]);
+    if (secondsUntilExpiry <= 0) return 0;
+    return Math.max(1, Math.ceil(secondsUntilExpiry / 86400));
+  }, [secondsUntilExpiry]);
+
+  const subscriptionRemainingLabel = useMemo(() => {
+    if (isSubscriptionExpired || secondsUntilExpiry <= 0) {
+      return 'منتهٍ (00:00)';
+    }
+    if (secondsUntilExpiry <= 3600) {
+      const mins = Math.floor(secondsUntilExpiry / 60);
+      const secs = secondsUntilExpiry % 60;
+      const mm = String(mins).padStart(2, '0');
+      const ss = String(secs).padStart(2, '0');
+      return `${mm}:${ss} دقيقة متبقية`;
+    }
+    return `${daysUntilExpiry} يوم متبقية`;
+  }, [isSubscriptionExpired, secondsUntilExpiry, daysUntilExpiry]);
 
   // ============================================================================
   // AUTHENTICATION: PHONE + PASSWORD WITHOUT SMS (GENERATING EMAIL @alittihadia.app)
@@ -1628,6 +1995,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         let short_id = generateShortId();
         let invite_code = generateInviteCode();
         let wsId = supabase ? generateUUID() : `ws-${Date.now()}`;
+        const initialSubEnd = new Date(Date.now() + 30 * 86400000).toISOString();
 
         let newWorkspace: Workspace = {
           id: wsId,
@@ -1638,6 +2006,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           created_at: new Date().toISOString(),
           owner_phone: cleanPhone,
           owner_whatsapp: cleanWhatsapp,
+          subscription_end_date: initialSubEnd,
+          subscription_status: 'active',
         };
 
         // Call RPC first if Supabase is connected so we use the authoritative DB UUIDs
@@ -1651,7 +2021,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               showToast(`تنبيه مزامنة مساحة العمل: ${rpcErr.message}`, 'error');
             } else if (rpcData?.success && rpcData.workspace) {
               rpcCreated = true;
-              newWorkspace = rpcData.workspace as Workspace;
+              newWorkspace = {
+                ...(rpcData.workspace as Workspace),
+                subscription_end_date: rpcData.subscription?.end_date || initialSubEnd,
+                subscription_status: rpcData.subscription?.status || 'active',
+              };
               short_id = newWorkspace.short_id;
               invite_code = newWorkspace.invite_code;
               wsId = newWorkspace.id;
@@ -1690,6 +2064,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (!rpcCreated) {
           setCurrentWorkspace(newWorkspace);
+          setSubscription({
+            id: `sub-${newWorkspace.id}`,
+            workspace_id: newWorkspace.id,
+            team_id: newWorkspace.id,
+            status: 'active',
+            start_date: newWorkspace.created_at,
+            end_date: initialSubEnd,
+            created_at: newWorkspace.created_at,
+          });
 
           const adminMember: WorkspaceMember = {
             workspace_id: newWorkspace.id,
@@ -1719,6 +2102,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               role: 'owner',
               workspace_id: newWorkspace.id,
               must_change_password: false,
+              status: 'active',
+              deleted: false,
               created_at: newProfile.created_at,
             }).catch(() => {});
           }
@@ -1791,6 +2176,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
       } catch {}
 
+      // Block locally revoked accounts immediately
+      if (isAccountRevokedLocally(undefined, cleanPhone)) {
+        return {
+          success: false,
+          error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
+        };
+      }
+
       const syntheticEmail = phoneToEmail(cleanPhone);
       const supabase = getSupabaseClient();
 
@@ -1814,6 +2207,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
           const mustChange = Boolean(prof?.must_change_password || data.user.user_metadata?.must_change_password);
 
+          // Fetch member workspace
+          const { data: mem } = await supabase
+            .from('workspace_members')
+            .select('*, workspaces(*)')
+            .eq('user_id', data.user.id)
+            .eq('status', 'active')
+            .maybeSingle();
+
+          if (!mem) {
+            await supabase.auth.signOut().catch(() => {});
+            return {
+              success: false,
+              error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
+            };
+          }
+
           if (prof) {
             setCurrentUser({ ...prof, must_change_password: mustChange });
           } else {
@@ -1826,14 +2235,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               created_at: new Date().toISOString(),
             });
           }
-
-          // Fetch member workspace
-          const { data: mem } = await supabase
-            .from('workspace_members')
-            .select('*, workspaces(*)')
-            .eq('user_id', data.user.id)
-            .eq('status', 'active')
-            .maybeSingle();
 
           const wsData = Array.isArray(mem?.workspaces) ? mem?.workspaces[0] : mem?.workspaces;
           if (wsData) {
@@ -1850,6 +2251,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (firebaseSyncService.isAvailable()) {
         const cloudAcc = await firebaseSyncService.getUserAccount(cleanPhone);
         if (cloudAcc) {
+          if (cloudAcc.deleted || cloudAcc.status === 'revoked') {
+            return {
+              success: false,
+              error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
+            };
+          }
           if (cloudAcc.password && cloudAcc.password !== password.trim()) {
             return { success: false, error: 'رقم الهاتف أو كلمة المرور غير صحيحة' };
           }
@@ -1861,6 +2268,82 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             must_change_password: Boolean(cloudAcc.must_change_password),
             created_at: cloudAcc.created_at || new Date().toISOString(),
           };
+
+          // Restore full workspace & data from Firebase
+          if (cloudAcc.workspace_id) {
+            const cloudData = await firebaseSyncService.loadFullWorkspaceFromCloud(cloudAcc.workspace_id);
+
+            // If worker: verify they are still an active member of the manager's workspace
+            if (cloudAcc.role === 'worker' && cloudData.members.length > 0) {
+              const activeWorkerMember = cloudData.members.find(
+                m =>
+                  (m.user_id === cloudAcc.id ||
+                    cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone) &&
+                  m.status === 'active'
+              );
+              if (!activeWorkerMember) {
+                return {
+                  success: false,
+                  error: 'تم حذف أو إيقاف حسابك من فريق المحطة من طرف المدير. لم يعد بإمكانك تسجيل الدخول.',
+                };
+              }
+            }
+
+            if (cloudData.workspace) {
+              const wsEndDate =
+                cloudData.workspace.subscription_end_date ||
+                new Date(
+                  new Date(cloudData.workspace.created_at || Date.now()).getTime() + 30 * 86400000
+                ).toISOString();
+              const wsStatus = cloudData.workspace.subscription_status || 'active';
+
+              setCurrentWorkspace({
+                ...cloudData.workspace,
+                subscription_end_date: wsEndDate,
+                subscription_status: wsStatus,
+              });
+              setSubscription({
+                id: `sub-${cloudData.workspace.id}`,
+                workspace_id: cloudData.workspace.id,
+                team_id: cloudData.workspace.id,
+                status: wsStatus,
+                start_date: cloudData.workspace.created_at || new Date().toISOString(),
+                end_date: wsEndDate,
+                created_at: cloudData.workspace.created_at || new Date().toISOString(),
+              });
+              localStorage.setItem(`ittihadiya_demo_deleted_${cloudData.workspace.id}`, 'true');
+              localStorage.setItem(`alittihadia_guided_tour_completed_${cloudData.workspace.id}`, 'true');
+            }
+            setStations(cloudData.stations);
+            setAllParcels(cloudData.parcels);
+            setAllTransactions(cloudData.transactions);
+            setAllTrips(cloudData.trips);
+            if (cloudData.members.length > 0) {
+              setWorkspaceMembers(cloudData.members);
+              const swList: StationWorker[] = cloudData.members
+                .filter(m => m.role === 'worker' && m.station_id && m.status === 'active')
+                .map(m => ({
+                  station_id: m.station_id!,
+                  workspace_id: m.workspace_id,
+                  user_id: m.user_id,
+                  assigned_at: m.joined_at || new Date().toISOString(),
+                  profile: m.profile,
+                }));
+              setStationWorkers(swList);
+            } else if (cloudAcc.role === 'owner') {
+              const memberEntry: WorkspaceMember = {
+                workspace_id: cloudAcc.workspace_id,
+                user_id: restoredProfile.id,
+                station_id: cloudAcc.station_id || undefined,
+                role: 'admin',
+                status: 'active',
+                joined_at: restoredProfile.created_at,
+                profile: restoredProfile,
+              };
+              setWorkspaceMembers(prev => [...prev.filter(m => m.user_id !== restoredProfile.id), memberEntry]);
+            }
+          }
+
           setCurrentUser(restoredProfile);
 
           // Save locally for offline resilience on this new device
@@ -1877,56 +2360,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             };
             localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
           } catch {}
-
-          // Restore full workspace & data from Firebase
-          if (cloudAcc.workspace_id) {
-            const cloudData = await firebaseSyncService.loadFullWorkspaceFromCloud(cloudAcc.workspace_id);
-            if (cloudData.workspace) {
-              setCurrentWorkspace(cloudData.workspace);
-              localStorage.setItem(`ittihadiya_demo_deleted_${cloudData.workspace.id}`, 'true');
-              localStorage.setItem(`alittihadia_guided_tour_completed_${cloudData.workspace.id}`, 'true');
-            }
-            setStations(cloudData.stations);
-            setAllParcels(cloudData.parcels);
-            setAllTransactions(cloudData.transactions);
-            setAllTrips(cloudData.trips);
-            if (cloudData.members.length > 0) {
-              setWorkspaceMembers(cloudData.members);
-              const swList: StationWorker[] = cloudData.members
-                .filter(m => m.role === 'worker' && m.station_id)
-                .map(m => ({
-                  station_id: m.station_id!,
-                  workspace_id: m.workspace_id,
-                  user_id: m.user_id,
-                  assigned_at: m.joined_at || new Date().toISOString(),
-                  profile: m.profile,
-                }));
-              if (swList.length > 0) setStationWorkers(swList);
-            } else {
-              const memberEntry: WorkspaceMember = {
-                workspace_id: cloudAcc.workspace_id,
-                user_id: restoredProfile.id,
-                station_id: cloudAcc.station_id || undefined,
-                role: cloudAcc.role === 'owner' ? 'admin' : 'worker',
-                status: 'active',
-                joined_at: restoredProfile.created_at,
-                profile: restoredProfile,
-              };
-              setWorkspaceMembers(prev => [...prev.filter(m => m.user_id !== restoredProfile.id), memberEntry]);
-              if (cloudAcc.role === 'worker' && cloudAcc.station_id) {
-                setStationWorkers(prev => [
-                  ...prev.filter(sw => sw.user_id !== restoredProfile.id),
-                  {
-                    station_id: cloudAcc.station_id!,
-                    workspace_id: cloudAcc.workspace_id,
-                    user_id: restoredProfile.id,
-                    assigned_at: restoredProfile.created_at,
-                    profile: restoredProfile,
-                  },
-                ]);
-              }
-            }
-          }
 
           showToast(`مرحباً بعودتك يا ${restoredProfile.name}! تم استرجاع حسابك وبياناتك من السحابة بنجاح`, 'success');
           return { success: true };
@@ -1950,8 +2383,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       } catch {}
 
-      // Offline / Local lookup fallback (match canonical phone)
-      const member = workspaceMembers.find(m => cleanPhoneNumber(m.profile?.phone || '') === cleanPhone);
+      // Offline / Local lookup fallback (match canonical phone in active workspaceMembers)
+      const member = workspaceMembers.find(
+        m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
+      );
       if (member && member.profile) {
         const profileWithFlag = {
           ...member.profile,
@@ -1968,6 +2403,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
         const savedAcc = localAccounts[cleanPhone];
         if (savedAcc) {
+          // If this local account was a worker, ensure they haven't been removed from workspaceMembers
+          if (!savedAcc.isOwner) {
+            const stillInMembers = workspaceMembers.some(
+              m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
+            );
+            if (!stillInMembers) {
+              return {
+                success: false,
+                error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
+              };
+            }
+          }
           const restoredProfile: Profile = {
             id: savedAcc.id || `usr-${cleanPhone}`,
             name: savedAcc.name || 'مدير المحطة',
@@ -2149,7 +2596,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const activeWorkers = visibleWorkspaceMembers.filter(m => m.role === 'worker' && m.status === 'active' && !m.is_demo);
     if (activeWorkers.length >= maxWorkers) {
       const msg = isPlan2TwoStations
-        ? 'تم بلوغ الحد الأقصى للعمال في الباك الثاني (عاملان فقط: عامل واحد في كل محطة من المحطتين). يرجى الترقية إلى الباك الأول الشامل لإضافة عمال إضافيين.'
+        ? 'تم بلوغ الحد الأقصى للعمال في الباك الأول (99 درهم): عاملان فقط (عامل واحد في كل محطة من المحطتين). يرجى الترقية إلى الباك الثاني (199 درهم) لإضافة عمال إضافيين.'
         : `تم بلوغ الحد الأقصى للعمال المسموح به في باقتك الحالية (${maxWorkers} عمال). يرجى ترقية الباقة لإضافة المزيد.`;
       showToast(msg, 'error');
       return { success: false, error: msg };
@@ -2513,14 +2960,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (isPlan2TwoStations) {
         const targetStation = visibleStations.find(s => s.id === stationId);
         if (!targetStation) {
-          const msg = 'الباك الثاني يسمح بالعمل على محطتين (2) فقط.';
+          const msg = 'الباك الأول (99 درهم) يسمح بالعمل على محطتين (2) فقط.';
           showToast(msg, 'error');
           return { success: false, error: msg };
         }
         // Check if this station already has a real worker assigned (1 worker per station rule)
         const existingRealWorkerInStation = realActiveWorkers.find(w => w.station_id === stationId);
         if (existingRealWorkerInStation) {
-          const msg = `محطة "${targetStation.name}" فيها عامل مسجل بالفعل (${existingRealWorkerInStation.profile?.name || 'عامل'})! الباك الثاني يسمح بعامل واحد (1) فقط في كل محطة. اختر المحطة الثانية أو قم بالترقية إلى الباك الأول الشامل.`;
+          const msg = `محطة "${targetStation.name}" فيها عامل مسجل بالفعل (${existingRealWorkerInStation.profile?.name || 'عامل'})! الباك الأول (99 درهم) يسمح بعامل واحد (1) فقط في كل محطة. اختر المحطة الثانية أو قم بالترقية إلى الباك الثاني (199 درهم).`;
           showToast(msg, 'error');
           return { success: false, error: msg };
         }
@@ -2528,7 +2975,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       if (realActiveWorkers.length >= maxWorkers) {
         const msg = isPlan2TwoStations
-          ? 'تم بلوغ الحد الأقصى للعمال في الباك الثاني (عاملان فقط: عامل واحد في كل محطة من المحطتين). يرجى الترقية إلى الباك الأول لإضافة عمال أكثر.'
+          ? 'تم بلوغ الحد الأقصى للعمال في الباك الأول (99 درهم): عاملان فقط (عامل واحد في كل محطة من المحطتين). يرجى الترقية إلى الباك الثاني (199 درهم) لإضافة عمال أكثر.'
           : `تم بلوغ الحد الأقصى للعمال المسموح به في باقتك الحالية (${maxWorkers} عمال). يرجى ترقية الباقة لإضافة المزيد.`;
         showToast(msg, 'error');
         return { success: false, error: msg };
@@ -2601,6 +3048,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       profile: newWorkerProfile,
     };
 
+    // Clear any previous revocation entry if manager re-adds a previously deleted phone number
+    try {
+      const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
+      if (revokedMap[canonicalPhone] || revokedMap[newWorkerProfile.id]) {
+        delete revokedMap[canonicalPhone];
+        delete revokedMap[newWorkerProfile.id];
+        localStorage.setItem('alittihadia_revoked_accounts_v1', JSON.stringify(revokedMap));
+      }
+    } catch {}
+
     setWorkspaceMembers(prev => [...prev, newMember]);
 
     setStationWorkers(prev => [
@@ -2614,8 +3071,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     ]);
 
-    // Sync worker account & workspace member to Firebase so the worker can log in from their own phone
+    // Sync worker account, workspace member, AND manager's current subscription_end_date to Firebase so the worker sees the exact remaining days (e.g. 3 days, not 30 days)
+    const managerSubEndDate = effectiveSubscriptionEndDate;
+    const managerSubStatus = effectiveSubscriptionStatus;
+    setCurrentWorkspace(prev =>
+      prev
+        ? {
+            ...prev,
+            subscription_end_date: managerSubEndDate,
+            subscription_status: managerSubStatus,
+          }
+        : null
+    );
+
     if (firebaseSyncService.isAvailable()) {
+      firebaseSyncService
+        .syncWorkspace({
+          ...currentWorkspace,
+          subscription_end_date: managerSubEndDate,
+          subscription_status: managerSubStatus,
+        })
+        .catch(() => {});
       firebaseSyncService.syncWorkspaceMember(currentWorkspace.id, newMember).catch(() => {});
       firebaseSyncService.saveUserAccount(canonicalPhone, {
         id: newWorkerProfile.id,
@@ -2627,6 +3103,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         workspace_id: currentWorkspace.id,
         station_id: stationId,
         must_change_password: true,
+        status: 'active',
+        deleted: false,
         created_at: newWorkerProfile.created_at,
       }).catch(() => {});
     }
@@ -3962,6 +4440,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     customBrandLogoUrl?: string;
   }): Promise<{ success: boolean; error?: string }> => {
     if (!currentWorkspace) return { success: false, error: 'لا توجد مساحة عمل نشطة' };
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    if (isPlan2TwoStations) {
+      const msg = 'في الباك الأول (99 درهم) تخرج الملصقات والبونات باسم التطبيق الرسمي ولوغو التطبيق فقط ولا يمكن تغييرهم. لتخصيص اللوغو والاسم يرجى تفعيل الباك الثاني (199 درهم).';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
 
     const cleanName = (branding.custom_brand_name ?? branding.customBrandName)?.trim() || '';
     const cleanSub = (branding.custom_brand_subtitle ?? branding.customBrandSubtitle)?.trim() || '';
@@ -4568,9 +5054,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const maxStations = isInFree30DayMonth
-      ? 999
-      : isPlan2TwoStations
+    const maxStations = isPlan2TwoStations
       ? 2
       : Math.max(99, currentWorkspace?.max_stations ?? 99);
     const activeStationsCount = isPlan2TwoStations
@@ -4579,7 +5063,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (activeStationsCount >= maxStations) {
       const msg = isPlan2TwoStations
-        ? 'باقتك الحالية (الباك الثاني) تسمح بفتح محطتين (2) فقط كحد أقصى! لفتح محطات إضافية والاستفادة من كل شيء يرجى الترقية إلى الباك الأول الشامل.'
+        ? 'باقتك الحالية (الباك الأول — 99 درهم) تسمح بفتح محطتين (2) فقط كحد أقصى! لفتح محطات غير محدودة وتخصيص اللوغو في الملصقات والبونات يرجى الترقية إلى الباك الثاني (199 درهم).'
         : `تم بلوغ الحد الأقصى للمحطات المسموح به في باقتك الحالية (${maxStations} محطات). يرجى ترقية الباقة لإضافة محطة جديدة.`;
       showToast(msg, 'error');
       return { success: false, error: msg };
@@ -4760,7 +5244,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: msg };
     }
 
-    // Enforce 1 worker per station when on الباك الثاني
+    // Enforce 1 worker per station when on الباك الأول (99 درهم)
     if (isPlan2TwoStations) {
       const targetWorker = workspaceMembers.find(m => m.user_id === userId);
       const isTargetReal = !targetWorker?.is_demo;
@@ -4772,7 +5256,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           (isTargetReal ? !m.is_demo : true)
       );
       if (otherOccupant) {
-        const msg = `لا يمكن وضع أكثر من عامل واحد في "${targetStation.name}" ضمن الباك الثاني (عامل واحد لكل محطة)! يشغلها حالياً: ${otherOccupant.profile?.name || 'عامل آخر'}.`;
+        const msg = `لا يمكن وضع أكثر من عامل واحد في "${targetStation.name}" ضمن الباك الأول (99 درهم — عامل واحد لكل محطة)! يشغلها حالياً: ${otherOccupant.profile?.name || 'عامل آخر'}.`;
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
@@ -4824,8 +5308,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false };
     }
 
+    const targetPhone = cleanPhoneNumber(targetMember.profile?.phone || targetMember.phone || '');
+
+    // 1. Immediately record revocation locally and purge worker's local credentials so any open tab or re-login is blocked
+    try {
+      const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
+      revokedMap[userId] = true;
+      if (targetPhone) revokedMap[targetPhone] = true;
+      localStorage.setItem('alittihadia_revoked_accounts_v1', JSON.stringify(revokedMap));
+
+      if (targetPhone) {
+        const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+        delete localAccounts[targetPhone];
+        localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
+
+        const tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
+        delete tempMap[targetPhone];
+        localStorage.setItem('alittihadia_temp_passwords', JSON.stringify(tempMap));
+      }
+    } catch {}
+
+    // 2. Remove from state (also triggers storage event for other tabs)
     setWorkspaceMembers(prev => prev.filter(m => !(m.user_id === userId && (!m.workspace_id || m.workspace_id === wsId))));
     setStationWorkers(prev => prev.filter(sw => !(sw.user_id === userId && (!sw.workspace_id || sw.workspace_id === wsId))));
+
+    // 3. Delete member & revoke worker account in Firebase Firestore so worker's device immediately logs out
+    if (firebaseSyncService.isAvailable()) {
+      if (wsId) {
+        firebaseSyncService.deleteWorkspaceMember(wsId, userId).catch(err => {
+          console.warn('Firebase deleteWorkspaceMember error:', err);
+        });
+      }
+      firebaseSyncService.revokeUserAccount(targetPhone, userId).catch(err => {
+        console.warn('Firebase revokeUserAccount error:', err);
+      });
+    }
 
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(wsId) && isValidUUID(userId)) {
@@ -4836,7 +5353,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast('تعذر الاتصال بالسحابة، تم الحذف محلياً', 'error');
       }
     }
-    showToast('تم حذف الموظف من محطات فريقك بنجاح', 'info');
+    showToast('تم إيقاف وحذف حساب العامل فوراً من جميع الأجهزة والمحطات', 'info');
     return { success: true };
   };
 
@@ -4882,16 +5399,57 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const extendSubscription = (days: number = 30) => {
-    if (!subscription) return;
-    const baseDate = isSubscriptionExpired ? new Date() : new Date(subscription.end_date);
-    const newEnd = new Date(baseDate.getTime() + days * 86400000).toISOString();
+    const wsId = currentWorkspace?.id || subscription?.workspace_id || 'ws-default';
+    const newEnd = new Date(Date.now() + days * 86400000).toISOString();
     const updatedSub: Subscription = {
-      ...subscription,
+      id: subscription?.id || `sub-${wsId}`,
+      workspace_id: wsId,
+      team_id: wsId,
       status: 'active',
+      start_date: subscription?.start_date || new Date().toISOString(),
       end_date: newEnd,
+      created_at: subscription?.created_at || new Date().toISOString(),
     };
     setSubscription(updatedSub);
-    showToast(`تم تمديد الاشتراك بنجاح لمدة ${days} يوماً!`, 'success');
+    if (currentWorkspace) {
+      const updatedWs: Workspace = {
+        ...currentWorkspace,
+        subscription_end_date: newEnd,
+        subscription_status: 'active',
+      };
+      setCurrentWorkspace(updatedWs);
+      if (firebaseSyncService.isAvailable()) {
+        firebaseSyncService.syncWorkspace(updatedWs).catch(() => {});
+      }
+    }
+    showToast(`تم تفعيل الاشتراك لمدة ${days} يوماً بنجاح!`, 'success');
+  };
+
+  const startFiveMinuteSubscriptionTest = () => {
+    const wsId = currentWorkspace?.id || subscription?.workspace_id || 'ws-default';
+    const fiveMinEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const updatedSub: Subscription = {
+      id: subscription?.id || `sub-${wsId}`,
+      workspace_id: wsId,
+      team_id: wsId,
+      status: 'active',
+      start_date: new Date().toISOString(),
+      end_date: fiveMinEnd,
+      created_at: subscription?.created_at || new Date().toISOString(),
+    };
+    setSubscription(updatedSub);
+    if (currentWorkspace) {
+      const updatedWs: Workspace = {
+        ...currentWorkspace,
+        subscription_end_date: fiveMinEnd,
+        subscription_status: 'active',
+      };
+      setCurrentWorkspace(updatedWs);
+      if (firebaseSyncService.isAvailable()) {
+        firebaseSyncService.syncWorkspace(updatedWs).catch(() => {});
+      }
+    }
+    showToast('تم ضبط توقيت الاشتراك على 5 دقائق للتجربة! سيظهر العد التنازلي الآن.', 'info');
   };
 
   // Platform Owner Controls: Update Subscription via server-side RPC
@@ -4947,6 +5505,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (currentWorkspace?.id === workspaceId) {
         setSubscription(updatedSub);
         localStorage.setItem('aman_subscription', JSON.stringify(updatedSub));
+        const updatedWs: Workspace = {
+          ...currentWorkspace,
+          subscription_end_date: updatedSub.end_date,
+          subscription_status: updatedSub.status,
+        };
+        setCurrentWorkspace(updatedWs);
+        if (firebaseSyncService.isAvailable()) {
+          firebaseSyncService.syncWorkspace(updatedWs).catch(() => {});
+        }
       }
 
       return next;
@@ -5037,10 +5604,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         plan_name: quotas.plan_name || prev.plan_name || 'الباك الأول (الشامل المفتوح)'
       } : null);
     }
+    // Sync plan_tier change to Firebase Firestore so workers and all devices see the updated plan immediately
+    if (currentWorkspace?.id === workspaceId && firebaseSyncService.isAvailable()) {
+      const nextTier = quotas.plan_tier || (quotas.max_stations === 2 ? 'plan_2_two_stations' : 'plan_1_full');
+      firebaseSyncService
+        .syncWorkspace({
+          ...currentWorkspace,
+          plan_tier: nextTier,
+          max_workers: quotas.max_workers,
+          max_stations: quotas.max_stations,
+          max_workers_per_station: quotas.max_workers_per_station ?? (quotas.max_stations === 2 ? 1 : 99),
+          max_collaborations: quotas.max_collaborations,
+          plan_name: quotas.plan_name || currentWorkspace.plan_name || 'الباك الثاني (199 درهم — الباقة الشاملة)',
+        })
+        .catch(() => {});
+    }
     return { success: true };
   };
 
-  // Switch between الباك الأول (شامل كل شيء) and الباك الثاني (محطتين + عامل واحد في كل محطة)
+  // Switch between الباك الأول (99 درهم: محطتين + عامل لكل محطة + لوغو التطبيق) and الباك الثاني (199 درهم: محطات وعمال غير محدودين + لوغو خاص)
   const switchWorkspacePlan = async (
     planTier: 'plan_1_full' | 'plan_2_two_stations',
     targetWorkspaceId?: string
@@ -5048,23 +5630,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const wsId = targetWorkspaceId || currentWorkspace?.id;
     if (!wsId) return { success: false, error: 'لا توجد مساحة عمل نشطة' };
 
-    const isPlan2 = planTier === 'plan_2_two_stations';
+    const isBasic99 = planTier === 'plan_2_two_stations';
     const res = await updateWorkspaceQuotas(wsId, {
       plan_tier: planTier,
-      plan_name: isPlan2
-        ? 'الباك الثاني (محطتين + عامل واحد لكل محطة)'
-        : 'الباك الأول (الباقة الشاملة المفتوحة)',
-      max_stations: isPlan2 ? 2 : 99,
-      max_workers: isPlan2 ? 2 : 99,
-      max_workers_per_station: isPlan2 ? 1 : 99,
-      max_collaborations: isPlan2 ? 5 : 99,
+      plan_name: isBasic99
+        ? 'الباك الأول (99 درهم): محطتين فقط + عامل لكل محطة'
+        : 'الباك الثاني (199 درهم): محطات وعمال غير محدودين + شعار خاص',
+      max_stations: isBasic99 ? 2 : 99,
+      max_workers: isBasic99 ? 2 : 99,
+      max_workers_per_station: isBasic99 ? 1 : 99,
+      max_collaborations: isBasic99 ? 5 : 99,
     });
 
     if (res.success) {
       showToast(
-        isPlan2
-          ? 'تم تفعيل نظام الباك الثاني: فتح محطتين (2) فقط وعامل واحد (1) في كل محطة'
-          : 'تم تفعيل نظام الباك الأول الشامل: استفد من كل شيء بدون قيود في المحطات أو العمال',
+        isBasic99
+          ? 'تم تفعيل الباك الأول (99 درهم): جوج محطات فقط، عامل واحد في كل محطة، والملصقات والبونات باسم ولوغو التطبيق الرسمي'
+          : 'تم تفعيل الباك الثاني (199 درهم): فتح محطات وعمال بدون حدود + إمكانية وضع اللوغو الخاص بك في الملصقات والبونات',
         'success'
       );
     }
@@ -5575,7 +6157,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         subscription,
         isSubscriptionExpired,
         daysUntilExpiry,
+        secondsUntilExpiry,
+        subscriptionRemainingLabel,
         extendSubscription,
+        startFiveMinuteSubscriptionTest,
         allWorkspaces: allWorkspacesState,
         allSubscriptions: allSubscriptionsState,
         refreshPlatformWorkspaces,

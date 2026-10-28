@@ -39,23 +39,39 @@ interface PlanOption {
 
 const SUBSCRIPTION_PLANS: PlanOption[] = [
   {
+    id: 'plan_2_two_stations',
+    name: 'الباك الأول: 99 درهم (محطتين فقط)',
+    badge: '99 درهم / شهرياً',
+    priceMad: 99,
+    subtitle: 'فتح جوج محطات (2) فقط، وفي كل محطة عامل واحد (1) فقط • الملصقات والبونات تخرج باسم ولوغو التطبيق (Sahara📦 Express)',
+    quotaBadge: 'جوج محطات (2) فقط | عامل واحد (1) في كل محطة | اسم ولوغو Sahara📦 Express',
+    highlights: [
+      'فتح محطتين (2) فقط كحد أقصى في مساحة العمل (مثلاً: محطة الانطلاق ومحطة الوصول)',
+      'تعيين عامل واحد (1) فقط في كل محطة (بإجمالي عاملين فقط مرتبطين بالمدير)',
+      'الملصقات الحرارية وجميع البونات (PDF) تخرج باسم التطبيق الرسمي (Sahara📦 Express) ولوغو التطبيق الرسمي ولا يمكن تغييرهما',
+      'تسيير الكوليات والشحنات والرحلات بين المحطتين مع إشعارات الواتساب وتتبع الكود الرقمي',
+      'دفاتر الصناديق المزدوجة (الدرهم MAD والأوقية MRU) مع الصرف اليدوي',
+    ],
+  },
+  {
     id: 'plan_1_full',
-    name: 'الباك الأول: الباقة الشاملة المفتوحة',
-    badge: 'يستفيد من كل شيء 👑',
-    priceMad: 299,
-    subtitle: 'صاحب الباك الأول يستفيد من كل شيء في التطبيق بدون أي قيود في المحطات أو العمال',
-    quotaBadge: 'محطات مفتوحة بالكامل + عمال غير محدودين في كل محطة',
+    name: 'الباك الثاني: 199 درهم (شامل ومفتوح)',
+    badge: 'الأكثر طلباً 👑 199 درهم',
+    priceMad: 199,
+    subtitle: 'فتح بزاف ديال المحطات وبزاف ديال العمال مرتبطين بأدمين واحد + تخصيص اللوغو والاسم في الملصقات والبونات',
+    quotaBadge: 'محطات غير محدودة + عمال غير محدودين مرتبطين بأدمين واحد + لوغو خاص بك',
     isPopular: true,
     highlights: [
-      'فتح عدد غير محدود من المحطات والمدن عبر الخط الصحراوي بدون قيود',
-      'إضافة وتعيين عدد غير محدود من العمال في كل محطة',
+      'فتح عدد غير محدود من المحطات والمدن ومرتبطين بأدمين (مدير) واحد يتحكم فيهم بالكامل',
+      'إضافة وتعيين عدد غير محدود من العمال في جميع المحطات تحت إدارة نفس الأدمين',
+      'وضع اللوغو (الشعار) الخاص بك واسم وكالتك على جميع الملصقات الحرارية وبونات الـ PDF والمانيفست',
       'إدارة شاملة للكوليات، الرحلات، والصناديق المزدوجة (MAD / MRU) مع الصرف اليدوي',
     ],
     extraFeatures: [
       {
         icon: ImagePlus,
-        title: 'تعديل الصورة والشعار في الملصقات الحرارية (10×10)',
-        desc: 'ضع لوغو وصورة وكالتك الخاصة واسمك التجاري على جميع ملصقات الكوليات والفواتير.',
+        title: 'تخصيص اللوغو والاسم في الملصقات الحرارية وبونات الـ PDF',
+        desc: 'ضع لوغو وكالتك الخاصة واسمك التجاري على جميع الملصقات الحرارية (10×10) وبونات الـ PDF.',
       },
       {
         icon: Users,
@@ -69,24 +85,9 @@ const SUBSCRIPTION_PLANS: PlanOption[] = [
       },
       {
         icon: Zap,
-        title: 'المسح الجماعي السريع + تصدير شامل (Excel / PDF)',
-        desc: 'وضع المسح المتتالي للسائق، تنبيهات الستوك المتأخر، ونسخ احتياطي بضغطة زر.',
+        title: 'المسح الجماعي السريع + تصدير شامل (PDF)',
+        desc: 'وضع المسح المتتالي للكوليات، التسليم السريع، وتقارير PDF الاحترافية بضغطة زر.',
       },
-    ],
-  },
-  {
-    id: 'plan_2_two_stations',
-    name: 'الباك الثاني: باقة المحطتين (عامل لكل محطة)',
-    badge: 'محطتين + عامل/محطة',
-    priceMad: 199,
-    subtitle: 'صاحب الباك الثاني يفتح محطتين (2) فقط، وفي كل محطة عامل واحد (1) فقط',
-    quotaBadge: 'الحد الأقصى: فتح محطتين (2) فقط | عامل واحد (1) في كل محطة',
-    highlights: [
-      'فتح محطتين (2) فقط كحد أقصى في مساحة العمل (مثلاً: محطة الانطلاق ومحطة الوصول)',
-      'تعيين عامل واحد (1) فقط في كل محطة (بإجمالي عاملين فقط في مساحة العمل)',
-      'تسيير الكوليات والشحنات والرحلات بين المحطتين مع إشعارات الواتساب',
-      'دفاتر الصناديق المزدوجة (الدرهم MAD والأوقية MRU) مع الصرف اليدوي',
-      'طباعة ملصقات الكوليات وورقة الطريق الرسمية للسائق والجمارك (PDF)',
     ],
   },
 ];
@@ -94,6 +95,7 @@ const SUBSCRIPTION_PLANS: PlanOption[] = [
 export const PaywallModal: React.FC<PaywallModalProps> = ({ isOpen, onClose }) => {
   const {
     isSubscriptionExpired,
+    subscriptionRemainingLabel,
     daysUntilExpiry,
     currentTeam,
     currentWorkspace,
@@ -122,7 +124,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({ isOpen, onClose }) =
   if (!isOpen) return null;
 
   const selectedPlan =
-    SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[0];
+    SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[1];
 
   const handleApplyPlanMode = async () => {
     setIsApplyingPlan(true);
@@ -134,11 +136,11 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({ isOpen, onClose }) =
   };
 
   const whatsappMessage = encodeURIComponent(
-    `السلام عليكم، أرغب في تفعيل / تجديد اشتراك تطبيق محطة الاتحادية:\n` +
+    `السلام عليكم، أرغب في تفعيل / تجديد اشتراك تطبيق Sahara📦 Express:\n` +
       `• *الباقة المختارة:* ${selectedPlan.name}\n` +
       `• *نظام الحصص:* ${selectedPlan.quotaBadge}\n` +
       `• *قيمة الباقة:* ${selectedPlan.priceMad} درهم / شهرياً\n` +
-      `• *اسم مساحة العمل:* ${currentTeam?.name || 'محطة الاتحادية'}\n` +
+      `• *اسم مساحة العمل:* ${currentTeam?.name || 'Sahara📦 Express'}\n` +
       `• *معرف المساحة:* ${currentTeam?.short_id || '---'}\n` +
       `• *المدير المسؤول:* ${currentUser?.name || 'مدير المحطة'}`
   );
@@ -177,25 +179,27 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({ isOpen, onClose }) =
             <div>
               <h2 className="text-sm font-black text-white">
                 {isSubscriptionExpired
-                  ? 'تجديد اشتراك مساحة العمل'
-                  : 'باقات اشتراك محطة الاتحادية'}
+                  ? 'انتهت مدة 30 يوماً — تجديد الاشتراك'
+                  : 'باقات الاشتراك والفترة التجريبية (30 يوماً)'}
               </h2>
               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded-full font-black border ${
                     isSubscriptionExpired
                       ? 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                      : daysUntilExpiry <= 3
+                      ? 'bg-amber-950/80 text-[#F5C84C] border-[#F5C84C]/50'
                       : 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
                   }`}
                 >
                   {isSubscriptionExpired
-                    ? 'الاشتراك منتهي (وضع القراءة فقط)'
-                    : `اشتراك نشط (${daysUntilExpiry} يوم متبقية)`}
+                    ? 'الاشتراك منتهي (الإضافة والإرسال والاستقبال متوقفة للجميع)'
+                    : `اشتراك نشط: متبقي ${subscriptionRemainingLabel}`}
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-[#F5C84C]/20 text-[#F5C84C] border border-[#F5C84C]/40">
                   {currentPlanTier === 'plan_2_two_stations'
-                    ? 'النظام الحالي: الباك الثاني (محطتين + عامل/محطة)'
-                    : 'النظام الحالي: الباك الأول (شامل كل شيء)'}
+                    ? 'النظام الحالي: الباك الأول (99 درهم — محطتين)'
+                    : 'النظام الحالي: الباك الثاني (199 درهم — مفتوح بجميع الخصائص)'}
                 </span>
               </div>
             </div>
@@ -211,10 +215,22 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({ isOpen, onClose }) =
           </button>
         </div>
 
-        {/* Scrollable Body: Two Packages Comparison & Selection */}
+        {/* Scrollable Body: Trial Banner + Two Packages Comparison & Selection */}
         <div className="p-3.5 space-y-3 overflow-y-auto flex-1 text-xs">
-          <div className="text-[11px] text-[#E6C37A] font-bold text-center bg-black/55 py-2 px-3 rounded-xl border border-[#F5C84C]/25">
-            الباك الأول يستفيد من كل شيء بدون قيود • الباك الثاني يفتح محطتين فقط وعامل واحد في كل محطة
+          {/* 30-Day Free Trial Banner */}
+          <div className="p-3 rounded-2xl bg-gradient-to-l from-emerald-950/80 via-black/80 to-amber-950/60 border border-[#F5C84C]/45 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-black text-[#F5C84C] flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span>🎁 الفترة التجريبية المجانية: 30 يوماً كاملة</span>
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-black">
+                تذكير قبل 3 أيام
+              </span>
+            </div>
+            <p className="text-[11px] text-white/90 leading-relaxed">
+              تكون الفترة التجريبية (30 يوماً) <strong>مفتوحة بجميع الخصائص</strong> مع إشعار تذكيري قبل 3 أيام من الانتهاء. عند انتهاء الـ 30 يوماً يتوقف الإرسال والاستقبال والإضافة عند الأدمين والعامل حتى التجديد.
+            </p>
           </div>
 
           {/* Two Packages Grid / Stack */}
@@ -298,8 +314,8 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({ isOpen, onClose }) =
                       <Sparkles className="w-3 h-3 text-[#F5C84C]" />
                       <span>
                         {plan.id === 'plan_1_full'
-                          ? 'جميع المحطات والعمال مفتوحين + الشعار والزبناء VIP'
-                          : 'محطتين (2) فقط + عامل واحد (1) في كل محطة'}
+                          ? 'محطات وعمال غير محدودين + لوغو خاص في الملصقات والبونات'
+                          : 'محطتين (2) فقط + عامل لكل محطة + اسم ولوغو التطبيق'}
                       </span>
                     </span>
 
@@ -396,8 +412,8 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({ isOpen, onClose }) =
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>
                 {selectedPlanId === 'plan_2_two_stations'
-                  ? 'تطبيق نظام الباك الثاني الآن (فتح محطتين + عامل لكل محطة)'
-                  : 'تطبيق نظام الباك الأول الشامل الآن (فتح كل شيء بدون حدود)'}
+                  ? 'تطبيق الباك الأول الآن (99 درهم: محطتين + عامل/محطة + لوغو التطبيق)'
+                  : 'تطبيق الباك الثاني الآن (199 درهم: محطات وعمال غير محدودين + لوغو خاص)'}
               </span>
             </button>
           )}
