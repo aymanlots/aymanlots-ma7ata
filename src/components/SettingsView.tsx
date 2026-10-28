@@ -55,6 +55,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const { 
     currentUser, 
     userRole, 
+    userAssignedStationId,
     currentWorkspace,
     workspaceMembers,
     addWorkerByOwner,
@@ -245,6 +246,192 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const pendingJoinRequestsCount = (joinRequests || []).filter(r => r.status === 'pending').length;
 
+  // Dedicated worker profile editor state
+  const [workerNameInput, setWorkerNameInput] = useState(currentUser?.name || '');
+  const [workerPhoneInput, setWorkerPhoneInput] = useState(currentUser?.phone || '');
+  const [workerWhatsappInput, setWorkerWhatsappInput] = useState(currentUser?.whatsapp_number || currentUser?.phone || '');
+  const [isSavingWorkerProfile, setIsSavingWorkerProfile] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setWorkerNameInput(currentUser.name || '');
+      setWorkerPhoneInput(currentUser.phone || '');
+      setWorkerWhatsappInput(currentUser.whatsapp_number || currentUser.phone || '');
+    }
+  }, [currentUser?.name, currentUser?.phone, currentUser?.whatsapp_number]);
+
+  const handleSaveWorkerProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!workerNameInput.trim()) {
+      showToast('يرجى كتابة اسمك الكامل', 'error');
+      return;
+    }
+    if (!workerPhoneInput.trim()) {
+      showToast('يرجى كتابة رقم الهاتف', 'error');
+      return;
+    }
+    setIsSavingWorkerProfile(true);
+    try {
+      await updateUserContactNumbers(
+        workerPhoneInput.trim(),
+        workerWhatsappInput.trim() || workerPhoneInput.trim(),
+        workerNameInput.trim()
+      );
+      showToast('تم حفظ وتحديث بياناتك بنجاح، وستظهر فوراً للمدير ✓', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر تحديث البيانات', 'error');
+    } finally {
+      setIsSavingWorkerProfile(false);
+    }
+  };
+
+  // If user is a worker, render dedicated clean worker settings view (no station/quota/system admin settings)
+  if (userRole === 'worker') {
+    const assignedStation = stations.find(s => s.id === (userAssignedStationId || ''));
+    return (
+      <div className="space-y-3.5 pb-36 text-right animate-fadeIn" dir="rtl">
+        {/* 1. Worker Header Card */}
+        <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-11 h-11 rounded-2xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0 shadow-md">
+                <User className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <h2 className="text-sm font-black text-white">{currentUser?.name || 'موظف المحطة'}</h2>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#F5C84C]/20 text-[#F5C84C] border border-[#F5C84C]/40 font-black">
+                    موظف محطة معتمد
+                  </span>
+                </div>
+                <p className="text-[11px] text-white/80 font-bold mt-0.5">
+                  {assignedStation ? `المحطة المعين بها: ${assignedStation.name} (${assignedStation.city})` : (currentWorkspace?.name || 'محطة الاتحادية')}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Connection status badge */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+              isOnline 
+                ? 'bg-[#006233]/30 text-[#2ECC71] border-[#006233]/50' 
+                : 'bg-rose-950/60 text-rose-300 border-rose-500/40 animate-pulse'
+            }`}>
+              {isOnline ? <Wifi className="w-3 h-3 text-[#2ECC71]" /> : <WifiOff className="w-3 h-3" />}
+              <span>{isOnline ? 'متصل بالإنترنت' : 'وضع غير متصل (أوفلاين)'}</span>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border bg-[#D4AF37]/20 text-[#F5C84C] border-[#D4AF37]/50 shadow-sm">
+              <ShieldCheck className="w-3 h-3 text-[#F5C84C]" />
+              <span>مزامنة سحابية نشطة ⚡</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Prominent Download / Install PWA Button Card */}
+        <PWAInstallButton variant="card" />
+
+        {/* 3. Worker Personal Profile Editor (Name and Phone only - visible to manager) */}
+        <div className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#F5C84C]/40">
+          <div className="flex items-center gap-2.5 border-b border-white/15 pb-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0">
+              <Pencil className="w-4 h-4 stroke-[2.5]" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-white">تعديل بياناتي الشخصية (الاسم ورقم الهاتف)</h3>
+              <p className="text-[10px] text-white/70">
+                تحديث اسمك ورقم هاتفك وسيظهران فوراً للمدير في قائمة فريق المحطة
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveWorkerProfile} className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-[#F5C84C] block">
+                اسم العامل الكامل *:
+              </label>
+              <input
+                type="text"
+                required
+                value={workerNameInput}
+                onChange={e => setWorkerNameInput(e.target.value)}
+                placeholder="اسمك الكامل..."
+                className="w-full bg-black/60 border border-white/20 focus:border-[#F5C84C] rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-[#F5C84C] block">
+                رقم هاتفك الشخصي والاتصال *:
+              </label>
+              <input
+                type="tel"
+                required
+                value={workerPhoneInput}
+                onChange={e => setWorkerPhoneInput(e.target.value)}
+                placeholder="+212... أو +222..."
+                dir="ltr"
+                className="w-full bg-black/60 border border-white/20 focus:border-[#F5C84C] rounded-xl px-3 py-2 text-xs text-white font-mono font-bold focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-[#F5C84C] block">
+                رقم الواتساب الخاص بك:
+              </label>
+              <input
+                type="tel"
+                value={workerWhatsappInput}
+                onChange={e => setWorkerWhatsappInput(e.target.value)}
+                placeholder="+212... أو +222..."
+                dir="ltr"
+                className="w-full bg-black/60 border border-white/20 focus:border-[#F5C84C] rounded-xl px-3 py-2 text-xs text-white font-mono font-bold focus:outline-none"
+              />
+            </div>
+
+            <div className="bg-[#F5C84C]/10 border border-[#F5C84C]/30 rounded-xl p-2.5 text-[10px] text-[#F5C84C] font-bold flex items-center gap-1.5">
+              <span>💡 ملاحظة: عند حفظ الاسم ورقم الهاتف، يتم تحديث بياناتك فوراً وتظهر في شاشة المدير تحت قائمة أعضاء المحطة.</span>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSavingWorkerProfile}
+              className="w-full py-2.5 rounded-xl bg-[#F5C84C] hover:bg-[#F5C84C]/90 text-[#111111] font-black text-xs transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md"
+            >
+              {isSavingWorkerProfile ? 'جاري حفظ البيانات...' : 'حفظ بياناتي الشخصية ✓'}
+            </button>
+          </form>
+        </div>
+
+        {/* 4. Language */}
+        <div className="luxury-card rounded-[22px] p-4">
+          <div className="flex items-center gap-2">
+            <Languages className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <h3 className="text-xs font-black text-white">لغة واجهة التطبيق</h3>
+          </div>
+          <div className="mt-2.5 pt-2.5 border-t border-white/15">
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-black/60 border border-white/15 text-xs font-bold text-white">
+              <span className="w-2 h-2 rounded-full bg-[#2ECC71] shrink-0"></span>
+              <span>العربية الفصحى (اللغة الرسمية المعتمدة)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 5. Logout */}
+        <div className="text-center pt-1">
+          <button
+            onClick={logout}
+            className="btn-cancel w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>تسجيل الخروج من الحساب</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3.5 pb-36 text-right animate-fadeIn" dir="rtl">
       
@@ -281,6 +468,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Prominent PWA Download Card for Manager & Workers */}
+      <PWAInstallButton variant="card" />
 
       {/* 1.5 إدارة المحطات وتعديل الأسماء (الوكالة والمحطات في مكان واحد منظم) */}
       {(userRole === 'owner' || userRole === 'platform_owner') && (
@@ -474,7 +664,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 setEditStName(st.name);
                                 setEditStCity(st.city);
                                 setEditStCountry(st.country);
-                                setEditStCurrency(st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
+                                setEditStCurrency((st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD');
                                 setEditStPhone(st.phone || '');
                                 setStationToDeleteId(null);
                               }}

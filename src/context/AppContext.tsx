@@ -171,6 +171,7 @@ interface AppContextType {
   approveJoinRequest: (requestId: string) => Promise<{ success: boolean; error?: string }>;
   rejectJoinRequest: (requestId: string) => Promise<{ success: boolean; error?: string }>;
   renewInviteCode: () => Promise<string>;
+  regenerateInviteCode: () => Promise<string>;
 
   // Admin-to-Admin Collaborations (Optional Sharing)
   collaborations: WorkspaceCollaboration[];
@@ -358,9 +359,18 @@ interface AppContextType {
   addBalanceAdjustment: (stationId: string, currency: string, amount: number, note: string) => Promise<{ success: boolean; error?: string }>;
   createTeam: (name: string) => Promise<{ success: boolean; error?: string }>;
   joinTeam: (inviteCode: string) => Promise<{ success: boolean; error?: string }>;
-  regenerateInviteCode: () => Promise<string>;
-  addStation: (name: string, city: string, country?: 'MA' | 'MR', phone?: string, address?: string, currency?: string) => Promise<{ success: boolean; error?: string; station?: Station }>;
-  updateStation: (stationId: string, updates: { name?: string; city?: string; country?: 'MA' | 'MR'; phone?: string; address?: string; currency?: string }) => Promise<{ success: boolean; error?: string }>;
+  addStation: (
+    nameOrData: string | { name: string; city: string; country?: 'MA' | 'MR'; phone?: string; address?: string; currency?: string; default_currency?: string },
+    city?: string,
+    country?: 'MA' | 'MR',
+    phone?: string,
+    address?: string,
+    currency?: string
+  ) => Promise<{ success: boolean; error?: string; station?: Station }>;
+  updateStation: (
+    stationId: string, 
+    updates: { name?: string; city?: string; country?: 'MA' | 'MR'; phone?: string; address?: string; currency?: string; default_currency?: string }
+  ) => Promise<{ success: boolean; error?: string }>;
   deleteStation: (stationId: string) => Promise<{ success: boolean; error?: string }>;
   addWorkerByOwner: (name: string, phone: string, stationId: string, role?: UserRole) => Promise<{ success: boolean; error?: string; temporaryPassword?: string }>;
   assignWorkerToStation: (stationId: string, userId: string) => Promise<{ success: boolean; error?: string }>;
@@ -394,7 +404,7 @@ interface AppContextType {
   resolvePasswordResetRequest: (requestId: string, approved: boolean, tempPassword?: string) => Promise<{ success: boolean; error?: string; temporaryPassword?: string }>;
   resetMemberPassword: (targetUserId: string, targetPhone?: string) => Promise<{ success: boolean; error?: string; temporaryPassword?: string }>;
   changeMandatoryPassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
-  updateUserContactNumbers: (newPhone: string, newWhatsapp?: string) => Promise<{ success: boolean; error?: string }>;
+  updateUserContactNumbers: (newPhone: string, newWhatsapp?: string, newName?: string) => Promise<{ success: boolean; error?: string }>;
 
   // Language & i18n
   language: Language;
@@ -2636,6 +2646,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     photo_url?: string;
     note?: string;
     parcel_id?: string;
+    hawala_meta?: MoneyTransfer | null;
+    hawala_transfer_id?: string | null;
   }) => {
     if (!currentUser) return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
     const writeCheck = checkWriteAllowed();
@@ -3147,7 +3159,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       created_by: currentUser.id,
       creator_name: currentUser.name,
       created_at: new Date().toISOString(),
-      notes: params.notes?.trim() || null,
+      notes: params.notes?.trim() || undefined,
     };
 
     const totalCashIn = Math.round((sendAmt + commAmt) * 100) / 100;
@@ -4523,13 +4535,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addStation = async (
-    name: string,
-    city: string,
+    nameOrData: string | { name: string; city: string; country?: 'MA' | 'MR'; phone?: string; address?: string; currency?: string; default_currency?: string },
+    city?: string,
     country: 'MA' | 'MR' = 'MA',
     phone?: string,
     address?: string,
     currency?: string
   ): Promise<{ success: boolean; error?: string; station?: Station }> => {
+    let finalName = '';
+    let finalCity = '';
+    let finalCountry: 'MA' | 'MR' = 'MA';
+    let finalPhone: string | undefined;
+    let finalAddress: string | undefined;
+    let finalCurrency: string | undefined;
+
+    if (typeof nameOrData === 'object' && nameOrData !== null) {
+      finalName = nameOrData.name || '';
+      finalCity = nameOrData.city || nameOrData.name || '';
+      finalCountry = nameOrData.country || 'MA';
+      finalPhone = nameOrData.phone;
+      finalAddress = nameOrData.address;
+      finalCurrency = nameOrData.currency || nameOrData.default_currency;
+    } else {
+      finalName = nameOrData || '';
+      finalCity = city || nameOrData || '';
+      finalCountry = country;
+      finalPhone = phone;
+      finalAddress = address;
+      finalCurrency = currency;
+    }
+
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
@@ -4551,18 +4586,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const wsId = currentWorkspace?.id || 'ws-default';
-    const chosenCurrency = currency?.trim().toUpperCase() || (country === 'MR' ? 'MRU' : 'MAD');
+    const chosenCurrency = finalCurrency?.trim().toUpperCase() || (finalCountry === 'MR' ? 'MRU' : 'MAD');
     const newSt: Station = {
       id: isSupabaseConfigured() ? generateUUID() : `sta-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       workspace_id: wsId,
       team_id: wsId,
-      name: name.trim(),
-      city: city.trim() || name.trim(),
-      country,
+      name: finalName.trim(),
+      city: finalCity.trim() || finalName.trim(),
+      country: finalCountry,
       currency: chosenCurrency,
+      default_currency: chosenCurrency,
       owner_id: currentUser?.id || null,
-      phone: phone?.trim(),
-      address: address?.trim(),
+      phone: finalPhone?.trim(),
+      address: finalAddress?.trim(),
       is_active: true,
       created_at: new Date().toISOString(),
     };
@@ -5322,7 +5358,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // Update Registered Phone & WhatsApp Number in Settings (Protects Account if WhatsApp/SIM changes)
-  const updateUserContactNumbers = async (newPhone: string, newWhatsapp?: string) => {
+  const updateUserContactNumbers = async (newPhone: string, newWhatsapp?: string, newName?: string) => {
     if (!currentUser) return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
 
     const cleanNewPhone = cleanPhoneNumber(newPhone);
@@ -5330,6 +5366,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: 'يرجى إدخال رقم هاتف صحيح (8 أرقام على الأقل)' };
     }
     const cleanNewWhatsapp = cleanPhoneNumber(newWhatsapp || '') || cleanNewPhone;
+    const finalName = newName?.trim() || currentUser.name;
     const oldCanonicalPhone = cleanPhoneNumber(currentUser.phone);
 
     // Check if another user already has this phone number
@@ -5358,7 +5395,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
       const existingAcc = localAccounts[oldCanonicalPhone] || {
         id: currentUser.id,
-        name: currentUser.name,
+        name: finalName,
         isOwner: userRole === 'owner' || userRole === 'platform_owner',
       };
       if (oldCanonicalPhone && oldCanonicalPhone !== cleanNewPhone) {
@@ -5366,6 +5403,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       localAccounts[cleanNewPhone] = {
         ...existingAcc,
+        name: finalName,
         phone: cleanNewPhone,
         whatsapp_number: cleanNewWhatsapp,
       };
@@ -5381,6 +5419,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const updatedProfile: Profile = {
       ...currentUser,
+      name: finalName,
       phone: cleanNewPhone,
       whatsapp_number: cleanNewWhatsapp,
     };
@@ -5389,13 +5428,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       localStorage.setItem('ittihadiya_saved_login_phone', cleanNewPhone);
     } catch {}
 
+    // Update workspaceMembers so the manager sees updated worker name and phone
     setWorkspaceMembers(prev =>
       prev.map(m =>
         m.user_id === currentUser.id && m.profile
-          ? { ...m, profile: { ...m.profile, phone: cleanNewPhone, whatsapp_number: cleanNewWhatsapp } }
+          ? { ...m, profile: { ...m.profile, name: finalName, phone: cleanNewPhone, whatsapp_number: cleanNewWhatsapp } }
           : m
       )
     );
+
+    // Update stationWorkers so assigned station worker record also reflects new name
+    setStationWorkers(prev =>
+      prev.map(sw =>
+        sw.user_id === currentUser.id && sw.profile
+          ? { ...sw, profile: { ...sw.profile, name: finalName, phone: cleanNewPhone, whatsapp_number: cleanNewWhatsapp } }
+          : sw
+      )
+    );
+
+    // Sync to Firebase if available
+    if (firebaseSyncService.isAvailable() && currentWorkspace) {
+      const memberToSync = workspaceMembers.find(m => m.user_id === currentUser.id);
+      if (memberToSync) {
+        firebaseSyncService.syncWorkspaceMember(currentWorkspace.id, {
+          ...memberToSync,
+          profile: updatedProfile,
+        }).catch(() => {});
+      }
+      firebaseSyncService.getUserAccount(oldCanonicalPhone).then(existing => {
+        if (existing) {
+          firebaseSyncService.saveUserAccount(cleanNewPhone, {
+            ...existing,
+            name: finalName,
+            phone: cleanNewPhone,
+            whatsapp_number: cleanNewWhatsapp,
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
 
     if (currentWorkspace && currentWorkspace.created_by === currentUser.id) {
       setCurrentWorkspace(prev =>
@@ -5412,7 +5482,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
 
-    showToast('تم تحديث رقم الهاتف المعتمد ورقم الواتساب لاستعادة الحساب بنجاح', 'success');
+    showToast('تم تحديث الاسم ورقم الهاتف والواتساب بنجاح', 'success');
     return { success: true };
   };
 

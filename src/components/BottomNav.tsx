@@ -6,7 +6,8 @@ import {
   Coins, 
   Settings, 
   Plus, 
-  X
+  X,
+  UserCheck
 } from 'lucide-react';
 
 export type NavTab = 'dashboard' | 'parcels' | 'cash' | 'settings';
@@ -16,6 +17,7 @@ interface BottomNavProps {
   onSelectTab: (tab: NavTab) => void;
   onOpenNewVoucher: () => void;
   onOpenNewParcel: () => void;
+  onOpenQuickDeliver?: () => void;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
@@ -23,6 +25,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onSelectTab,
   onOpenNewVoucher,
   onOpenNewParcel,
+  onOpenQuickDeliver,
 }) => {
   const { parcels, currentWorkspace } = useApp();
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -99,6 +102,28 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 </div>
               </div>
             </button>
+
+            {/* Option 3: Quick Deliver (Single or Batch Delivery) */}
+            {isParcelsEnabled && onOpenQuickDeliver && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddMenu(false);
+                  onOpenQuickDeliver();
+                }}
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl transition active:scale-95 text-right cursor-pointer border border-[#F5C84C]/40 bg-[#F5C84C]/10 hover:bg-[#F5C84C]/20"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-bold">
+                    <UserCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-[#F5C84C]">تسليم سريع (كولي أو دفعة كوليات)</h4>
+                    <p className="text-[11px] font-bold text-white/80">مسح وتأكيد استلام الزبون فورياً</p>
+                  </div>
+                </div>
+              </button>
+            )}
           </div>
         </div>
       )}

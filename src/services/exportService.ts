@@ -297,11 +297,26 @@ export const exportService = {
    */
   exportFullWorkspacePDF(
     workspace: Workspace | null,
-    stations: Station[],
-    stationBalances: Record<string, Record<string, number>>,
-    transactions: Transaction[],
-    parcels: Parcel[]
+    stationsOrTransactions: Station[] | Transaction[] = [],
+    stationBalancesOrParcels: Record<string, Record<string, number>> | Parcel[] = {},
+    maybeTransactions?: Transaction[],
+    maybeParcels?: Parcel[]
   ): void {
+    let stations: Station[] = [];
+    let stationBalances: Record<string, Record<string, number>> = {};
+    let transactions: Transaction[] = [];
+    let parcels: Parcel[] = [];
+
+    if (maybeTransactions && maybeParcels) {
+      stations = (stationsOrTransactions as Station[]) || [];
+      stationBalances = (stationBalancesOrParcels as Record<string, Record<string, number>>) || {};
+      transactions = maybeTransactions || [];
+      parcels = maybeParcels || [];
+    } else {
+      transactions = (stationsOrTransactions as Transaction[]) || [];
+      parcels = (stationBalancesOrParcels as Parcel[]) || [];
+    }
+
     const wsName = workspace?.custom_brand_name || workspace?.name || 'محطة الاتحادية';
 
     const stationsHtml = stations

@@ -162,6 +162,7 @@ export interface Station {
   city: string; // 'الداخلة', 'نواذيبو', 'الدار البيضاء', 'العيون', 'نواكشوط', 'الكركرات'
   country: 'MA' | 'MR';
   currency?: string; // العملة الأساسية للمحطة مثلاً 'MAD' أو 'MRU'
+  default_currency?: string; // compatibility alias
   owner_id: string | null;
   is_active: boolean;
   phone?: string;
@@ -549,10 +550,14 @@ export interface MoneyTransfer {
   commission_amount: number;
   payout_amount: number;
   payout_currency: 'MAD' | 'MRU';
+  exchange_rate?: number;
   status: 'pending' | 'paid_out' | 'cancelled';
-  created_by_name: string;
+  created_by?: string;
+  created_by_name?: string;
+  creator_name?: string;
   created_at: string;
   paid_out_at?: string | null;
+  paid_out_by?: string | null;
   paid_out_by_name?: string | null;
   notes?: string;
 }

@@ -79,7 +79,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
     }
     const origSt = stations.find(s => s.id === defaultOrigin);
     if (origSt) {
-      const c = origSt.default_currency || (origSt.country === 'MR' ? 'MRU' : 'MAD');
+      const c: 'MAD' | 'MRU' = (origSt.currency === 'MRU' || origSt.default_currency === 'MRU' || origSt.country === 'MR') ? 'MRU' : 'MAD';
       setSendCurrency(c);
       setPayoutCurrency(c);
     }
@@ -306,7 +306,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                     }
                     const st = stations.find(s => s.id === nextOrigin);
                     if (st) {
-                      const c = st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD');
+                      const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
                       setSendCurrency(c);
                     }
                   }}
@@ -333,7 +333,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                     setDestStationId(nextDest);
                     const st = stations.find(s => s.id === nextDest);
                     if (st) {
-                      const c = st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD');
+                      const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
                       setPayoutCurrency(c);
                     }
                   }}

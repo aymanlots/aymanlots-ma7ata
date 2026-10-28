@@ -16,6 +16,7 @@ import { SettingsView } from './components/SettingsView';
 import { NewVoucherModal } from './components/NewVoucherModal';
 import { NewParcelModal } from './components/NewParcelModal';
 import { ParcelStickerModal } from './components/ParcelStickerModal';
+import { QuickDeliverModal } from './components/QuickDeliverModal';
 import { PaywallModal } from './components/PaywallModal';
 import { SQLModal } from './components/SQLModal';
 import { AuthModal } from './components/AuthModal';
@@ -60,6 +61,7 @@ const MainApp: React.FC = () => {
   const [stickerParcel, setStickerParcel] = useState<Parcel | null>(null);
   const [stickerBatchParcels, setStickerBatchParcels] = useState<Parcel[] | undefined>(undefined);
   const [showGuidedTour, setShowGuidedTour] = useState(false);
+  const [showQuickDeliver, setShowQuickDeliver] = useState(false);
 
   // Auto-open public tracking modal if URL has ?track=CODE
   useEffect(() => {
@@ -275,12 +277,20 @@ const MainApp: React.FC = () => {
             setShowNewVoucher(true);
           }}
           onOpenNewParcel={() => setShowNewParcel(true)}
+          onOpenQuickDeliver={() => setShowQuickDeliver(true)}
+        />
+
+        {/* Quick Deliver Modal (Single or Multi-Parcel Batch Delivery) */}
+        <QuickDeliverModal
+          isOpen={showQuickDeliver}
+          onClose={() => setShowQuickDeliver(false)}
+          onOpenTicket={(p) => setStickerParcel(p)}
         />
 
         {/* New Cash Voucher Modal */}
         <NewVoucherModal
           isOpen={showNewVoucher}
-          initialType={voucherInitialType}
+          defaultType={voucherInitialType}
           onClose={() => setShowNewVoucher(false)}
         />
 
