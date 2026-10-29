@@ -448,7 +448,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 <span>استعادة آمنة عبر بريد Gmail المسجل بالحساب</span>
               </div>
               <p className="text-[11px] text-[#C8B08A] leading-relaxed">
-                أدخل <strong className="text-[#F5D799]">بريد Gmail</strong> الذي أنشأت به حسابك أو رقم الهاتف المسجل. سيقوم النظام بإرسال كود تحقق سري من <strong className="text-[#F5D799]">6 أرقام</strong> مباشرة إلى بريدك الإلكتروني عبر <strong className="text-amber-400">Nodemailer</strong> صالح لمدة <strong className="text-emerald-400">5 دقائق فقط</strong>.
+                أدخل <strong className="text-[#F5D799]">بريد Gmail</strong> الذي أنشأت به حسابك أو رقم الهاتف المسجل. سيقوم النظام بإرسال كود تحقق سري من <strong className="text-[#F5D799]">6 أرقام</strong> مباشرة إلى بريدك الإلكتروني عبر <strong className="text-amber-400">Nodemailer</strong> صالح لمدة <strong className="text-emerald-400">10 دقائق</strong>.
               </p>
             </div>
 
@@ -523,7 +523,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
               </div>
               <div className="p-2 rounded-xl bg-[#120a00] border border-[#D4AF37]/25">
                 <span className="block text-[10px] text-[#C8B08A]">وقت الانتهاء</span>
-                <span className="text-xs font-black text-emerald-400 font-mono">5 دقائق</span>
+                <span className="text-xs font-black text-emerald-400 font-mono">10 دقائق</span>
               </div>
               <div className="p-2 rounded-xl bg-[#120a00] border border-[#D4AF37]/25">
                 <span className="block text-[10px] text-[#C8B08A]">المحرك</span>
@@ -614,8 +614,8 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 <Clock className="w-4 h-4 shrink-0" />
                 <span className="text-[11px] font-bold">
                   {remainingTtlSeconds > 0
-                    ? 'صلاحية الكود (5 دقائق فقط):'
-                    : 'انتهت صلاحية الكود (مرت 5 دقائق)'}
+                    ? 'صلاحية الكود (10 دقائق):'
+                    : 'انتهت صلاحية الكود (مرت 10 دقائق)'}
                 </span>
               </div>
               <span className="font-mono text-sm font-black tracking-wider">

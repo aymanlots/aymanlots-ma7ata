@@ -68,47 +68,53 @@ async function sendOtpViaNodemailerGmail(params: SendMailOtpParams): Promise<{
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${subject}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b0702; margin: 0; padding: 20px; color: #f5eedc; direction: rtl; text-align: right; }
-    .container { max-width: 520px; margin: 0 auto; background: linear-gradient(180deg, #180e03 0%, #120901 100%); border: 1.5px solid #d4af37; border-radius: 20px; padding: 32px 28px; box-shadow: 0 16px 40px rgba(0,0,0,0.8); }
-    .brand-header { text-align: center; padding-bottom: 24px; border-bottom: 1px solid rgba(212,175,55,0.25); }
-    .brand-logo-text { font-size: 24px; font-weight: 900; color: #f5d799; letter-spacing: 0.5px; margin: 0; }
-    .brand-sub { font-size: 13px; color: #e5953e; margin-top: 4px; font-weight: 700; }
-    .content { padding: 24px 0 16px 0; text-align: right; }
-    .greeting { font-size: 16px; color: #f8c885; font-weight: 700; margin-bottom: 12px; }
-    .lead { font-size: 14px; color: #e0d2bd; line-height: 1.6; margin-bottom: 24px; }
-    .otp-wrapper { text-align: center; margin: 28px 0; }
-    .otp-box { display: inline-block; background: #080400; border: 2px dashed #f5b05b; border-radius: 16px; padding: 18px 36px; }
-    .otp-code { font-family: monospace, 'Courier New', Courier; font-size: 38px; font-weight: 900; letter-spacing: 12px; color: #f5b05b; text-shadow: 0 2px 8px rgba(245,176,91,0.3); }
-    .badge-expiry { display: inline-block; margin-top: 10px; background: rgba(245,176,91,0.15); border: 1px solid rgba(245,176,91,0.4); color: #f8c885; font-size: 12px; font-weight: bold; padding: 6px 14px; border-radius: 999px; }
-    .warning-box { background: rgba(180, 83, 9, 0.15); border-right: 4px solid #f59e0b; padding: 12px 16px; border-radius: 8px; margin-top: 20px; font-size: 12px; color: #fde68a; line-height: 1.5; }
-    .footer { text-align: center; margin-top: 28px; padding-top: 20px; border-top: 1px solid rgba(212,175,55,0.2); font-size: 11px; color: #a68966; line-height: 1.6; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f7f5f0; margin: 0; padding: 24px; color: #2d261e; direction: rtl; text-align: right; }
+    .container { max-width: 540px; margin: 0 auto; background: #ffffff; border: 1.5px solid #e8dec8; border-radius: 16px; padding: 36px 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
+    .brand-header { text-align: center; padding-bottom: 22px; border-bottom: 1.5px solid #f0e6d2; }
+    .brand-logo-text { font-size: 26px; font-weight: 900; color: #9c6508; letter-spacing: 0.5px; margin: 0; }
+    .brand-sub { font-size: 13px; color: #785a28; margin-top: 4px; font-weight: 600; }
+    .content { padding: 26px 0 18px 0; text-align: right; }
+    .greeting { font-size: 17px; color: #1f1b16; font-weight: 700; margin-bottom: 14px; }
+    .lead { font-size: 14px; color: #42382c; line-height: 1.7; margin-bottom: 22px; }
+    .otp-wrapper { text-align: center; margin: 26px 0; }
+    .otp-box { display: inline-block; background: #fffbf2; border: 2px dashed #d4af37; border-radius: 14px; padding: 18px 40px; }
+    .otp-code { font-family: monospace, 'Courier New', Courier; font-size: 38px; font-weight: 900; letter-spacing: 12px; color: #b45309; }
+    .badge-expiry { display: inline-block; margin-top: 12px; background: #fef3c7; border: 1px solid #fde68a; color: #92400e; font-size: 12px; font-weight: bold; padding: 6px 16px; border-radius: 999px; }
+    .notice-box { background: #fbfbfb; border-right: 4px solid #b45309; padding: 14px 18px; border-radius: 8px; margin-top: 22px; font-size: 13px; color: #574c3d; line-height: 1.6; }
+    .footer { text-align: center; margin-top: 30px; padding-top: 22px; border-top: 1px solid #eee7db; font-size: 12px; color: #7c7264; line-height: 1.7; }
+    .footer a { color: #9c6508; text-decoration: none; font-weight: 600; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="brand-header">
-      <h1 class="brand-logo-text">Sahara📦 Express</h1>
-      <div class="brand-sub">للسفر ونقل البضائع والكوليات</div>
+      <h1 class="brand-logo-text">Sahara Express 📦</h1>
+      <div class="brand-sub">خدمات السفر ونقل البضائع والكوليات</div>
     </div>
     <div class="content">
       <div class="greeting">مرحباً ${userName || 'بك'}،</div>
-      <div class="lead">${leadMessage}</div>
+      <div class="lead">
+        لقد توصلنا بطلب للتحقق من حسابك على منصة <strong>Sahara Express</strong>. ${leadMessage}
+      </div>
       <div class="otp-wrapper">
         <div class="otp-box">
           <div class="otp-code">${otpCode}</div>
         </div>
         <div>
-          <span class="badge-expiry">⏳ صالح لمدة 5 دقائق فقط (مرة واحدة)</span>
+          <span class="badge-expiry">⏳ صالح لمدة 10 دقائق فقط (للاستخدام مرة واحدة)</span>
         </div>
       </div>
-      ${actionNote ? `<p style="font-size:13px;color:#c8b08a;margin:12px 0;">${actionNote}</p>` : ''}
-      <div class="warning-box">
-        ⚠️ <strong>تنبيه أمني:</strong> لا تشارك هذا الكود السري مع أي شخص. فريق العمل في Sahara Express لن يطلب منك هذا الكود أبداً.
+      ${actionNote ? `<p style="font-size:13px;color:#574c3d;margin:12px 0;">${actionNote}</p>` : ''}
+      <div class="notice-box">
+        🔒 <strong>تنبيه أمني:</strong> لا تشارك هذا الرمز السري مع أي شخص. فريق العمل لن يطلب منك هذا الرمز أبداً.<br>
+        ℹ️ <strong>إلا ما طلبتيش هاد الكود تجاهل هاد الرسالة</strong>، ولن يتم إجراء أي تغيير على حسابك.
       </div>
     </div>
     <div class="footer">
-      نظام Sahara📦 Express الذكي لإدارة المحطات وتتبع الشحنات وحوالات الأمانة.<br>
-      هذه رسالة آلية لحماية حسابك، يرجى عدم الرد عليها.
+      <strong>Sahara Express 📦</strong> - منصة إدارة المحطات وتتبع الإرساليات والكوليات.<br>
+      📍 العنوان: شارع الحسن الثاني، العيون، الصحراء المغربية<br>
+      ✉️ الدعم الفني: <a href="mailto:aissaaimanekhlifi@gmail.com">aissaaimanekhlifi@gmail.com</a> | واتساب: +212 600-000000<br>
+      <span style="font-size:11px;color:#998e7f;">هذه رسالة آلية لتأكيد الأمان تم إرسالها إلى ${cleanEmail}.</span>
     </div>
   </div>
 </body>
@@ -126,13 +132,17 @@ async function sendOtpViaNodemailerGmail(params: SendMailOtpParams): Promise<{
 
   try {
     const sender = (process.env.GMAIL_USER || 'aissaaimanekhlifi@gmail.com').trim();
-    const fromAddress = `"Sahara📦 Express" <${sender}>`;
+    const fromAddress = `"Sahara Express 📦" <${sender}>`;
     const sendResult = await transporter.sendMail({
       from: fromAddress,
       to: cleanEmail,
       subject,
       html: htmlContent,
-      text: `${headerTitle}\nكود التحقق الخاص بك هو: ${otpCode}\nصالح لمدة 5 دقائق فقط.`,
+      text: `مرحباً ${userName || 'بك'}،\n\nكود التحقق الخاص بك هو: ${otpCode}\nصالح لمدة 10 دقائق فقط.\n\nإلا ما طلبتيش هاد الكود تجاهل هاد الرسالة.\n\nفريق Sahara Express 📦\nالعنوان: شارع الحسن الثاني، العيون، الصحراء المغربية\nللتواصل: aissaaimanekhlifi@gmail.com`,
+      headers: {
+        'X-Mailer': 'Sahara Express Mailer',
+        'List-Unsubscribe': `<mailto:${sender}>`,
+      },
     });
     console.log('REAL SEND RESULT:', sendResult.messageId, sendResult.response);
     return {
@@ -176,7 +186,7 @@ const registrationEmailOtpStore = new Map<string, RegistrationEmailOtpRecord>();
 // ============================================================================
 // GMAIL OTP STORE & RATE LIMITER (5-Minute Expiry + Rate Limit)
 // ============================================================================
-const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes expiration
+const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes expiration
 const OTP_COOLDOWN_MS = 60 * 1000; // 60 seconds minimum between sends
 const OTP_WINDOW_MS = 15 * 60 * 1000; // 15 minutes rate-limit window
 const OTP_MAX_SENDS_PER_WINDOW = 3; // Max 3 OTP sends per 15 minutes per user/IP
@@ -203,7 +213,9 @@ const ipRateLimitStore = new Map<string, { count: number; windowStartMs: number;
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const portArgIndex = process.argv.indexOf('--port');
+  const portFromArg = portArgIndex !== -1 ? Number(process.argv[portArgIndex + 1]) : null;
+  const PORT = portFromArg || (process.env.NODE_ENV === 'production' && process.env.PORT ? Number(process.env.PORT) : 3000);
 
   app.use(express.json({ limit: '5mb' }));
 
@@ -280,10 +292,10 @@ async function startServer() {
       const emailDelivery = await sendOtpViaNodemailerGmail({
         toEmail: rawEmail,
         otpCode,
-        subject: `🔐 كود تأكيد التسجيل [${otpCode}] - Sahara📦 Express`,
+        subject: `مرحبا ${userName || 'Anas'}، كود التحقق ديالك هو ${otpCode} - Sahara Express`,
         headerTitle: 'تأكيد التسجيل في Sahara Express',
-        leadMessage: 'مرحباً بك في Sahara Express. لتأكيد عنوان بريدك الإلكتروني وإتمام إنشاء حسابك، يرجى استخدام كود التحقق السري التالي:',
-        userName: userName || 'عضو جديد',
+        leadMessage: 'لتأكيد عنوان بريدك الإلكتروني وإتمام إنشاء حسابك، يرجى استخدام كود التحقق السري:',
+        userName: userName || 'Anas',
         actionNote: 'أدخل هذا الكود المكون من 6 أرقام في شاشة التسجيل للمتابعة.',
       });
 
@@ -303,7 +315,7 @@ async function startServer() {
         success: true,
         email: rawEmail,
         expiresAtMs,
-        ttlSeconds: 300,
+        ttlSeconds: 600,
         cooldownSeconds: Math.floor(OTP_COOLDOWN_MS / 1000),
         remainingSends: Math.max(0, 5 - newRecord.sendCount),
         deliveredViaGmail: true,
@@ -512,10 +524,10 @@ async function startServer() {
       const emailDelivery = await sendOtpViaNodemailerGmail({
         toEmail: rawEmail,
         otpCode,
-        subject: `🔐 كود استعادة كلمة المرور [${otpCode}] - Sahara📦 Express`,
+        subject: `مرحبا ${userName || 'Anas'}، كود التحقق ديالك هو ${otpCode} - Sahara Express`,
         headerTitle: 'استعادة كلمة المرور',
         leadMessage: 'لقد تم طلب كود لإعادة تعيين كلمة المرور الخاصة بحسابك في Sahara Express. استخدم الكود السري التالي للمتابعة:',
-        userName: userName || 'عضو Sahara Express',
+        userName: userName || 'Anas',
         actionNote: 'أدخل هذا الكود في شاشة استعادة كلمة المرور لتعيين كلمة مرورك الجديدة.',
       });
 

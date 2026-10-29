@@ -76,7 +76,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const otpCode = String(crypto.randomInt(100000, 1000000));
-    const expiresAtMs = Date.now() + 5 * 60 * 1000;
+    const expiresAtMs = Date.now() + 10 * 60 * 1000;
     emailCache.set(rawEmail, { email: rawEmail, otpCode, expiresAtMs });
 
     const transporter = getTransporter();
@@ -90,24 +90,48 @@ export default async function handler(req: any, res: any) {
     }
 
     const sender = (process.env.GMAIL_USER || 'aissaaimanekhlifi@gmail.com').trim();
+    const displayName = userName || 'Anas';
     const html = `
-      <div dir="rtl" style="font-family:Arial,sans-serif;max-width:500px;margin:auto;background:#1a0f00;color:#f5d799;border:1.5px solid #d4af37;border-radius:18px;padding:24px;">
-        <h2 style="color:#f5b05b;text-align:center;margin-top:0;">Sahara📦 Express</h2>
-        <p style="color:#fff;font-size:14px;line-height:1.6;">مرحباً ${userName}،<br>كود التحقق الخاص بتأكيد تسجيل حسابك هو:</p>
-        <div style="text-align:center;margin:22px 0;">
-          <div style="display:inline-block;background:#080400;border:2px dashed #f5b05b;padding:14px 28px;border-radius:12px;font-size:32px;font-weight:900;letter-spacing:10px;color:#f5b05b;font-family:monospace;">${otpCode}</div>
+      <div dir="rtl" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:540px;margin:auto;background:#ffffff;color:#2d261e;padding:32px 28px;border:1.5px solid #e8dec8;border-radius:16px;">
+        <div style="text-align:center;padding-bottom:20px;border-bottom:1.5px solid #f0e6d2;">
+          <h2 style="color:#9c6508;margin:0;font-size:24px;">Sahara Express 📦</h2>
+          <p style="color:#785a28;font-size:13px;margin:4px 0 0 0;">خدمات السفر ونقل البضائع والكوليات</p>
         </div>
-        <p style="color:#c8b08a;font-size:12px;text-align:center;">⏳ صالح لمدة 5 دقائق فقط. لا تشاركه مع أي شخص.</p>
+        <div style="padding:24px 0 16px 0;text-align:right;">
+          <p style="font-size:16px;color:#1f1b16;font-weight:700;margin:0 0 12px 0;">مرحباً ${displayName}،</p>
+          <p style="font-size:14px;color:#42382c;line-height:1.7;margin:0 0 20px 0;">
+            لقد توصلنا بطلب لتأكيد تسجيل حسابك على منصة <strong>Sahara Express</strong>. يرجى استخدام كود التحقق السري لإتمام التسجيل:
+          </p>
+          <div style="text-align:center;margin:24px 0;">
+            <div style="display:inline-block;background:#fffbf2;border:2px dashed #d4af37;padding:16px 36px;border-radius:14px;font-size:36px;font-weight:900;letter-spacing:10px;color:#b45309;font-family:monospace;">${otpCode}</div>
+            <div style="margin-top:10px;">
+              <span style="display:inline-block;background:#fef3c7;border:1px solid #fde68a;color:#92400e;font-size:12px;font-weight:bold;padding:5px 14px;border-radius:999px;">⏳ صالح لمدة 10 دقائق فقط (للاستخدام مرة واحدة)</span>
+            </div>
+          </div>
+          <div style="background:#fbfbfb;border-right:4px solid #b45309;padding:14px 18px;border-radius:8px;margin-top:20px;font-size:13px;color:#574c3d;line-height:1.6;">
+            🔒 <strong>تنبيه أمني:</strong> لا تشارك هذا الرمز السري مع أي شخص. فريق العمل لن يطلب منك هذا الرمز أبداً.<br>
+            ℹ️ <strong>إلا ما طلبتيش هاد الكود تجاهل هاد الرسالة</strong>، ولن يتم إجراء أي تغيير على حسابك.
+          </div>
+        </div>
+        <div style="text-align:center;margin-top:28px;padding-top:20px;border-top:1px solid #eee7db;font-size:12px;color:#7c7264;line-height:1.7;">
+          <strong>Sahara Express 📦</strong> - منصة إدارة المحطات وتتبع الإرساليات والكوليات.<br>
+          📍 العنوان: شارع الحسن الثاني، العيون، الصحراء المغربية<br>
+          ✉️ الدعم والتواصل: <a href="mailto:aissaaimanekhlifi@gmail.com" style="color:#9c6508;text-decoration:none;font-weight:600;">aissaaimanekhlifi@gmail.com</a> | واتساب: +212 600-000000
+        </div>
       </div>
     `;
 
     try {
       const sendInfo = await transporter.sendMail({
-        from: `"Sahara📦 Express" <${sender}>`,
+        from: `"Sahara Express 📦" <${sender}>`,
         to: rawEmail,
-        subject: `🔐 كود تأكيد التسجيل [${otpCode}] - Sahara📦 Express`,
+        subject: `مرحبا ${displayName}، كود التحقق ديالك هو ${otpCode} - Sahara Express`,
         html,
-        text: `كود التحقق الخاص بك هو: ${otpCode} (صالح لمدة 5 دقائق)`,
+        text: `مرحباً ${displayName}،\n\nكود تأكيد التسجيل الخاص بك هو: ${otpCode}\nصالح لمدة 10 دقائق فقط.\n\nإلا ما طلبتيش هاد الكود تجاهل هاد الرسالة.\n\nفريق Sahara Express 📦\nالعنوان: شارع الحسن الثاني، العيون، الصحراء المغربية\nللتواصل: aissaaimanekhlifi@gmail.com`,
+        headers: {
+          'X-Mailer': 'Sahara Express Mailer',
+          'List-Unsubscribe': `<mailto:${sender}>`,
+        },
       });
 
       console.log('REAL SEND RESULT:', sendInfo.messageId, sendInfo.response);
@@ -116,7 +140,7 @@ export default async function handler(req: any, res: any) {
         success: true,
         email: rawEmail,
         expiresAtMs,
-        ttlSeconds: 300,
+        ttlSeconds: 600,
         cooldownSeconds: 60,
         deliveredViaGmail: true,
         messageId: sendInfo.messageId,

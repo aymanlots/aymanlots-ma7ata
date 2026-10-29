@@ -130,7 +130,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
         return;
       }
 
-      const expMs = otpRes.expiresAtMs || Date.now() + 5 * 60 * 1000;
+      const expMs = otpRes.expiresAtMs || Date.now() + 10 * 60 * 1000;
       setOtpExpiresAtMs(expMs);
       setRemainingTtlSeconds(Math.max(0, Math.ceil((expMs - Date.now()) / 1000)));
       setCooldownSeconds(otpRes.cooldownSeconds || 60);
@@ -163,7 +163,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
         return;
       }
 
-      const expMs = res.expiresAtMs || Date.now() + 5 * 60 * 1000;
+      const expMs = res.expiresAtMs || Date.now() + 10 * 60 * 1000;
       setOtpExpiresAtMs(expMs);
       setRemainingTtlSeconds(Math.max(0, Math.ceil((expMs - Date.now()) / 1000)));
       setCooldownSeconds(res.cooldownSeconds || 60);
@@ -360,7 +360,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                 {email}
               </p>
               <p className="text-[11px] text-[#C8B08A]">
-                استعملنا خدمة <strong>Nodemailer</strong> لتأمين بريدك. تفقد صندوق الوارد أو البريد غير المرغوب فيه (Spam).
+                تم إرسال الكود من <strong>Sahara Express 📦</strong> عبر خدمة <strong>Nodemailer</strong>. تفقد صندوق الوارد أو البريد غير المرغوب فيه (Spam). الكود صالح لمدة 10 دقائق.
               </p>
             </div>
 
@@ -597,7 +597,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                   className="text-xs text-[#F5D799] hover:text-white font-bold underline underline-offset-4 transition flex items-center gap-1.5 cursor-pointer"
                 >
                   <KeyRound className="w-3.5 h-3.5 text-[#F5B05B]" />
-                  <span>نسيت كلمة المرور؟ (استعادة بكود إلى بريدك Gmail أو واتساب)</span>
+                  <span>نسيت كلمة المرور؟ (استعادة فورية بكود 6 أرقام إلى بريدك Gmail)</span>
                 </button>
               </div>
             )}

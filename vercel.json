@@ -4,8 +4,32 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/auth/register/send-email-otp",
+      "destination": "/api/send-otp"
+    },
+    {
+      "source": "/api/auth/register/verify-email-otp",
+      "destination": "/api/register"
+    },
+    {
+      "source": "/api/auth/forgot-password/send-otp",
+      "destination": "/api/send-otp"
+    },
+    {
+      "source": "/api/auth/forgot-password/verify-otp",
+      "destination": "/api/register"
+    },
+    {
+      "source": "/api/send-otp",
+      "destination": "/api/send-otp"
+    },
+    {
+      "source": "/api/register",
+      "destination": "/api/register"
+    },
+    {
       "source": "/api/(.*)",
-      "destination": "/api/index.ts"
+      "destination": "/api/index"
     },
     {
       "source": "/((?!api/|assets/|sw\\.js|manifest\\.json|logo\\.png|icons/).*)",
