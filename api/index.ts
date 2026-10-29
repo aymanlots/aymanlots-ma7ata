@@ -17,7 +17,9 @@ function getTransporter() {
     return null;
   }
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: { user, pass },
   });
 }
@@ -82,7 +84,7 @@ export default async function handler(req: any, res: any) {
           text: `كود التحقق الخاص بك هو: ${otpCode}`,
         });
 
-        console.log(`[Vercel API /index SMTP Success] Registration code sent to ${email}, messageId: ${info.messageId}`);
+        console.log('REAL SEND RESULT:', info.messageId, info.response);
         return res.status(200).json({
           success: true,
           email,
@@ -169,7 +171,7 @@ export default async function handler(req: any, res: any) {
           text: `كود استعادة كلمة المرور هو: ${otpCode}`,
         });
 
-        console.log(`[Vercel API /index SMTP Success] Recovery code sent to ${targetEmail}, messageId: ${info.messageId}`);
+        console.log('REAL SEND RESULT:', info.messageId, info.response);
         return res.status(200).json({
           success: true,
           expiresAtMs,

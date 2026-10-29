@@ -43,7 +43,9 @@ function getMailTransporter() {
     return null;
   }
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: { user, pass },
   });
 }
@@ -114,7 +116,7 @@ async function sendOtpViaNodemailerGmail(params: SendMailOtpParams): Promise<{
   `;
 
   if (!transporter) {
-    console.warn(`[Nodemailer Warning] GMAIL credentials missing on server. Fallback preview code for ${cleanEmail}: ${otpCode}`);
+    console.warn(`[Nodemailer Warning] GMAIL credentials missing on server. Cannot send to ${cleanEmail}`);
     return {
       delivered: false,
       error: 'GMAIL_CREDENTIALS_MISSING',
@@ -132,7 +134,7 @@ async function sendOtpViaNodemailerGmail(params: SendMailOtpParams): Promise<{
       html: htmlContent,
       text: `${headerTitle}\nكود التحقق الخاص بك هو: ${otpCode}\nصالح لمدة 5 دقائق فقط.`,
     });
-    console.log(`[Nodemailer SMTP Success] Email sent to ${cleanEmail}, messageId: ${sendResult.messageId}`);
+    console.log('REAL SEND RESULT:', sendResult.messageId, sendResult.response);
     return {
       delivered: true,
       messageId: sendResult.messageId,
@@ -320,6 +322,7 @@ async function startServer() {
   app.post('/api/auth/register/send-email-otp', handleSendEmailOtp);
   app.post('/api/register/send-otp', handleSendEmailOtp);
   app.post('/api/register', handleSendEmailOtp);
+  app.post('/api/send-otp', handleSendEmailOtp);
 
   app.post('/api/auth/register/verify-email-otp', async (req, res) => {
     try {
