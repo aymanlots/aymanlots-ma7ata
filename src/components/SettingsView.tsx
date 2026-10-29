@@ -316,7 +316,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-white/80 font-bold mt-0.5">
-                  {assignedStation ? `المحطة المعين بها: ${assignedStation.name} (${assignedStation.city})` : (currentWorkspace?.name || 'محطة الاتحادية')}
+                  {assignedStation ? `المحطة المعين بها: ${assignedStation.name} (${assignedStation.city})` : (currentWorkspace?.name || 'Sahara📦 Express')}
                 </p>
               </div>
             </div>
@@ -722,7 +722,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       type="text"
                       value={brandNameInput}
                       onChange={e => setBrandNameInput(e.target.value)}
-                      placeholder="مثال: محطة الاتحادية"
+                      placeholder="مثال: Sahara📦 Express"
                       className="flex-1 px-3 py-2 rounded-xl text-xs font-bold bg-black/60 border border-white/20 text-white focus:border-[#F5C84C] focus:outline-none"
                     />
                     <button
@@ -1310,7 +1310,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </button>
                     <a
                       href={`https://wa.me/${oneTimeCredential.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                        `مرحباً ${oneTimeCredential.name}، بيانات الدخول المؤقتة الخاصة بك في محطة الاتحادية:\nرقم الهاتف: ${oneTimeCredential.phone}\nكلمة المرور المؤقتة (لمرة واحدة): ${oneTimeCredential.temporaryPassword}\nسيُطلب منك تغييرها فور أول تسجيل دخول.`
+                        `مرحباً ${oneTimeCredential.name}، بيانات الدخول المؤقتة الخاصة بك في Sahara📦 Express:\nرقم الهاتف: ${oneTimeCredential.phone}\nكلمة المرور المؤقتة (لمرة واحدة): ${oneTimeCredential.temporaryPassword}\nسيُطلب منك تغييرها فور أول تسجيل دخول.`
                       )}`}
                       target="_blank"
                       rel="noreferrer"
@@ -1694,7 +1694,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     type="text"
                     value={brandNameInput}
                     onChange={e => setBrandNameInput(e.target.value)}
-                    placeholder="مثال: وكالة الاتحادية السريعة"
+                    placeholder="مثال: Sahara📦 Express"
                     className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white text-xs"
                   />
                 </div>
@@ -1845,7 +1845,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   showToast('لا توجد معاملات نقدية لتصديرها حالياً', 'info');
                   return;
                 }
-                exportService.exportTransactionsToPDF(transactions, currentWorkspace?.name || 'محطة الاتحادية');
+                exportService.exportTransactionsToPDF(transactions, currentWorkspace?.name || 'Sahara📦 Express');
                 showToast('تم فتح وتحميل تقرير سجل الصندوق بصيغة PDF', 'success');
               }}
               className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
@@ -1863,7 +1863,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   showToast('لا توجد سجلات كوليات لتصديرها حالياً', 'info');
                   return;
                 }
-                exportService.exportParcelsToPDF(parcels, currentWorkspace?.name || 'محطة الاتحادية');
+                exportService.exportParcelsToPDF(parcels, currentWorkspace?.name || 'Sahara📦 Express');
                 showToast('تم فتح وتحميل تقرير سجلات الكوليات بصيغة PDF', 'success');
               }}
               className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
@@ -2026,10 +2026,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   onClick={() => {
                     if (transactions.length > 0) {
-                      exportService.exportTransactionsToPDF(transactions, currentWorkspace?.name || 'محطة الاتحادية');
+                      exportService.exportTransactionsToPDF(transactions, currentWorkspace?.name || 'Sahara📦 Express');
                     }
                     if (parcels.length > 0) {
-                      exportService.exportParcelsToPDF(parcels, currentWorkspace?.name || 'محطة الاتحادية');
+                      exportService.exportParcelsToPDF(parcels, currentWorkspace?.name || 'Sahara📦 Express');
                     }
                     showToast('تم فتح وتحميل تقارير الصندوق والكوليات (PDF) بنجاح', 'success');
                   }}

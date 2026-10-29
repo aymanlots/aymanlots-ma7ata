@@ -42,6 +42,8 @@ export interface Profile {
   id: string;
   phone: string;
   whatsapp_number: string;
+  email?: string;
+  email_verified?: boolean;
   name: string;
   avatar_url?: string;
   role?: UserRole;

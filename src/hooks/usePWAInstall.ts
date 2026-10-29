@@ -79,7 +79,7 @@ export function usePWAInstall() {
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#0B1220" />
-  <title>محطة الاتحادية</title>
+  <title>Sahara Express</title>
   <link rel="icon" href="${appOrigin}/icon-512.png" />
   <link rel="apple-touch-icon" href="${appOrigin}/icon-192.png" />
   <script>window.location.replace("${appOrigin}/");</script>
@@ -88,7 +88,7 @@ export function usePWAInstall() {
   </style>
 </head>
 <body>
-  <a href="${appOrigin}/" style="color:#F5C84C;text-decoration:none;font-weight:bold;font-size:18px;">فتح تطبيق محطة الاتحادية</a>
+  <a href="${appOrigin}/" style="color:#F5C84C;text-decoration:none;font-weight:bold;font-size:18px;">فتح تطبيق Sahara Express</a>
 </body>
 </html>`;
 
@@ -96,7 +96,7 @@ export function usePWAInstall() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'تطبيق-محطة-الاتحادية.html';
+    link.download = 'Sahara-Express.html';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

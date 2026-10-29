@@ -202,7 +202,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
   const sendWhatsAppNotification = (t: MoneyTransfer) => {
     const cleanPhone = t.receiver_phone.replace(/[^0-9]/g, '');
     const msg =
-      `💸 *إشعار حوالة مالية - محطة الاتحادية*\n` +
+      `💸 *إشعار حوالة مالية - Sahara📦 Express*\n` +
       `رقم الحوالة: *${t.transfer_code}*\n` +
       `من المحطة: ${t.origin_station_name}\n` +
       `إلى المحطة: ${t.destination_station_name}\n` +

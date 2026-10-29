@@ -45,6 +45,7 @@ export interface CloudUserAccount {
   phone: string;
   whatsapp_number?: string;
   email?: string;
+  email_verified?: boolean;
   password?: string;
   role: 'owner' | 'worker';
   workspace_id: string;
@@ -54,6 +55,24 @@ export interface CloudUserAccount {
   deleted?: boolean;
   created_at: string;
   updated_at?: string;
+}
+
+export interface CloudPasswordResetOtp {
+  id: string;
+  phone: string;
+  whatsapp_number: string;
+  email?: string;
+  otp_code: string;
+  expires_at: string;
+  expires_at_ms: number;
+  attempts: number;
+  send_count: number;
+  window_start_ms: number;
+  last_sent_ms: number;
+  verified: boolean;
+  used: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
@@ -132,6 +151,94 @@ export const firebaseSyncService = {
     } catch (err) {
       console.warn('Firestore getUserAccount warning:', err);
       return null;
+    }
+  },
+
+  /**
+   * Finds any user account (manager or worker across all workspaces) by their
+   * canonical phone, WhatsApp number, or registered Gmail/email address.
+   */
+  async findUserAccountByPhoneOrWhatsapp(canonicalNumber: string): Promise<CloudUserAccount | null> {
+    return this.findUserAccountByIdentifier(canonicalNumber);
+  },
+
+  async findUserAccountByIdentifier(identifier: string): Promise<CloudUserAccount | null> {
+    if (!this.isAvailable() || !identifier) return null;
+    const cleanId = identifier.trim();
+    const isEmail = cleanId.includes('@');
+
+    try {
+      if (isEmail) {
+        const lowerEmail = cleanId.toLowerCase();
+        const qEmail = query(collection(db, 'users'), where('email', '==', lowerEmail));
+        const snapEmail = await getDocs(qEmail);
+        if (!snapEmail.empty) {
+          return snapEmail.docs[0].data() as CloudUserAccount;
+        }
+      }
+
+      // 1. Direct lookup by document ID (phone)
+      const direct = await this.getUserAccount(cleanId);
+      if (direct) return direct;
+
+      // 2. Query by whatsapp_number field
+      const qWhatsapp = query(collection(db, 'users'), where('whatsapp_number', '==', cleanId));
+      const snapWhatsapp = await getDocs(qWhatsapp);
+      if (!snapWhatsapp.empty) {
+        return snapWhatsapp.docs[0].data() as CloudUserAccount;
+      }
+
+      // 3. Query by phone field
+      const qPhone = query(collection(db, 'users'), where('phone', '==', cleanId));
+      const snapPhone = await getDocs(qPhone);
+      if (!snapPhone.empty) {
+        return snapPhone.docs[0].data() as CloudUserAccount;
+      }
+
+      // 4. Query by email if identifier was passed without @
+      if (!isEmail) {
+        const qEmailFallback = query(collection(db, 'users'), where('email', '==', cleanId.toLowerCase()));
+        const snapEmailFallback = await getDocs(qEmailFallback);
+        if (!snapEmailFallback.empty) {
+          return snapEmailFallback.docs[0].data() as CloudUserAccount;
+        }
+      }
+
+      return null;
+    } catch (err) {
+      console.warn('Firestore findUserAccountByIdentifier warning:', err);
+      return null;
+    }
+  },
+
+  // 0.b PASSWORD RESET OTP RECORDS (6-digit OTP + 5-min expiration + rate limit state in Firestore)
+  async getPasswordResetOtp(phoneKey: string): Promise<CloudPasswordResetOtp | null> {
+    if (!this.isAvailable() || !phoneKey) return null;
+    try {
+      const snap = await getDoc(doc(db, 'password_reset_otps', phoneKey));
+      if (!snap.exists()) return null;
+      return snap.data() as CloudPasswordResetOtp;
+    } catch (err) {
+      console.warn('Firestore getPasswordResetOtp warning:', err);
+      return null;
+    }
+  },
+
+  async savePasswordResetOtp(phoneKey: string, record: CloudPasswordResetOtp): Promise<void> {
+    if (!this.isAvailable() || !phoneKey) return;
+    const path = `password_reset_otps/${phoneKey}`;
+    try {
+      await setDoc(
+        doc(db, 'password_reset_otps', phoneKey),
+        sanitizeForFirestore({
+          ...record,
+          id: phoneKey,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Firestore savePasswordResetOtp warning:', path, err);
     }
   },
 

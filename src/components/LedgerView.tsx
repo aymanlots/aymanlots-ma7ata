@@ -212,7 +212,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
     }
     exportService.exportTransactionsToPDF(
       filteredTransactions,
-      currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'محطة الاتحادية'
+      currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'Sahara📦 Express'
     );
     showToast('جاري تحضير ملف PDF لسجل الصندوق...', 'success');
   };

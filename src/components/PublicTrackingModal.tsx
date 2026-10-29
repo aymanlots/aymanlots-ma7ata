@@ -133,7 +133,7 @@ export const PublicTrackingModal: React.FC<PublicTrackingModalProps> = ({
   const handleSendWhatsAppCode = () => {
     if (!trackedParcel || !displayNumericCode) return;
     const msg =
-      `📦 *${trackedParcel.workspace_name || 'محطة الاتحادية'} — تتبع الكولي*\n` +
+      `📦 *${trackedParcel.workspace_name || 'Sahara📦 Express'} — تتبع الكولي*\n` +
       `• *كود التتبع:* ${displayNumericCode}\n` +
       `• *من محطة:* ${trackedParcel.origin_station_name || 'الانطلاق'} ➔ *إلى:* ${trackedParcel.destination_station_name || 'الوصول'}\n` +
       `• *المرسل:* ${trackedParcel.sender_name || '—'} | *المستلم:* ${trackedParcel.receiver_name || '—'}\n` +
@@ -225,7 +225,7 @@ export const PublicTrackingModal: React.FC<PublicTrackingModalProps> = ({
                 <div className="flex items-center justify-between flex-wrap gap-2 border-b border-white/15 pb-2.5">
                   <div>
                     <span className="text-[10px] text-white/70 block">
-                      {trackedParcel.workspace_name || 'محطة الاتحادية للنقل الدولي'}
+                      {trackedParcel.workspace_name || 'Sahara📦 Express'}
                     </span>
                     <div className="flex items-center gap-2 mt-0.5">
                       <button

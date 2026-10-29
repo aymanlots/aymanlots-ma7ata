@@ -904,8 +904,8 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
             type="button"
             onClick={() =>
               printOfficialParcelBonPDF(parcel, {
-                name: currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'محطة الاتحادية',
-                subtitle: currentWorkspace?.custom_brand_subtitle || 'اللوجيستيك والنقل الدولي',
+                name: currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'Sahara📦 Express',
+                subtitle: currentWorkspace?.custom_brand_subtitle || 'للسفر ونقل البضائع والكوليات',
                 phone: currentWorkspace?.custom_brand_phone || currentWorkspace?.owner_phone || '',
                 logoUrl: currentWorkspace?.custom_brand_logo_url || '',
               })

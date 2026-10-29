@@ -147,10 +147,30 @@ interface AppContextType {
     name: string;
     phone: string;
     whatsapp_number: string;
+    email: string;
     password?: string;
     isOwner: boolean;
     teamInviteCode?: string;
   }) => Promise<{ success: boolean; error?: string }>;
+  sendRegistrationEmailOtp: (
+    email: string,
+    userName?: string
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    expiresAtMs?: number;
+    cooldownSeconds?: number;
+    previewCode?: string;
+    deliveredViaGmail?: boolean;
+  }>;
+  verifyRegistrationEmailOtp: (
+    email: string,
+    otpCode: string
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    remainingAttempts?: number;
+  }>;
   loginWithCredentials: (phone: string, password?: string) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
@@ -405,6 +425,44 @@ interface AppContextType {
   resetMemberPassword: (targetUserId: string, targetPhone?: string) => Promise<{ success: boolean; error?: string; temporaryPassword?: string }>;
   changeMandatoryPassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   updateUserContactNumbers: (newPhone: string, newWhatsapp?: string, newName?: string) => Promise<{ success: boolean; error?: string }>;
+  requestWhatsAppOtp: (whatsappOrPhone: string) => Promise<{
+    success: boolean;
+    error?: string;
+    rateLimited?: boolean;
+    retryAfterSeconds?: number;
+    cooldownSeconds?: number;
+    remainingSends?: number;
+    maxSendsPerWindow?: number;
+    expiresAtMs?: number;
+    targetPhone?: string;
+    targetWhatsapp?: string;
+    targetEmail?: string;
+    userName?: string;
+    userRoleLabel?: string;
+    deliveredViaMetaApi?: boolean;
+    deliveredViaGmail?: boolean;
+    metaMessageId?: string | null;
+    otpCodeForPreview?: string;
+  }>;
+  verifyWhatsAppOtpCode: (
+    whatsappOrPhone: string,
+    otpCode: string
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    expired?: boolean;
+    locked?: boolean;
+    remainingAttempts?: number;
+  }>;
+  resetPasswordWithWhatsAppOtp: (
+    whatsappOrPhone: string,
+    otpCode: string,
+    newPassword: string
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    targetPhone?: string;
+  }>;
 
   // Language & i18n
   language: Language;
@@ -518,6 +576,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Ensure short_id exists
       if (!parsed.short_id) {
         parsed.short_id = generateShortId();
+      }
+      if (typeof parsed.name === 'string' && parsed.name.includes('الاتحادية')) {
+        parsed.name = parsed.name.replace(/محطة الاتحادية|الاتحادية/g, 'Sahara📦 Express');
+      }
+      if (typeof parsed.custom_brand_name === 'string' && parsed.custom_brand_name.includes('الاتحادية')) {
+        parsed.custom_brand_name = parsed.custom_brand_name.replace(/محطة الاتحادية|الاتحادية/g, 'Sahara📦 Express');
       }
       return parsed;
     } catch {
@@ -1899,6 +1963,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     name: string;
     phone: string;
     whatsapp_number: string;
+    email: string;
     password?: string;
     isOwner: boolean;
     teamInviteCode?: string;
@@ -1906,17 +1971,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const cleanPhone = cleanPhoneNumber(data.phone);
       const cleanWhatsapp = cleanPhoneNumber(data.whatsapp_number) || cleanPhone;
+      const cleanEmail = (data.email || '').trim().toLowerCase();
       const pwd = (data.password || '').trim();
 
       if (!cleanPhone || cleanPhone.length < 8) {
         return { success: false, error: 'يرجى إدخال رقم هاتف صحيح' };
       }
 
+      if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return { success: false, error: 'بريد Gmail إجباري للتسجيل. يرجى إدخال عنوان بريد إلكتروني صحيح.' };
+      }
+
       if (!pwd || pwd.length < 8) {
         return { success: false, error: 'كلمة المرور يجب أن لا تقل عن 8 أحرف أو أرقام' };
       }
 
-      const syntheticEmail = phoneToEmail(cleanPhone);
+      const syntheticEmail = cleanEmail || phoneToEmail(cleanPhone);
 
       const supabase = getSupabaseClient();
       let userId = `usr-${Date.now()}`;
@@ -1931,6 +2001,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               name: data.name.trim(),
               phone: cleanPhone,
               whatsapp_number: cleanWhatsapp,
+              email: cleanEmail,
               must_change_password: false,
             }
           }
@@ -1940,7 +2011,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (authError.message.toLowerCase().includes('already registered') || authError.message.toLowerCase().includes('already exists')) {
             return {
               success: false,
-              error: 'هذا الرقم مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.'
+              error: 'هذا الرقم أو البريد مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.'
             };
           }
           return { success: false, error: authError.message };
@@ -1952,12 +2023,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } else {
         // Prevent duplicate accounts in local/demo mode for the same normalized phone number
         const duplicateLocal = workspaceMembers.some(
-          m => !m.is_demo && cleanPhoneNumber(m.profile?.phone || '') === cleanPhone
-        ) || (currentUser && cleanPhoneNumber(currentUser.phone) === cleanPhone);
+          m => !m.is_demo && (cleanPhoneNumber(m.profile?.phone || '') === cleanPhone || (m.profile?.email && m.profile.email.toLowerCase() === cleanEmail))
+        ) || (currentUser && (cleanPhoneNumber(currentUser.phone) === cleanPhone || (currentUser.email && currentUser.email.toLowerCase() === cleanEmail)));
         if (duplicateLocal) {
           return {
             success: false,
-            error: 'هذا الرقم مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.'
+            error: 'هذا الرقم أو البريد مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.'
           };
         }
       }
@@ -1967,6 +2038,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: userId,
         phone: cleanPhone,
         whatsapp_number: cleanWhatsapp,
+        email: cleanEmail,
+        email_verified: true,
         name: data.name.trim(),
         must_change_password: false,
         created_at: new Date().toISOString(),
@@ -1984,6 +2057,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           name: newProfile.name,
           phone: cleanPhone,
           whatsapp_number: cleanWhatsapp,
+          email: cleanEmail,
+          email_verified: true,
           password: pwd,
           isOwner: Boolean(data.isOwner),
         };
@@ -2000,7 +2075,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         let newWorkspace: Workspace = {
           id: wsId,
           short_id,
-          name: `محطة الاتحادية - ${newProfile.name}`,
+          name: `Sahara📦 Express - ${newProfile.name}`,
           invite_code,
           created_by: newProfile.id,
           created_at: new Date().toISOString(),
@@ -2098,6 +2173,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               name: newProfile.name,
               phone: cleanPhone,
               whatsapp_number: cleanWhatsapp,
+              email: cleanEmail,
+              email_verified: true,
               password: pwd,
               role: 'owner',
               workspace_id: newWorkspace.id,
@@ -2169,8 +2246,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!cleanPhone || cleanPhone.length < 8) {
         return { success: false, error: 'يرجى إدخال رقم هاتف صحيح' };
       }
-      if (!password || password.trim().length < 8) {
-        return { success: false, error: 'كلمة المرور يجب أن لا تقل عن 8 أحرف أو أرقام' };
+      if (!password || password.trim().length < 6) {
+        return { success: false, error: 'كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام' };
       }
       try {
         localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
@@ -2230,7 +2307,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               id: data.user.id,
               phone: cleanPhone,
               whatsapp_number: data.user.user_metadata?.whatsapp_number || cleanPhone,
-              name: data.user.user_metadata?.name || 'مستخدم محطة الاتحادية',
+              name: data.user.user_metadata?.name || 'مستخدم Sahara📦 Express',
               must_change_password: mustChange,
               created_at: new Date().toISOString(),
             });
@@ -2297,8 +2374,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 ).toISOString();
               const wsStatus = cloudData.workspace.subscription_status || 'active';
 
+              const normalizedCloudName =
+                typeof cloudData.workspace.name === 'string' && cloudData.workspace.name.includes('الاتحادية')
+                  ? cloudData.workspace.name.replace(/محطة الاتحادية|الاتحادية/g, 'Sahara📦 Express')
+                  : cloudData.workspace.name;
+
               setCurrentWorkspace({
                 ...cloudData.workspace,
+                name: normalizedCloudName,
                 subscription_end_date: wsEndDate,
                 subscription_status: wsStatus,
               });
@@ -2509,7 +2592,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const newWorkspace: Workspace = {
         id: wsId,
         short_id: generateShortId(),
-        name: `محطة الاتحادية - ${displayName}`,
+        name: `Sahara📦 Express - ${displayName}`,
         invite_code: generateInviteCode(),
         created_by: newProfile.id,
         created_at: new Date().toISOString(),
@@ -3170,7 +3253,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       status: 'confirmed',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      station_name: st?.name || 'محطة الاتحادية',
+      station_name: st?.name || 'Sahara📦 Express',
       creator_name: currentUser.name,
     };
 
@@ -4397,7 +4480,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           workspace_name:
             currentWorkspace?.custom_brand_name ||
             currentWorkspace?.name ||
-            'محطة الاتحادية',
+            'Sahara📦 Express',
         },
       };
     }
@@ -5789,6 +5872,608 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true, registeredWhatsapp: canonicalWhatsapp };
   };
 
+  // ============================================================================
+  // REGISTRATION EMAIL OTP (6 Digits + 5-Min Expiry + Nodemailer)
+  // ============================================================================
+  const sendRegistrationEmailOtp = async (email: string, userName?: string) => {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return { success: false, error: 'يرجى إدخال عنوان بريد إلكتروني صحيح' };
+    }
+    try {
+      const res = await fetch('/api/auth/register/send-email-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, userName }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return {
+          success: false,
+          error: data?.error || 'تعذر إرسال كود التحقق إلى البريد الإلكتروني',
+          cooldownSeconds: data?.cooldownSeconds,
+        };
+      }
+      return {
+        success: true,
+        expiresAtMs: data.expiresAtMs,
+        cooldownSeconds: data.cooldownSeconds,
+        previewCode: data.previewCode,
+        deliveredViaGmail: Boolean(data.deliveredViaGmail),
+      };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'حدث خطأ في الاتصال بالخادم' };
+    }
+  };
+
+  const verifyRegistrationEmailOtp = async (email: string, otpCode: string) => {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanCode = String(otpCode || '').trim().replace(/\s+/g, '');
+    if (!cleanEmail || !/^\d{6}$/.test(cleanCode)) {
+      return { success: false, error: 'يرجى إدخال كود التحقق المكون من 6 أرقام كاملاً' };
+    }
+    try {
+      const res = await fetch('/api/auth/register/verify-email-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, otpCode: cleanCode }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return {
+          success: false,
+          error: data?.error || 'كود التحقق غير صحيح أو منتهي الصلاحية',
+          remainingAttempts: data?.remainingAttempts,
+        };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'حدث خطأ أثناء التحقق من الكود' };
+    }
+  };
+
+  // ============================================================================
+  // MULTI-USER WHATSAPP & GMAIL 6-DIGIT OTP PASSWORD RECOVERY (5-MIN EXPIRY)
+  // ============================================================================
+  const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes expiration
+  const OTP_COOLDOWN_MS = 60 * 1000; // 60 seconds cooldown between sends
+  const OTP_WINDOW_MS = 15 * 60 * 1000; // 15 minutes rate limit window
+  const OTP_MAX_SENDS = 3; // Max 3 sends per 15 minutes
+  const OTP_MAX_ATTEMPTS = 5; // Max 5 verification attempts per code
+
+  const resolveMultiUserAccountByWhatsapp = async (inputWhatsappOrPhoneOrEmail: string) => {
+    const rawInput = String(inputWhatsappOrPhoneOrEmail || '').trim();
+    const isEmail = rawInput.includes('@');
+    const lowerEmail = isEmail ? rawInput.toLowerCase() : '';
+    const canonicalInput = isEmail ? '' : cleanPhoneNumber(rawInput);
+
+    if (!isEmail && (!canonicalInput || canonicalInput.length < 8)) {
+      return null;
+    }
+
+    // 1. Check Firebase Firestore Cloud Accounts (works across all devices & users)
+    if (firebaseSyncService.isAvailable()) {
+      const cloudAcc = await firebaseSyncService.findUserAccountByIdentifier(rawInput);
+      if (cloudAcc) {
+        const acctPhone = cleanPhoneNumber(cloudAcc.phone) || cloudAcc.phone || '00000000';
+        const acctWhatsapp = cleanPhoneNumber(cloudAcc.whatsapp_number || cloudAcc.phone) || acctPhone;
+        return {
+          phone: acctPhone,
+          whatsapp: acctWhatsapp,
+          email: cloudAcc.email,
+          name: cloudAcc.name || 'مستخدم Sahara📦 Express',
+          role: cloudAcc.role || 'owner',
+          revoked: Boolean(cloudAcc.deleted || cloudAcc.status === 'revoked'),
+          cloudAccount: cloudAcc,
+        };
+      }
+    }
+
+    // 2. Check Local Accounts Map (alittihadia_local_accounts_v1)
+    try {
+      const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+      for (const [phoneKey, acc] of Object.entries<any>(localAccounts)) {
+        const cleanKey = cleanPhoneNumber(phoneKey);
+        const cleanAccPhone = cleanPhoneNumber(acc?.phone || phoneKey);
+        const cleanAccWa = cleanPhoneNumber(acc?.whatsapp_number || acc?.phone || phoneKey);
+        const cleanAccEmail = (acc?.email || '').toLowerCase().trim();
+
+        const match =
+          (isEmail && cleanAccEmail === lowerEmail) ||
+          (!isEmail && (cleanKey === canonicalInput || cleanAccPhone === canonicalInput || cleanAccWa === canonicalInput));
+
+        if (match) {
+          return {
+            phone: cleanAccPhone || phoneKey,
+            whatsapp: cleanAccWa || cleanAccPhone || phoneKey,
+            email: acc?.email,
+            name: acc?.name || 'مستخدم Sahara📦 Express',
+            role: acc?.isOwner ? ('owner' as const) : ('worker' as const),
+            revoked: isAccountRevokedLocally(acc?.id, cleanAccPhone),
+            cloudAccount: null,
+          };
+        }
+      }
+    } catch {}
+
+    // 3. Check Workspace Members (Managers & Workers)
+    const matchedMember = workspaceMembers.find(m => {
+      const mEmail = (m.profile?.email || '').toLowerCase().trim();
+      const mPhone = cleanPhoneNumber(m.profile?.phone || m.phone || '');
+      const mWa = cleanPhoneNumber(m.profile?.whatsapp_number || '');
+      if (isEmail) return mEmail === lowerEmail;
+      return mPhone === canonicalInput || mWa === canonicalInput;
+    });
+    if (matchedMember) {
+      const mPhone = cleanPhoneNumber(matchedMember.profile?.phone || matchedMember.phone || '') || matchedMember.user_id;
+      const mWa = cleanPhoneNumber(matchedMember.profile?.whatsapp_number || '') || mPhone;
+      return {
+        phone: mPhone,
+        whatsapp: mWa,
+        email: matchedMember.profile?.email,
+        name: matchedMember.profile?.name || 'مستخدم Sahara📦 Express',
+        role: matchedMember.role === 'worker' ? ('worker' as const) : ('owner' as const),
+        revoked: matchedMember.status !== 'active' || isAccountRevokedLocally(matchedMember.user_id, mPhone),
+        cloudAccount: null,
+      };
+    }
+
+    // 4. Check All Workspaces Owner Phone / WhatsApp / Name
+    const matchedWs = allWorkspacesState.find(ws => {
+      const oPhone = cleanPhoneNumber(ws.owner_phone || '');
+      const oWa = cleanPhoneNumber(ws.owner_whatsapp || '');
+      if (isEmail) return false;
+      return oPhone === canonicalInput || oWa === canonicalInput;
+    });
+    if (matchedWs) {
+      const oPhone = cleanPhoneNumber(matchedWs.owner_phone || '') || canonicalInput;
+      const oWa = cleanPhoneNumber(matchedWs.owner_whatsapp || '') || oPhone;
+      return {
+        phone: oPhone,
+        whatsapp: oWa,
+        email: undefined,
+        name: matchedWs.name || 'مدير المحطة',
+        role: 'owner' as const,
+        revoked: false,
+        cloudAccount: null,
+      };
+    }
+
+    return null;
+  };
+
+  const getLocalOtpRecord = (phoneKey: string) => {
+    try {
+      const map = JSON.parse(localStorage.getItem('alittihadia_password_reset_otps_v1') || '{}');
+      return map[phoneKey] || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const saveLocalOtpRecord = (phoneKey: string, record: any) => {
+    try {
+      const map = JSON.parse(localStorage.getItem('alittihadia_password_reset_otps_v1') || '{}');
+      map[phoneKey] = record;
+      localStorage.setItem('alittihadia_password_reset_otps_v1', JSON.stringify(map));
+    } catch {}
+  };
+
+  const requestWhatsAppOtp = async (whatsappOrPhone: string) => {
+    const rawInput = String(whatsappOrPhone || '').trim();
+    if (!rawInput || (rawInput.length < 5 && !rawInput.includes('@'))) {
+      return {
+        success: false,
+        error: 'يرجى إدخال رقم الهاتف المسجل بالحساب أو بريد Gmail',
+      };
+    }
+
+    // 1. Find the multi-user account registered with this phone number or Gmail
+    const resolvedAccount = await resolveMultiUserAccountByWhatsapp(rawInput);
+    if (!resolvedAccount) {
+      return {
+        success: false,
+        error: 'لم يتم العثور على أي حساب مسجل بهذا الرقم أو البريد الإلكتروني. تأكد من صحة البيانات.',
+      };
+    }
+
+    if (resolvedAccount.revoked) {
+      return {
+        success: false,
+        error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لا يمكن استعادة كلمة المرور.',
+      };
+    }
+
+    const targetPhone = resolvedAccount.phone;
+    const targetWhatsapp = resolvedAccount.whatsapp || resolvedAccount.phone;
+    const targetEmail = (resolvedAccount.email || (rawInput.includes('@') ? rawInput : '')).trim().toLowerCase();
+
+    if (!targetEmail || !targetEmail.includes('@')) {
+      return {
+        success: false,
+        error: 'هذا الحساب لا يتوفر على بريد Gmail مسجل لاستلام كود التحقق. يرجى إدخال بريدك Gmail المسجل.',
+      };
+    }
+
+    const nowMs = Date.now();
+
+    // 2. Load existing OTP & Rate Limit state from Database (Firestore + Local)
+    let existingRecord: any = getLocalOtpRecord(targetPhone);
+    if (firebaseSyncService.isAvailable()) {
+      const cloudOtp = await firebaseSyncService.getPasswordResetOtp(targetPhone);
+      if (cloudOtp) {
+        if (!existingRecord || (cloudOtp.last_sent_ms || 0) >= (existingRecord.last_sent_ms || 0)) {
+          existingRecord = cloudOtp;
+        }
+      }
+    }
+
+    // 3. Enforce Rate Limit locally/DB before generating or sending
+    if (existingRecord) {
+      const lastSentMs = Number(existingRecord.last_sent_ms || 0);
+      const windowStartMs = Number(existingRecord.window_start_ms || 0);
+      const windowExpired = !windowStartMs || nowMs - windowStartMs >= OTP_WINDOW_MS;
+      const sendCount = windowExpired ? 0 : Number(existingRecord.send_count || 0);
+
+      // Cooldown check (60 seconds between sends)
+      if (lastSentMs && nowMs - lastSentMs < OTP_COOLDOWN_MS) {
+        const waitSec = Math.ceil((OTP_COOLDOWN_MS - (nowMs - lastSentMs)) / 1000);
+        return {
+          success: false,
+          rateLimited: true,
+          cooldownSeconds: waitSec,
+          retryAfterSeconds: waitSec,
+          remainingSends: Math.max(0, OTP_MAX_SENDS - sendCount),
+          maxSendsPerWindow: OTP_MAX_SENDS,
+          error: `يرجى الانتظار ${waitSec} ثانية قبل طلب إرسال كود تحقق جديد.`,
+        };
+      }
+
+      // Window quota check (max 3 OTP requests per 15 minutes)
+      if (sendCount >= OTP_MAX_SENDS) {
+        const retryAfterSec = Math.max(1, Math.ceil((OTP_WINDOW_MS - (nowMs - windowStartMs)) / 1000));
+        const mins = Math.ceil(retryAfterSec / 60);
+        return {
+          success: false,
+          rateLimited: true,
+          retryAfterSeconds: retryAfterSec,
+          remainingSends: 0,
+          maxSendsPerWindow: OTP_MAX_SENDS,
+          error: `تم تجاوز الحد المسموح (${OTP_MAX_SENDS} رسائل خلال 15 دقيقة لحماية الحساب). يرجى المحاولة بعد ${mins} دقيقة.`,
+        };
+      }
+    }
+
+    // 4. Call Server Endpoint (generates 6-digit OTP, sends strictly to registered Gmail via Nodemailer)
+    let otpRecord: any = null;
+    let deliveredViaGmail = false;
+    let cooldownSeconds = 60;
+    let remainingSends = OTP_MAX_SENDS - 1;
+    let previewCodeFromServer: string | undefined = undefined;
+
+    try {
+      const response = await fetch('/api/auth/forgot-password/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: targetPhone,
+          targetEmail,
+          userName: resolvedAccount.name,
+          existingRateState: existingRecord || null,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.success) {
+        return {
+          success: false,
+          rateLimited: Boolean(data?.rateLimited),
+          retryAfterSeconds: data?.retryAfterSeconds,
+          cooldownSeconds: data?.cooldownSeconds,
+          error: data?.error || 'تعذر إرسال كود التحقق إلى البريد الإلكتروني',
+        };
+      }
+      otpRecord = data.otpRecord;
+      deliveredViaGmail = Boolean(data.deliveredViaGmail);
+      cooldownSeconds = Number(data.cooldownSeconds || 60);
+      remainingSends = Number(data.remainingSends ?? 2);
+      previewCodeFromServer = data.previewCode;
+    } catch {
+      // Offline / Fallback generation if server route is unreachable
+      const windowExpired =
+        !existingRecord?.window_start_ms || nowMs - Number(existingRecord.window_start_ms) >= OTP_WINDOW_MS;
+      const nextSendCount = (windowExpired ? 0 : Number(existingRecord?.send_count || 0)) + 1;
+      const nextWindowStartMs = windowExpired ? nowMs : Number(existingRecord?.window_start_ms || nowMs);
+      const fallbackOtp = String(Math.floor(100000 + Math.random() * 900000));
+      const expiresAtMs = nowMs + OTP_TTL_MS;
+      const nowIso = new Date(nowMs).toISOString();
+
+      otpRecord = {
+        id: targetPhone,
+        phone: targetPhone,
+        whatsapp_number: targetWhatsapp,
+        email: targetEmail,
+        otp_code: fallbackOtp,
+        expires_at: new Date(expiresAtMs).toISOString(),
+        expires_at_ms: expiresAtMs,
+        attempts: 0,
+        send_count: nextSendCount,
+        window_start_ms: nextWindowStartMs,
+        last_sent_ms: nowMs,
+        verified: false,
+        used: false,
+        created_at: existingRecord?.created_at || nowIso,
+        updated_at: nowIso,
+      };
+      remainingSends = Math.max(0, OTP_MAX_SENDS - nextSendCount);
+      previewCodeFromServer = fallbackOtp;
+    }
+
+    // 5. Persist 6-digit OTP & 5-minute expiration in Database (Firestore + Local)
+    saveLocalOtpRecord(targetPhone, otpRecord);
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.savePasswordResetOtp(targetPhone, otpRecord);
+    }
+
+    return {
+      success: true,
+      expiresAtMs: Number(otpRecord.expires_at_ms),
+      cooldownSeconds,
+      remainingSends,
+      maxSendsPerWindow: OTP_MAX_SENDS,
+      targetPhone,
+      targetWhatsapp,
+      targetEmail,
+      userName: resolvedAccount.name,
+      userRoleLabel: resolvedAccount.role === 'worker' ? 'موظف محطة' : 'مدير / مالك المحطة',
+      deliveredViaGmail,
+      otpCodeForPreview: previewCodeFromServer || (!deliveredViaGmail ? String(otpRecord.otp_code) : undefined),
+    };
+  };
+
+  const verifyWhatsAppOtpCode = async (whatsappOrPhone: string, otpCode: string) => {
+    const cleanCode = String(otpCode || '').trim().replace(/\s+/g, '');
+    if (!/^\d{6}$/.test(cleanCode)) {
+      return {
+        success: false,
+        error: 'يرجى إدخال كود التحقق المكون من 6 أرقام كاملاً',
+      };
+    }
+
+    const resolvedAccount = await resolveMultiUserAccountByWhatsapp(whatsappOrPhone);
+    const targetPhone = resolvedAccount?.phone || cleanPhoneNumber(whatsappOrPhone);
+    if (!targetPhone) {
+      return { success: false, error: 'رقم الواتساب غير صالح' };
+    }
+
+    // 1. Load OTP record from Firestore Database (authoritative) + Local fallback
+    let record: any = null;
+    if (firebaseSyncService.isAvailable()) {
+      record = await firebaseSyncService.getPasswordResetOtp(targetPhone);
+    }
+    const localRec = getLocalOtpRecord(targetPhone);
+    if (!record || (localRec && (localRec.last_sent_ms || 0) > (record.last_sent_ms || 0))) {
+      record = localRec;
+    }
+
+    if (!record || !record.otp_code) {
+      return {
+        success: false,
+        error: 'لا يوجد كود تحقق نشط لهذا الرقم. يرجى طلب إرسال كود جديد.',
+      };
+    }
+
+    const nowMs = Date.now();
+    if (record.used) {
+      return {
+        success: false,
+        error: 'تم استخدام كود التحقق هذا مسبقاً. يرجى طلب كود جديد.',
+      };
+    }
+
+    if (nowMs > Number(record.expires_at_ms)) {
+      return {
+        success: false,
+        expired: true,
+        error: 'انتهت صلاحية كود التحقق (مرت 5 دقائق). يرجى الضغط على إعادة إرسال الكود.',
+      };
+    }
+
+    const currentAttempts = Number(record.attempts || 0);
+    if (currentAttempts >= OTP_MAX_ATTEMPTS) {
+      return {
+        success: false,
+        locked: true,
+        remainingAttempts: 0,
+        error: 'تم إيقاف هذا الكود بعد 5 محاولات خاطئة. يرجى طلب كود جديد.',
+      };
+    }
+
+    if (String(record.otp_code) !== cleanCode) {
+      const nextAttempts = currentAttempts + 1;
+      const remaining = Math.max(0, OTP_MAX_ATTEMPTS - nextAttempts);
+      const updatedRecord = {
+        ...record,
+        attempts: nextAttempts,
+        updated_at: new Date(nowMs).toISOString(),
+      };
+      saveLocalOtpRecord(targetPhone, updatedRecord);
+      if (firebaseSyncService.isAvailable()) {
+        await firebaseSyncService.savePasswordResetOtp(targetPhone, updatedRecord);
+      }
+      // Also notify server store
+      fetch('/api/auth/forgot-password/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: targetPhone, otpCode: cleanCode }),
+      }).catch(() => {});
+
+      return {
+        success: false,
+        remainingAttempts: remaining,
+        locked: remaining === 0,
+        error:
+          remaining > 0
+            ? `كود التحقق غير صحيح. المحاولات المتبقية: ${remaining}`
+            : 'تم استنفاد جميع المحاولات (5 محاولات). يرجى طلب كود جديد.',
+      };
+    }
+
+    // OTP Matches & is within 5-minute window! Mark as verified
+    const verifiedRecord = {
+      ...record,
+      verified: true,
+      updated_at: new Date(nowMs).toISOString(),
+    };
+    saveLocalOtpRecord(targetPhone, verifiedRecord);
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.savePasswordResetOtp(targetPhone, verifiedRecord);
+    }
+    fetch('/api/auth/forgot-password/verify-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: targetPhone, otpCode: cleanCode }),
+    }).catch(() => {});
+
+    return {
+      success: true,
+      remainingAttempts: OTP_MAX_ATTEMPTS - currentAttempts,
+    };
+  };
+
+  const resetPasswordWithWhatsAppOtp = async (
+    whatsappOrPhone: string,
+    otpCode: string,
+    newPassword: string
+  ) => {
+    const cleanPwd = String(newPassword || '').trim();
+    if (cleanPwd.length < 8) {
+      return {
+        success: false,
+        error: 'كلمة المرور الجديدة يجب أن تتكون من 8 أحرف أو أرقام على الأقل',
+      };
+    }
+
+    // 1. Verify OTP first (checks 6 digits, 5-min expiry, max attempts, not used)
+    const verifyRes = await verifyWhatsAppOtpCode(whatsappOrPhone, otpCode);
+    if (!verifyRes.success) {
+      return {
+        success: false,
+        error: verifyRes.error || 'كود التحقق غير صالح أو منتهي الصلاحية',
+      };
+    }
+
+    const resolvedAccount = await resolveMultiUserAccountByWhatsapp(whatsappOrPhone);
+    if (!resolvedAccount) {
+      return {
+        success: false,
+        error: 'لم يتم العثور على الحساب المرتبط بهذا الرقم',
+      };
+    }
+
+    const targetPhone = resolvedAccount.phone;
+    const nowIso = new Date().toISOString();
+
+    // 2. Mark OTP as used in Database (Firestore + Server + Local) so it cannot be replayed
+    const existingOtp = getLocalOtpRecord(targetPhone) || (firebaseSyncService.isAvailable() ? await firebaseSyncService.getPasswordResetOtp(targetPhone) : null);
+    if (existingOtp) {
+      const consumedRecord = {
+        ...existingOtp,
+        verified: true,
+        used: true,
+        updated_at: nowIso,
+      };
+      saveLocalOtpRecord(targetPhone, consumedRecord);
+      if (firebaseSyncService.isAvailable()) {
+        await firebaseSyncService.savePasswordResetOtp(targetPhone, consumedRecord);
+      }
+    }
+    fetch('/api/auth/forgot-password/consume-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: targetPhone }),
+    }).catch(() => {});
+
+    // 3. Update User Password in Firestore Cloud Database (works across all devices)
+    if (firebaseSyncService.isAvailable()) {
+      const cloudAcc =
+        resolvedAccount.cloudAccount || (await firebaseSyncService.findUserAccountByPhoneOrWhatsapp(targetPhone));
+      if (cloudAcc) {
+        await firebaseSyncService.saveUserAccount(targetPhone, {
+          ...cloudAcc,
+          phone: targetPhone,
+          whatsapp_number: resolvedAccount.whatsapp,
+          password: cleanPwd,
+          must_change_password: false,
+          updated_at: nowIso,
+        });
+      } else {
+        // Create/sync cloud user record if it was only local previously
+        await firebaseSyncService.saveUserAccount(targetPhone, {
+          id: `usr-${targetPhone}`,
+          name: resolvedAccount.name,
+          phone: targetPhone,
+          whatsapp_number: resolvedAccount.whatsapp,
+          password: cleanPwd,
+          role: resolvedAccount.role,
+          workspace_id: currentWorkspace?.id || 'ws-default',
+          must_change_password: false,
+          status: 'active',
+          deleted: false,
+          created_at: nowIso,
+          updated_at: nowIso,
+        });
+      }
+    }
+
+    // 4. Update Local Accounts Store & Clear any Temporary Passwords
+    try {
+      const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+      const existingLocal = localAccounts[targetPhone] || {
+        id: resolvedAccount.cloudAccount?.id || `usr-${targetPhone}`,
+        name: resolvedAccount.name,
+        phone: targetPhone,
+        whatsapp_number: resolvedAccount.whatsapp,
+        isOwner: resolvedAccount.role === 'owner',
+        workspace_id: resolvedAccount.cloudAccount?.workspace_id || currentWorkspace?.id,
+      };
+      localAccounts[targetPhone] = {
+        ...existingLocal,
+        password: cleanPwd,
+      };
+      localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
+
+      const tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
+      if (tempMap[targetPhone]) {
+        delete tempMap[targetPhone];
+        localStorage.setItem('alittihadia_temp_passwords', JSON.stringify(tempMap));
+      }
+    } catch {}
+
+    // 5. Update workspaceMembers state if matched
+    setWorkspaceMembers(prev =>
+      prev.map(m => {
+        const mPhone = cleanPhoneNumber(m.profile?.phone || m.phone || '');
+        if (mPhone === targetPhone && m.profile) {
+          return {
+            ...m,
+            profile: { ...m.profile, must_change_password: false },
+          };
+        }
+        return m;
+      })
+    );
+
+    try {
+      localStorage.setItem('ittihadiya_saved_login_phone', targetPhone);
+    } catch {}
+
+    showToast('تم التحقق من الكود وتغيير كلمة المرور بنجاح! يمكنك تسجيل الدخول الآن', 'success');
+    return {
+      success: true,
+      targetPhone,
+    };
+  };
+
   // Direct Reset of a Member's Password via Edge Function (or local fallback in offline/demo)
   const resetMemberPassword = async (targetUserId: string, targetPhone?: string) => {
     const fallbackPhone =
@@ -6075,6 +6760,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         userRole,
         isLoggedIn: Boolean(currentUser),
         registerUser,
+        sendRegistrationEmailOtp,
+        verifyRegistrationEmailOtp,
         loginWithCredentials,
         loginWithGoogle,
         logout,
@@ -6174,6 +6861,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         resetMemberPassword,
         changeMandatoryPassword,
         updateUserContactNumbers,
+        requestWhatsAppOtp,
+        verifyWhatsAppOtpCode,
+        resetPasswordWithWhatsAppOtp,
         isSupabaseLive,
         hasDemoData,
         deleteDemoData,

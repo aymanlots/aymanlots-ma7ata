@@ -127,12 +127,38 @@
         "updated_at": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "workspace_id", "trip_code", "driver_name", "vehicle_plate", "origin_station_id", "destination_station_id", "status"]
+    },
+    "PasswordResetOtp": {
+      "title": "PasswordResetOtp",
+      "description": "6-digit WhatsApp OTP with 5-minute expiration and rate limiting for multi-user password reset",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "whatsapp_number": { "type": "string", "maxLength": 32 },
+        "otp_code": { "type": "string", "maxLength": 6 },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "expires_at_ms": { "type": "integer" },
+        "attempts": { "type": "integer" },
+        "send_count": { "type": "integer" },
+        "window_start_ms": { "type": "integer" },
+        "last_sent_ms": { "type": "integer" },
+        "verified": { "type": "boolean" },
+        "used": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "phone", "whatsapp_number", "otp_code", "expires_at_ms"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "Authenticated user profiles"
+    },
+    "/password_reset_otps/{phone}": {
+      "schema": "PasswordResetOtp",
+      "description": "6-digit OTP codes with 5-minute TTL and rate limit counters for WhatsApp password reset"
     },
     "/workspaces/{workspaceId}": {
       "schema": "Workspace",

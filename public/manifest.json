@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "محطة الاتحادية",
-  "short_name": "الاتحادية",
-  "description": "تطبيق محطة الاتحادية لإدارة الإرساليات والتحويلات المالية والصناديق النقدية",
+  "name": "Sahara Express",
+  "short_name": "Sahara Express",
+  "description": "تطبيق Sahara Express لإدارة الإرساليات والتحويلات المالية والصناديق النقدية",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

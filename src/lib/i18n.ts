@@ -2,8 +2,8 @@ export type Language = 'ar' | 'fr' | 'en';
 
 export const translations = {
   ar: {
-    appName: 'محطة الاتحادية',
-    tagline: 'السفر ونقل البضائع والكوليات',
+    appName: 'Sahara Express',
+    tagline: 'للسفر ونقل البضائع والكوليات',
     routeTitle: 'خط النقل الدولي المغرب ⇋ موريتانيا',
     
     // Navigation

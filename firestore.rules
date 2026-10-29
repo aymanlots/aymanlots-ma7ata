@@ -28,6 +28,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 6-digit WhatsApp OTP records for password recovery (5-minute expiry & rate limit tracking)
+    match /password_reset_otps/{phone} {
+      allow get: if isValidId(phone);
+      allow list: if false;
+      allow create, update: if isValidId(phone)
+        && incoming().id is string
+        && incoming().id.size() <= 64
+        && incoming().otp_code is string
+        && incoming().otp_code.size() == 6
+        && incoming().expires_at_ms is int;
+      allow delete: if isValidId(phone);
+    }
+
     // Workspaces and their subcollections
     match /workspaces/{workspaceId} {
       allow get, list: if true;

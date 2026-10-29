@@ -348,7 +348,7 @@ export const exportService = {
       parcels = (stationBalancesOrParcels as Parcel[]) || [];
     }
 
-    const wsName = workspace?.custom_brand_name || workspace?.name || 'محطة الاتحادية';
+    const wsName = workspace?.custom_brand_name || workspace?.name || 'Sahara📦 Express';
 
     const stationsHtml = stations
       .map(st => {

@@ -146,7 +146,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
               <label className="block text-xs font-bold text-[#E6C37A] mb-1.5">اسم فريق العمل</label>
               <input
                 type="text"
-                placeholder="مثال: فريق محطة الاتحادية"
+                placeholder="مثال: فريق Sahara📦 Express"
                 value={teamName}
                 onChange={e => setTeamName(e.target.value)}
                 className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none"

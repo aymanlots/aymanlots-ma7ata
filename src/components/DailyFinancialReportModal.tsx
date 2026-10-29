@@ -185,7 +185,7 @@ export const DailyFinancialReportModal: React.FC<DailyFinancialReportModalProps>
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `تقرير_مالي_محطة_الاتحادية_${reportDate}.csv`);
+    link.setAttribute('download', `تقرير_مالي_Sahara_Express_${reportDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

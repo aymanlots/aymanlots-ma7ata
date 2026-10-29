@@ -45,7 +45,7 @@ export function mapSupabaseRowToTransaction(row: Record<string, any>, stations: 
     workspace_id: row.workspace_id,
     team_id: row.workspace_id,
     station_id: row.station_id,
-    station_name: st?.name || 'محطة الاتحادية',
+    station_name: st?.name || 'Sahara📦 Express',
     created_by: row.created_by || '',
     creator_name: row.person_name || undefined,
     person_name: row.person_name || '',

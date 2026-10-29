@@ -1,4 +1,4 @@
-const CACHE_NAME = 'al-ittihadia-shell-v5';
+const CACHE_NAME = 'sahara-express-shell-v6';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -51,16 +51,16 @@ self.addEventListener('fetch', (event) => {
   // Do not cache Supabase API calls
   if (url.hostname.includes('supabase.co')) return;
 
-  // Navigation requests: Network first, fallback to cached index.html
-  if (req.mode === 'navigate') {
+  // Navigation requests and manifest.json: Network first, fallback to cache
+  if (req.mode === 'navigate' || url.pathname.endsWith('manifest.json')) {
     event.respondWith(
       fetch(req)
         .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
           return res;
         })
-        .catch(() => caches.match('/index.html'))
+        .catch(() => caches.match(req).then((r) => r || caches.match('/index.html')))
     );
     return;
   }
