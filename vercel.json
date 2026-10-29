@@ -4,7 +4,11 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!assets/|sw\\.js|manifest\\.json|logo\\.png|icons/).*)",
+      "source": "/api/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/((?!api/|assets/|sw\\.js|manifest\\.json|logo\\.png|icons/).*)",
       "destination": "/index.html"
     }
   ],

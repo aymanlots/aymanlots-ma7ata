@@ -36,9 +36,10 @@ interface SendMailOtpParams {
 }
 
 function getMailTransporter() {
-  const user = (process.env.GMAIL_USER || '').trim();
-  const pass = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+  const user = (process.env.GMAIL_USER || 'aissaaimanekhlifi@gmail.com').trim();
+  const pass = (process.env.GMAIL_APP_PASSWORD || 'fntivyfldifqgxwl').replace(/\s+/g, '');
   if (!user || !pass) {
+    console.warn('[Nodemailer Config Warning] Missing GMAIL_USER or GMAIL_APP_PASSWORD environment variables.');
     return null;
   }
   return nodemailer.createTransport({
@@ -113,7 +114,7 @@ async function sendOtpViaNodemailerGmail(params: SendMailOtpParams): Promise<{
   `;
 
   if (!transporter) {
-    console.warn(`[Nodemailer] GMAIL_USER or GMAIL_APP_PASSWORD not configured. Code for ${cleanEmail}: ${otpCode}`);
+    console.warn(`[Nodemailer Warning] GMAIL credentials missing on server. Fallback preview code for ${cleanEmail}: ${otpCode}`);
     return {
       delivered: false,
       error: 'GMAIL_CREDENTIALS_MISSING',
@@ -122,7 +123,8 @@ async function sendOtpViaNodemailerGmail(params: SendMailOtpParams): Promise<{
   }
 
   try {
-    const fromAddress = `"Sahara📦 Express" <${process.env.GMAIL_USER}>`;
+    const sender = (process.env.GMAIL_USER || 'aissaaimanekhlifi@gmail.com').trim();
+    const fromAddress = `"Sahara📦 Express" <${sender}>`;
     const sendResult = await transporter.sendMail({
       from: fromAddress,
       to: cleanEmail,
@@ -130,12 +132,20 @@ async function sendOtpViaNodemailerGmail(params: SendMailOtpParams): Promise<{
       html: htmlContent,
       text: `${headerTitle}\nكود التحقق الخاص بك هو: ${otpCode}\nصالح لمدة 5 دقائق فقط.`,
     });
+    console.log(`[Nodemailer SMTP Success] Email sent to ${cleanEmail}, messageId: ${sendResult.messageId}`);
     return {
       delivered: true,
       messageId: sendResult.messageId,
     };
   } catch (err: any) {
-    console.error('[Nodemailer Send Error]:', err);
+    console.error('[Nodemailer SMTP Error Details]:', {
+      to: cleanEmail,
+      message: err?.message,
+      code: err?.code,
+      command: err?.command,
+      response: err?.response,
+      responseCode: err?.responseCode,
+    });
     return {
       delivered: false,
       error: err?.message || 'Error sending email via Nodemailer',
@@ -198,10 +208,11 @@ async function startServer() {
   // ============================================================================
   // REGISTRATION GMAIL OTP ENDPOINTS (6-Digit OTP + 5-Min Expiry + Nodemailer)
   // ============================================================================
-  app.post('/api/auth/register/send-email-otp', async (req, res) => {
+  const handleSendEmailOtp = async (req: express.Request, res: express.Response) => {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     try {
-      const rawEmail = String(req.body?.email || '').trim().toLowerCase();
-      const userName = String(req.body?.userName || '').trim();
+      const rawEmail = String(req.body?.email || req.body?.userEmail || '').trim().toLowerCase();
+      const userName = String(req.body?.userName || req.body?.name || '').trim();
 
       if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
         return res.status(400).json({
@@ -274,25 +285,41 @@ async function startServer() {
         actionNote: 'أدخل هذا الكود المكون من 6 أرقام في شاشة التسجيل للمتابعة.',
       });
 
-      return res.json({
+      if (!emailDelivery.delivered) {
+        console.error('[Registration Send Email OTP Failed]:', emailDelivery.error);
+        return res.status(500).json({
+          success: false,
+          deliveredViaGmail: false,
+          error: emailDelivery.error === 'GMAIL_CREDENTIALS_MISSING'
+            ? 'بيانات Gmail غير متوفرة بالسيرفر. يرجى ضبط GMAIL_USER و GMAIL_APP_PASSWORD في Vercel.'
+            : `تعذر إرسال الإيميل عبر خادم SMTP: ${emailDelivery.error || 'خطأ غير معروف في خادم البريد'}`,
+          previewCode: emailDelivery.previewCode,
+        });
+      }
+
+      return res.status(200).json({
         success: true,
         email: rawEmail,
         expiresAtMs,
         ttlSeconds: 300,
         cooldownSeconds: Math.floor(OTP_COOLDOWN_MS / 1000),
         remainingSends: Math.max(0, 5 - newRecord.sendCount),
-        deliveredViaGmail: emailDelivery.delivered,
+        deliveredViaGmail: true,
         messageId: emailDelivery.messageId || null,
         previewCode: emailDelivery.previewCode || undefined,
       });
     } catch (err: any) {
-      console.error('[Registration Send Email OTP Error]:', err);
+      console.error('[Registration Send Email OTP Crash]:', err);
       return res.status(500).json({
         success: false,
-        error: 'حدث خطأ أثناء إرسال كود التحقق إلى البريد الإلكتروني',
+        error: err?.message || 'حدث خطأ في الخادم أثناء معالجة طلب البريد الإلكتروني',
       });
     }
-  });
+  };
+
+  app.post('/api/auth/register/send-email-otp', handleSendEmailOtp);
+  app.post('/api/register/send-otp', handleSendEmailOtp);
+  app.post('/api/register', handleSendEmailOtp);
 
   app.post('/api/auth/register/verify-email-otp', async (req, res) => {
     try {
@@ -489,7 +516,19 @@ async function startServer() {
         actionNote: 'أدخل هذا الكود في شاشة استعادة كلمة المرور لتعيين كلمة مرورك الجديدة.',
       });
 
-      return res.json({
+      if (!emailDelivery.delivered) {
+        console.error('[Forgot Password Send OTP Failed]:', emailDelivery.error);
+        return res.status(500).json({
+          success: false,
+          deliveredViaGmail: false,
+          error: emailDelivery.error === 'GMAIL_CREDENTIALS_MISSING'
+            ? 'بيانات Gmail غير متوفرة بالسيرفر. يرجى ضبط GMAIL_USER و GMAIL_APP_PASSWORD في Vercel.'
+            : `تعذر إرسال الإيميل عبر خادم SMTP: ${emailDelivery.error || 'خطأ في خادم البريد'}`,
+          previewCode: emailDelivery.previewCode,
+        });
+      }
+
+      return res.status(200).json({
         success: true,
         otpRecord: {
           id: canonicalPhone,

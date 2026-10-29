@@ -5881,12 +5881,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: 'يرجى إدخال عنوان بريد إلكتروني صحيح' };
     }
     try {
-      const res = await fetch('/api/auth/register/send-email-otp', {
+      let res = await fetch('/api/auth/register/send-email-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, userName }),
       });
-      const data = await res.json();
+
+      let rawText = await res.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
+
+      // If /api/auth/register/send-email-otp returned 404 or non-JSON, fallback to /api/register
+      if ((!res.ok && res.status === 404) || !data) {
+        try {
+          const fallbackRes = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanEmail, userName }),
+          });
+          const fallbackText = await fallbackRes.text();
+          try {
+            const fallbackData = fallbackText ? JSON.parse(fallbackText) : null;
+            if (fallbackData) {
+              res = fallbackRes;
+              rawText = fallbackText;
+              data = fallbackData;
+            }
+          } catch {}
+        } catch {}
+      }
+
+      if (!data) {
+        console.error('[Registration OTP Non-JSON Response]:', rawText);
+        return {
+          success: false,
+          error: 'تعذر الاتصال بخادم البريد (استجابة غير صالحة من السيرفر). تأكد من إعدادات Vercel Environment Variables.',
+        };
+      }
+
       if (!res.ok || !data.success) {
         return {
           success: false,
@@ -5902,6 +5938,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deliveredViaGmail: Boolean(data.deliveredViaGmail),
       };
     } catch (err: any) {
+      console.error('[Registration Send Email OTP Client Error]:', err);
       return { success: false, error: err?.message || 'حدث خطأ في الاتصال بالخادم' };
     }
   };
@@ -5913,12 +5950,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: 'يرجى إدخال كود التحقق المكون من 6 أرقام كاملاً' };
     }
     try {
-      const res = await fetch('/api/auth/register/verify-email-otp', {
+      let res = await fetch('/api/auth/register/verify-email-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, otpCode: cleanCode }),
       });
-      const data = await res.json();
+
+      let rawText = await res.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
+
+      // Fallback to /api/register
+      if ((!res.ok && res.status === 404) || !data) {
+        try {
+          const fallbackRes = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanEmail, otpCode: cleanCode }),
+          });
+          const fallbackText = await fallbackRes.text();
+          try {
+            const fallbackData = fallbackText ? JSON.parse(fallbackText) : null;
+            if (fallbackData) {
+              res = fallbackRes;
+              rawText = fallbackText;
+              data = fallbackData;
+            }
+          } catch {}
+        } catch {}
+      }
+
+      if (!data) {
+        console.error('[Registration Verify Non-JSON Response]:', rawText);
+        return { success: false, error: 'تعذر التحقق من الكود حالياً (استجابة غير صالحة من السيرفر)' };
+      }
+
       if (!res.ok || !data.success) {
         return {
           success: false,
@@ -5928,6 +5998,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return { success: true };
     } catch (err: any) {
+      console.error('[Registration Verify Email OTP Client Error]:', err);
       return { success: false, error: err?.message || 'حدث خطأ أثناء التحقق من الكود' };
     }
   };
@@ -6162,7 +6233,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           existingRateState: existingRecord || null,
         }),
       });
-      const data = await response.json();
+
+      const rawText = await response.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
+
       if (!response.ok || !data?.success) {
         return {
           success: false,
