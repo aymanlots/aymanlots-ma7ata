@@ -1,31 +1,28 @@
-import nodemailer from 'nodemailer';
-import crypto from 'crypto';
+import {
+  OTP_TTL_MS,
+  OTP_WINDOW_MS,
+  OTP_MAX_SENDS_PER_WINDOW,
+  OTP_MAX_VERIFY_ATTEMPTS,
+  OTP_COOLDOWN_MS,
+  generateSixDigitOtp,
+  hashOtpCode,
+  verifyOtpHash,
+  sendVerificationOtpEmail,
+} from '../src/lib/otpMailer.ts';
 
 interface OtpEntry {
-  code: string;
+  otpHash: string;
   expiresAtMs: number;
   attempts: number;
+  sendCount: number;
+  windowStartMs: number;
+  lastSentMs: number;
+  used: boolean;
 }
 
 const memoryStore = new Map<string, OtpEntry>();
 
-function getTransporter() {
-  const user = (process.env.GMAIL_USER || 'aissaaimanekhlifi@gmail.com').trim();
-  const pass = (process.env.GMAIL_APP_PASSWORD || 'fntivyfldifqgxwl').replace(/\s+/g, '');
-  if (!user || !pass) {
-    console.warn('[Vercel API /index] GMAIL_USER or GMAIL_APP_PASSWORD missing');
-    return null;
-  }
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user, pass },
-  });
-}
-
 export default async function handler(req: any, res: any) {
-  // Always guarantee JSON response
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (req.method === 'OPTIONS') {
@@ -47,115 +44,119 @@ export default async function handler(req: any, res: any) {
       }
     }
 
+    const nowMs = Date.now();
+
     // 1. Route: Send Registration Email OTP
     if (url.includes('register/send') || url.includes('/api/register') || url.includes('register-otp')) {
       const email = String(body?.email || body?.userEmail || '').trim().toLowerCase();
-      const userName = String(body?.userName || body?.name || 'عضو جديد').trim();
 
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return res.status(400).json({ success: false, error: 'يرجى إدخال عنوان بريد إلكتروني صحيح' });
       }
 
-      const otpCode = String(crypto.randomInt(100000, 1000000));
-      const expiresAtMs = Date.now() + 10 * 60 * 1000;
-      memoryStore.set(email, { code: otpCode, expiresAtMs, attempts: 0 });
-
-      const transporter = getTransporter();
-      if (!transporter) {
-        return res.status(500).json({
+      const existing = memoryStore.get(email);
+      if (existing && existing.lastSentMs && nowMs - existing.lastSentMs < OTP_COOLDOWN_MS) {
+        const waitSec = Math.ceil((OTP_COOLDOWN_MS - (nowMs - existing.lastSentMs)) / 1000);
+        return res.status(429).json({
           success: false,
-          error: 'إعدادات Gmail غير متوفرة في بيئة Vercel. يرجى إضافة GMAIL_USER و GMAIL_APP_PASSWORD في Vercel.',
-          previewCode: otpCode,
+          rateLimited: true,
+          cooldownSeconds: waitSec,
+          error: `يرجى الانتظار ${waitSec} ثانية قبل طلب رمز جديد.`,
         });
       }
 
-      const sender = (process.env.GMAIL_USER || 'aissaaimanekhlifi@gmail.com').trim();
-      const displayName = userName || 'Anas';
-      try {
-        const info = await transporter.sendMail({
-          from: `"Sahara Express 📦" <${sender}>`,
-          to: email,
-          subject: `مرحبا ${displayName}، كود التحقق ديالك هو ${otpCode} - Sahara Express`,
-          html: `
-            <div dir="rtl" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:540px;margin:auto;background:#ffffff;color:#2d261e;padding:32px 28px;border:1.5px solid #e8dec8;border-radius:16px;">
-              <div style="text-align:center;padding-bottom:20px;border-bottom:1.5px solid #f0e6d2;">
-                <h2 style="color:#9c6508;margin:0;font-size:24px;">Sahara Express 📦</h2>
-                <p style="color:#785a28;font-size:13px;margin:4px 0 0 0;">خدمات السفر ونقل البضائع والكوليات</p>
-              </div>
-              <div style="padding:24px 0 16px 0;text-align:right;">
-                <p style="font-size:16px;color:#1f1b16;font-weight:700;margin:0 0 12px 0;">مرحباً ${displayName}،</p>
-                <p style="font-size:14px;color:#42382c;line-height:1.7;margin:0 0 20px 0;">
-                  لقد توصلنا بطلب للتحقق من حسابك على منصة <strong>Sahara Express</strong>. لتأكيد هويتك والمتابعة، يرجى استخدام كود التحقق السري:
-                </p>
-                <div style="text-align:center;margin:24px 0;">
-                  <div style="display:inline-block;background:#fffbf2;border:2px dashed #d4af37;padding:16px 36px;border-radius:14px;font-size:36px;font-weight:900;letter-spacing:10px;color:#b45309;font-family:monospace;">${otpCode}</div>
-                  <div style="margin-top:10px;">
-                    <span style="display:inline-block;background:#fef3c7;border:1px solid #fde68a;color:#92400e;font-size:12px;font-weight:bold;padding:5px 14px;border-radius:999px;">⏳ صالح لمدة 10 دقائق فقط (للاستخدام مرة واحدة)</span>
-                  </div>
-                </div>
-                <div style="background:#fbfbfb;border-right:4px solid #b45309;padding:14px 18px;border-radius:8px;margin-top:20px;font-size:13px;color:#574c3d;line-height:1.6;">
-                  🔒 <strong>تنبيه أمني:</strong> لا تشارك هذا الرمز السري مع أي شخص. فريق العمل لن يطلب منك هذا الرمز أبداً.<br>
-                  ℹ️ <strong>إلا ما طلبتيش هاد الكود تجاهل هاد الرسالة</strong>، ولن يتم إجراء أي تغيير على حسابك.
-                </div>
-              </div>
-              <div style="text-align:center;margin-top:28px;padding-top:20px;border-top:1px solid #eee7db;font-size:12px;color:#7c7264;line-height:1.7;">
-                <strong>Sahara Express 📦</strong> - منصة إدارة المحطات وتتبع الإرساليات والكوليات.<br>
-                📍 العنوان: شارع الحسن الثاني، العيون، الصحراء المغربية<br>
-                ✉️ الدعم والتواصل: <a href="mailto:aissaaimanekhlifi@gmail.com" style="color:#9c6508;text-decoration:none;font-weight:600;">aissaaimanekhlifi@gmail.com</a> | واتساب: +212 600-000000
-              </div>
-            </div>
-          `,
-          text: `مرحباً ${displayName}،\n\nكود التحقق الخاص بك هو: ${otpCode}\nصالح لمدة 10 دقائق فقط.\n\nإلا ما طلبتيش هاد الكود تجاهل هاد الرسالة.\n\nفريق Sahara Express 📦\nالعنوان: شارع الحسن الثاني، العيون، الصحراء المغربية\nللتواصل: aissaaimanekhlifi@gmail.com`,
-          headers: {
-            'X-Mailer': 'Sahara Express Mailer',
-            'List-Unsubscribe': `<mailto:${sender}>`,
-          },
+      const windowExpired = !existing?.windowStartMs || nowMs - existing.windowStartMs >= OTP_WINDOW_MS;
+      const sendCount = windowExpired ? 0 : existing?.sendCount || 0;
+      if (sendCount >= OTP_MAX_SENDS_PER_WINDOW) {
+        const retryAfterSec = Math.max(
+          1,
+          Math.ceil((OTP_WINDOW_MS - (nowMs - (existing?.windowStartMs || nowMs))) / 1000)
+        );
+        return res.status(429).json({
+          success: false,
+          rateLimited: true,
+          retryAfterSeconds: retryAfterSec,
+          error: `تم تجاوز الحد المسموح لإرسال الرمز (3 مرات كل 10 دقائق). يرجى الانتظار ${Math.ceil(retryAfterSec / 60)} دقيقة.`,
         });
+      }
 
-        console.log('REAL SEND RESULT:', info.messageId, info.response);
-        return res.status(200).json({
-          success: true,
-          email,
-          expiresAtMs,
-          ttlSeconds: 600,
-          cooldownSeconds: 60,
-          deliveredViaGmail: true,
-          messageId: info.messageId,
-        });
-      } catch (smtpErr: any) {
-        console.error('[Vercel API /index SMTP Error Details]:', {
-          to: email,
-          message: smtpErr?.message,
-          code: smtpErr?.code,
-          command: smtpErr?.command,
-          response: smtpErr?.response,
-        });
+      const otpCode = generateSixDigitOtp();
+      const otpHash = hashOtpCode(otpCode, email);
+      const expiresAtMs = nowMs + OTP_TTL_MS;
+
+      const delivery = await sendVerificationOtpEmail(email, otpCode);
+      if (!delivery.delivered) {
         return res.status(500).json({
           success: false,
           deliveredViaGmail: false,
-          error: `فشل إرسال كود التحقق عبر البريد: ${smtpErr?.message || 'خطأ في خادم SMTP'}`,
-          previewCode: otpCode,
+          error: delivery.error || 'تعذر إرسال رمز التحقق عبر خدمة البريد',
         });
       }
+
+      memoryStore.set(email, {
+        otpHash,
+        expiresAtMs,
+        attempts: 0,
+        sendCount: sendCount + 1,
+        windowStartMs: windowExpired ? nowMs : existing?.windowStartMs || nowMs,
+        lastSentMs: nowMs,
+        used: false,
+      });
+
+      return res.status(200).json({
+        success: true,
+        email,
+        expiresAtMs,
+        ttlSeconds: Math.floor(OTP_TTL_MS / 1000),
+        cooldownSeconds: Math.floor(OTP_COOLDOWN_MS / 1000),
+        remainingSends: Math.max(0, OTP_MAX_SENDS_PER_WINDOW - (sendCount + 1)),
+        deliveredViaGmail: true,
+        messageId: delivery.messageId || null,
+      });
     }
 
     // 2. Route: Verify Registration Email OTP
     if (url.includes('register/verify')) {
       const email = String(body?.email || '').trim().toLowerCase();
-      const code = String(body?.otpCode || '').trim();
+      const code = String(body?.otpCode || '').trim().replace(/\s+/g, '');
 
       if (!email || !/^\d{6}$/.test(code)) {
-        return res.status(400).json({ success: false, error: 'يرجى إدخال كود التحقق المكون من 6 أرقام كاملاً' });
+        return res.status(400).json({ success: false, error: 'يرجى إدخال رمز التحقق المكون من 6 أرقام كاملاً' });
       }
 
       const record = memoryStore.get(email);
-      if (record && Date.now() > record.expiresAtMs) {
-        return res.status(400).json({ success: false, error: 'انتهت صلاحية كود التحقق (5 دقائق). يرجى طلب كود جديد.' });
+      if (!record) {
+        return res.status(400).json({ success: false, error: 'لم يتم العثور على رمز نشط. يرجى طلب رمز جديد.' });
       }
 
-      if (record && record.code !== code) {
+      if (nowMs > record.expiresAtMs) {
+        return res.status(400).json({
+          success: false,
+          expired: true,
+          error: 'انتهت صلاحية رمز التحقق (10 دقائق). يرجى طلب رمز جديد.',
+        });
+      }
+
+      if (record.attempts >= OTP_MAX_VERIFY_ATTEMPTS) {
+        return res.status(429).json({
+          success: false,
+          locked: true,
+          error: 'تم تجاوز الحد الأقصى للمحاولات (5 محاولات). يرجى طلب رمز جديد.',
+        });
+      }
+
+      if (!verifyOtpHash(code, record.otpHash, email)) {
         record.attempts += 1;
-        return res.status(400).json({ success: false, error: 'كود التحقق غير صحيح. تأكد من الكود المرسل لبريدك.' });
+        memoryStore.set(email, record);
+        const remainingAttempts = Math.max(0, OTP_MAX_VERIFY_ATTEMPTS - record.attempts);
+        return res.status(400).json({
+          success: false,
+          remainingAttempts,
+          error:
+            remainingAttempts > 0
+              ? `رمز التحقق غير صحيح. المحاولات المتبقية: ${remainingAttempts}`
+              : 'تم استنفاد جميع المحاولات (5 محاولات). يرجى طلب رمز جديد.',
+        });
       }
 
       return res.status(200).json({ success: true, verified: true, email });
@@ -165,107 +166,173 @@ export default async function handler(req: any, res: any) {
     if (url.includes('forgot-password/send-otp')) {
       const targetEmail = String(body?.targetEmail || body?.email || '').trim().toLowerCase();
       const phone = String(body?.phone || '').trim();
-      const userName = String(body?.userName || 'عضو Sahara Express').trim();
+      const key = phone || targetEmail;
 
-      if (!targetEmail || !targetEmail.includes('@')) {
-        return res.status(400).json({ success: false, error: 'بريد Gmail غير متوفر لهذا الحساب' });
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return res.status(400).json({ success: false, error: 'البريد الإلكتروني غير صالح' });
       }
 
-      const otpCode = String(crypto.randomInt(100000, 1000000));
-      const expiresAtMs = Date.now() + 10 * 60 * 1000;
-      memoryStore.set(targetEmail, { code: otpCode, expiresAtMs, attempts: 0 });
-
-      const transporter = getTransporter();
-      if (!transporter) {
-        return res.status(500).json({
+      const existing = memoryStore.get(key);
+      if (existing && existing.lastSentMs && nowMs - existing.lastSentMs < OTP_COOLDOWN_MS) {
+        const waitSec = Math.ceil((OTP_COOLDOWN_MS - (nowMs - existing.lastSentMs)) / 1000);
+        return res.status(429).json({
           success: false,
-          error: 'بيانات Gmail غير متوفرة في بيئة Vercel. يرجى إضافة GMAIL_USER و GMAIL_APP_PASSWORD في Vercel.',
-          previewCode: otpCode,
+          rateLimited: true,
+          cooldownSeconds: waitSec,
+          error: `يرجى الانتظار ${waitSec} ثانية قبل طلب رمز جديد.`,
         });
       }
 
-      const sender = (process.env.GMAIL_USER || 'aissaaimanekhlifi@gmail.com').trim();
-      const displayName = userName || 'Anas';
-      try {
-        const info = await transporter.sendMail({
-          from: `"Sahara Express 📦" <${sender}>`,
-          to: targetEmail,
-          subject: `مرحبا ${displayName}، كود التحقق ديالك هو ${otpCode} - Sahara Express`,
-          html: `
-            <div dir="rtl" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:540px;margin:auto;background:#ffffff;color:#2d261e;padding:32px 28px;border:1.5px solid #e8dec8;border-radius:16px;">
-              <div style="text-align:center;padding-bottom:20px;border-bottom:1.5px solid #f0e6d2;">
-                <h2 style="color:#9c6508;margin:0;font-size:24px;">Sahara Express 📦</h2>
-                <p style="color:#785a28;font-size:13px;margin:4px 0 0 0;">استعادة كلمة المرور</p>
-              </div>
-              <div style="padding:24px 0 16px 0;text-align:right;">
-                <p style="font-size:16px;color:#1f1b16;font-weight:700;margin:0 0 12px 0;">مرحباً ${displayName}،</p>
-                <p style="font-size:14px;color:#42382c;line-height:1.7;margin:0 0 20px 0;">
-                  لقد توصلنا بطلب لإعادة تعيين كلمة المرور لحسابك في <strong>Sahara Express</strong>. استخدم كود التحقق السري التالي:
-                </p>
-                <div style="text-align:center;margin:24px 0;">
-                  <div style="display:inline-block;background:#fffbf2;border:2px dashed #d4af37;padding:16px 36px;border-radius:14px;font-size:36px;font-weight:900;letter-spacing:10px;color:#b45309;font-family:monospace;">${otpCode}</div>
-                  <div style="margin-top:10px;">
-                    <span style="display:inline-block;background:#fef3c7;border:1px solid #fde68a;color:#92400e;font-size:12px;font-weight:bold;padding:5px 14px;border-radius:999px;">⏳ صالح لمدة 10 دقائق فقط (للاستخدام مرة واحدة)</span>
-                  </div>
-                </div>
-                <div style="background:#fbfbfb;border-right:4px solid #b45309;padding:14px 18px;border-radius:8px;margin-top:20px;font-size:13px;color:#574c3d;line-height:1.6;">
-                  🔒 <strong>تنبيه أمني:</strong> لا تشارك هذا الرمز السري مع أي شخص. فريق العمل لن يطلب منك هذا الرمز أبداً.<br>
-                  ℹ️ <strong>إلا ما طلبتيش هاد الكود تجاهل هاد الرسالة</strong>، ولن يتم إجراء أي تغيير على حسابك.
-                </div>
-              </div>
-              <div style="text-align:center;margin-top:28px;padding-top:20px;border-top:1px solid #eee7db;font-size:12px;color:#7c7264;line-height:1.7;">
-                <strong>Sahara Express 📦</strong> - منصة إدارة المحطات وتتبع الإرساليات والكوليات.<br>
-                📍 العنوان: شارع الحسن الثاني، العيون، الصحراء المغربية<br>
-                ✉️ الدعم والتواصل: <a href="mailto:aissaaimanekhlifi@gmail.com" style="color:#9c6508;text-decoration:none;font-weight:600;">aissaaimanekhlifi@gmail.com</a> | واتساب: +212 600-000000
-              </div>
-            </div>
-          `,
-          text: `مرحباً ${displayName}،\n\nكود استعادة كلمة المرور الخاص بك هو: ${otpCode}\nصالح لمدة 10 دقائق فقط.\n\nإلا ما طلبتيش هاد الكود تجاهل هاد الرسالة.\n\nفريق Sahara Express 📦\nالعنوان: شارع الحسن الثاني، العيون، الصحراء المغربية\nللتواصل: aissaaimanekhlifi@gmail.com`,
-          headers: {
-            'X-Mailer': 'Sahara Express Mailer',
-            'List-Unsubscribe': `<mailto:${sender}>`,
-          },
+      const windowExpired = !existing?.windowStartMs || nowMs - existing.windowStartMs >= OTP_WINDOW_MS;
+      const sendCount = windowExpired ? 0 : existing?.sendCount || 0;
+      if (sendCount >= OTP_MAX_SENDS_PER_WINDOW) {
+        const retryAfterSec = Math.max(
+          1,
+          Math.ceil((OTP_WINDOW_MS - (nowMs - (existing?.windowStartMs || nowMs))) / 1000)
+        );
+        return res.status(429).json({
+          success: false,
+          rateLimited: true,
+          retryAfterSeconds: retryAfterSec,
+          error: `تم تجاوز الحد المسموح لإرسال الرمز (3 مرات كل 10 دقائق). يرجى الانتظار ${Math.ceil(retryAfterSec / 60)} دقيقة.`,
         });
+      }
 
-        console.log('REAL SEND RESULT:', info.messageId, info.response);
-        return res.status(200).json({
-          success: true,
-          expiresAtMs,
-          ttlSeconds: 600,
-          cooldownSeconds: 60,
-          remainingSends: 2,
-          maxSendsPerWindow: 3,
-          deliveredViaGmail: true,
-          targetEmail,
-          messageId: info.messageId,
-          otpRecord: {
-            id: phone || targetEmail,
-            phone,
-            email: targetEmail,
-            otp_code: otpCode,
-            expires_at_ms: expiresAtMs,
-          },
-        });
-      } catch (smtpErr: any) {
-        console.error('[Vercel API /index Forgot Password SMTP Error]:', smtpErr);
+      const otpCode = generateSixDigitOtp();
+      const otpHash = hashOtpCode(otpCode, key);
+      const expiresAtMs = nowMs + OTP_TTL_MS;
+
+      const delivery = await sendVerificationOtpEmail(targetEmail, otpCode);
+      if (!delivery.delivered) {
         return res.status(500).json({
           success: false,
           deliveredViaGmail: false,
-          error: `تعذر إرسال كود الاستعادة عبر البريد: ${smtpErr?.message || 'خطأ في خادم SMTP'}`,
-          previewCode: otpCode,
+          error: delivery.error || 'تعذر إرسال رمز الاستعادة عبر خدمة البريد',
         });
       }
+
+      const nextSendCount = sendCount + 1;
+      const nextWindowStartMs = windowExpired ? nowMs : existing?.windowStartMs || nowMs;
+
+      memoryStore.set(key, {
+        otpHash,
+        expiresAtMs,
+        attempts: 0,
+        sendCount: nextSendCount,
+        windowStartMs: nextWindowStartMs,
+        lastSentMs: nowMs,
+        used: false,
+      });
+
+      return res.status(200).json({
+        success: true,
+        expiresAtMs,
+        ttlSeconds: Math.floor(OTP_TTL_MS / 1000),
+        cooldownSeconds: Math.floor(OTP_COOLDOWN_MS / 1000),
+        remainingSends: Math.max(0, OTP_MAX_SENDS_PER_WINDOW - nextSendCount),
+        maxSendsPerWindow: OTP_MAX_SENDS_PER_WINDOW,
+        deliveredViaGmail: true,
+        targetEmail,
+        messageId: delivery.messageId || null,
+        otpRecord: {
+          id: key,
+          phone,
+          email: targetEmail,
+          otp_hash: otpHash,
+          expires_at_ms: expiresAtMs,
+          attempts: 0,
+          send_count: nextSendCount,
+          window_start_ms: nextWindowStartMs,
+          last_sent_ms: nowMs,
+          verified: false,
+          used: false,
+        },
+      });
     }
 
-    // Default Fallback
+    // 4. Route: Forgot Password Verify OTP
+    if (url.includes('forgot-password/verify-otp')) {
+      const phone = String(body?.phone || body?.whatsappNumber || '').trim();
+      const email = String(body?.email || '').trim().toLowerCase();
+      const key = phone || email;
+      const code = String(body?.otpCode || '').trim().replace(/\s+/g, '');
+      const clientRecord = body?.otpRecord;
+
+      if (!key || !/^\d{6}$/.test(code)) {
+        return res.status(400).json({ success: false, error: 'يرجى إدخال رمز التحقق المكون من 6 أرقام' });
+      }
+
+      let record = memoryStore.get(key);
+      if (!record && clientRecord?.otp_hash && clientRecord?.expires_at_ms) {
+        record = {
+          otpHash: String(clientRecord.otp_hash),
+          expiresAtMs: Number(clientRecord.expires_at_ms),
+          attempts: Number(clientRecord.attempts || 0),
+          sendCount: Number(clientRecord.send_count || 1),
+          windowStartMs: Number(clientRecord.window_start_ms || nowMs),
+          lastSentMs: Number(clientRecord.last_sent_ms || nowMs),
+          used: Boolean(clientRecord.used),
+        };
+      }
+
+      if (!record) {
+        return res.status(400).json({ success: false, error: 'لا يوجد رمز تحقق نشط. يرجى طلب رمز جديد.' });
+      }
+
+      if (record.used) {
+        return res.status(400).json({ success: false, error: 'تم استخدام هذا الرمز مسبقاً.' });
+      }
+
+      if (nowMs > record.expiresAtMs) {
+        return res.status(400).json({
+          success: false,
+          expired: true,
+          error: 'انتهت صلاحية رمز التحقق (10 دقائق). يرجى طلب رمز جديد.',
+        });
+      }
+
+      if (record.attempts >= OTP_MAX_VERIFY_ATTEMPTS) {
+        return res.status(429).json({
+          success: false,
+          locked: true,
+          remainingAttempts: 0,
+          error: 'تم تجاوز الحد الأقصى للمحاولات (5 محاولات). يرجى طلب رمز جديد.',
+        });
+      }
+
+      const valid =
+        verifyOtpHash(code, record.otpHash, key) ||
+        (email ? verifyOtpHash(code, record.otpHash, email) : false);
+
+      if (!valid) {
+        record.attempts += 1;
+        memoryStore.set(key, record);
+        const remainingAttempts = Math.max(0, OTP_MAX_VERIFY_ATTEMPTS - record.attempts);
+        return res.status(400).json({
+          success: false,
+          remainingAttempts,
+          locked: remainingAttempts === 0,
+          error:
+            remainingAttempts > 0
+              ? `رمز التحقق غير صحيح. المحاولات المتبقية: ${remainingAttempts}`
+              : 'تم استنفاد جميع المحاولات (5 محاولات). يرجى طلب رمز جديد.',
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        verified: true,
+        remainingAttempts: Math.max(0, OTP_MAX_VERIFY_ATTEMPTS - record.attempts),
+      });
+    }
+
     return res.status(200).json({
       success: true,
       service: 'Sahara Express API',
       status: 'operational',
-      url,
     });
   } catch (err: any) {
-    console.error('[Vercel API /index Fatal Catch]:', err);
+    console.error('[API /index Error]:', { message: err?.message });
     return res.status(500).json({
       success: false,
       error: err?.message || 'حدث خطأ في الخادم أثناء معالجة الطلب',

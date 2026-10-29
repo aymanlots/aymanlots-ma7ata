@@ -1,9 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
-import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import nodemailer from 'nodemailer';
 import { createServer as createViteServer } from 'vite';
 import { eq, desc } from 'drizzle-orm';
 import { db } from './src/db/index.ts';
@@ -18,160 +16,27 @@ import {
 import { requireAuth } from './src/middleware/auth.ts';
 import { getOrCreateUser } from './src/db/users.ts';
 import { cleanPhoneNumber } from './src/lib/supabase.ts';
+import {
+  OTP_TTL_MS,
+  OTP_WINDOW_MS,
+  OTP_MAX_SENDS_PER_WINDOW,
+  OTP_MAX_VERIFY_ATTEMPTS,
+  OTP_COOLDOWN_MS,
+  generateSixDigitOtp,
+  hashOtpCode,
+  verifyOtpHash,
+  sendVerificationOtpEmail,
+} from './src/lib/otpMailer.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ============================================================================
-// GMAIL APP PASSWORD NODEMAILER SERVICE (Email Verification & Recovery)
-// ============================================================================
-interface SendMailOtpParams {
-  toEmail: string;
-  otpCode: string;
-  subject: string;
-  headerTitle: string;
-  leadMessage: string;
-  userName?: string;
-  actionNote?: string;
-}
-
-function getMailTransporter() {
-  const user = (process.env.GMAIL_USER || 'aissaaimanekhlifi@gmail.com').trim();
-  const pass = (process.env.GMAIL_APP_PASSWORD || 'fntivyfldifqgxwl').replace(/\s+/g, '');
-  if (!user || !pass) {
-    console.warn('[Nodemailer Config Warning] Missing GMAIL_USER or GMAIL_APP_PASSWORD environment variables.');
-    return null;
-  }
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user, pass },
-  });
-}
-
-async function sendOtpViaNodemailerGmail(params: SendMailOtpParams): Promise<{
-  delivered: boolean;
-  messageId?: string;
-  error?: string;
-  previewCode?: string;
-}> {
-  const { toEmail, otpCode, subject, headerTitle, leadMessage, userName, actionNote } = params;
-  const cleanEmail = toEmail.trim().toLowerCase();
-  const transporter = getMailTransporter();
-
-  const htmlContent = `
-<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${subject}</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f7f5f0; margin: 0; padding: 24px; color: #2d261e; direction: rtl; text-align: right; }
-    .container { max-width: 540px; margin: 0 auto; background: #ffffff; border: 1.5px solid #e8dec8; border-radius: 16px; padding: 36px 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
-    .brand-header { text-align: center; padding-bottom: 22px; border-bottom: 1.5px solid #f0e6d2; }
-    .brand-logo-text { font-size: 26px; font-weight: 900; color: #9c6508; letter-spacing: 0.5px; margin: 0; }
-    .brand-sub { font-size: 13px; color: #785a28; margin-top: 4px; font-weight: 600; }
-    .content { padding: 26px 0 18px 0; text-align: right; }
-    .greeting { font-size: 17px; color: #1f1b16; font-weight: 700; margin-bottom: 14px; }
-    .lead { font-size: 14px; color: #42382c; line-height: 1.7; margin-bottom: 22px; }
-    .otp-wrapper { text-align: center; margin: 26px 0; }
-    .otp-box { display: inline-block; background: #fffbf2; border: 2px dashed #d4af37; border-radius: 14px; padding: 18px 40px; }
-    .otp-code { font-family: monospace, 'Courier New', Courier; font-size: 38px; font-weight: 900; letter-spacing: 12px; color: #b45309; }
-    .badge-expiry { display: inline-block; margin-top: 12px; background: #fef3c7; border: 1px solid #fde68a; color: #92400e; font-size: 12px; font-weight: bold; padding: 6px 16px; border-radius: 999px; }
-    .notice-box { background: #fbfbfb; border-right: 4px solid #b45309; padding: 14px 18px; border-radius: 8px; margin-top: 22px; font-size: 13px; color: #574c3d; line-height: 1.6; }
-    .footer { text-align: center; margin-top: 30px; padding-top: 22px; border-top: 1px solid #eee7db; font-size: 12px; color: #7c7264; line-height: 1.7; }
-    .footer a { color: #9c6508; text-decoration: none; font-weight: 600; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="brand-header">
-      <h1 class="brand-logo-text">Sahara Express 📦</h1>
-      <div class="brand-sub">خدمات السفر ونقل البضائع والكوليات</div>
-    </div>
-    <div class="content">
-      <div class="greeting">مرحباً ${userName || 'بك'}،</div>
-      <div class="lead">
-        لقد توصلنا بطلب للتحقق من حسابك على منصة <strong>Sahara Express</strong>. ${leadMessage}
-      </div>
-      <div class="otp-wrapper">
-        <div class="otp-box">
-          <div class="otp-code">${otpCode}</div>
-        </div>
-        <div>
-          <span class="badge-expiry">⏳ صالح لمدة 10 دقائق فقط (للاستخدام مرة واحدة)</span>
-        </div>
-      </div>
-      ${actionNote ? `<p style="font-size:13px;color:#574c3d;margin:12px 0;">${actionNote}</p>` : ''}
-      <div class="notice-box">
-        🔒 <strong>تنبيه أمني:</strong> لا تشارك هذا الرمز السري مع أي شخص. فريق العمل لن يطلب منك هذا الرمز أبداً.<br>
-        ℹ️ <strong>إلا ما طلبتيش هاد الكود تجاهل هاد الرسالة</strong>، ولن يتم إجراء أي تغيير على حسابك.
-      </div>
-    </div>
-    <div class="footer">
-      <strong>Sahara Express 📦</strong> - منصة إدارة المحطات وتتبع الإرساليات والكوليات.<br>
-      📍 العنوان: شارع الحسن الثاني، العيون، الصحراء المغربية<br>
-      ✉️ الدعم الفني: <a href="mailto:aissaaimanekhlifi@gmail.com">aissaaimanekhlifi@gmail.com</a> | واتساب: +212 600-000000<br>
-      <span style="font-size:11px;color:#998e7f;">هذه رسالة آلية لتأكيد الأمان تم إرسالها إلى ${cleanEmail}.</span>
-    </div>
-  </div>
-</body>
-</html>
-  `;
-
-  if (!transporter) {
-    console.warn(`[Nodemailer Warning] GMAIL credentials missing on server. Cannot send to ${cleanEmail}`);
-    return {
-      delivered: false,
-      error: 'GMAIL_CREDENTIALS_MISSING',
-      previewCode: otpCode,
-    };
-  }
-
-  try {
-    const sender = (process.env.GMAIL_USER || 'aissaaimanekhlifi@gmail.com').trim();
-    const fromAddress = `"Sahara Express 📦" <${sender}>`;
-    const sendResult = await transporter.sendMail({
-      from: fromAddress,
-      to: cleanEmail,
-      subject,
-      html: htmlContent,
-      text: `مرحباً ${userName || 'بك'}،\n\nكود التحقق الخاص بك هو: ${otpCode}\nصالح لمدة 10 دقائق فقط.\n\nإلا ما طلبتيش هاد الكود تجاهل هاد الرسالة.\n\nفريق Sahara Express 📦\nالعنوان: شارع الحسن الثاني، العيون، الصحراء المغربية\nللتواصل: aissaaimanekhlifi@gmail.com`,
-      headers: {
-        'X-Mailer': 'Sahara Express Mailer',
-        'List-Unsubscribe': `<mailto:${sender}>`,
-      },
-    });
-    console.log('REAL SEND RESULT:', sendResult.messageId, sendResult.response);
-    return {
-      delivered: true,
-      messageId: sendResult.messageId,
-    };
-  } catch (err: any) {
-    console.error('[Nodemailer SMTP Error Details]:', {
-      to: cleanEmail,
-      message: err?.message,
-      code: err?.code,
-      command: err?.command,
-      response: err?.response,
-      responseCode: err?.responseCode,
-    });
-    return {
-      delivered: false,
-      error: err?.message || 'Error sending email via Nodemailer',
-      previewCode: otpCode,
-    };
-  }
-}
-
-// ============================================================================
-// REGISTRATION EMAIL OTP STORE (6 Digits + 5 Min Expiry + Rate Limits)
+// REGISTRATION EMAIL OTP STORE (6 Digits Hashed + 10-Min Expiry + 3/10m Limit)
 // ============================================================================
 interface RegistrationEmailOtpRecord {
   email: string;
-  otpCode: string;
+  otpHash: string;
   expiresAtMs: number;
   attempts: number;
   sendCount: number;
@@ -184,19 +49,13 @@ interface RegistrationEmailOtpRecord {
 const registrationEmailOtpStore = new Map<string, RegistrationEmailOtpRecord>();
 
 // ============================================================================
-// GMAIL OTP STORE & RATE LIMITER (5-Minute Expiry + Rate Limit)
+// PASSWORD RECOVERY OTP STORE (6 Digits Hashed + 10-Min Expiry + 3/10m Limit)
 // ============================================================================
-const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes expiration
-const OTP_COOLDOWN_MS = 60 * 1000; // 60 seconds minimum between sends
-const OTP_WINDOW_MS = 15 * 60 * 1000; // 15 minutes rate-limit window
-const OTP_MAX_SENDS_PER_WINDOW = 3; // Max 3 OTP sends per 15 minutes per user/IP
-const OTP_MAX_VERIFY_ATTEMPTS = 5; // Max 5 verification attempts per OTP
-
 interface ServerOtpRecord {
   id: string;
   phone: string;
-  email?: string;
-  otpCode: string;
+  email: string;
+  otpHash: string;
   expiresAtMs: number;
   attempts: number;
   sendCount: number;
@@ -220,26 +79,17 @@ async function startServer() {
   app.use(express.json({ limit: '5mb' }));
 
   // ============================================================================
-  // REGISTRATION GMAIL OTP ENDPOINTS (6-Digit OTP + 5-Min Expiry + Nodemailer)
+  // REGISTRATION EMAIL OTP ENDPOINTS (6-Digit Hashed OTP + 10-Min Expiry)
   // ============================================================================
   const handleSendEmailOtp = async (req: express.Request, res: express.Response) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     try {
       const rawEmail = String(req.body?.email || req.body?.userEmail || '').trim().toLowerCase();
-      const userName = String(req.body?.userName || req.body?.name || '').trim();
 
       if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
         return res.status(400).json({
           success: false,
-          error: 'يرجى إدخال عنوان بريد إلكتروني صحيح (مثال: user@gmail.com)',
-        });
-      }
-
-      // Check if ends with @gmail.com or valid domain
-      if (!rawEmail.endsWith('@gmail.com') && !rawEmail.includes('@')) {
-        return res.status(400).json({
-          success: false,
-          error: 'يرجى إدخال عنوان بريد Gmail صالح ينتهي بـ @gmail.com',
+          error: 'يرجى إدخال عنوان بريد إلكتروني صحيح',
         });
       }
 
@@ -254,30 +104,44 @@ async function startServer() {
           rateLimited: true,
           cooldownSeconds: waitSec,
           retryAfterSeconds: waitSec,
-          error: `يرجى الانتظار ${waitSec} ثانية قبل طلب إرسال كود تحقق جديد.`,
+          error: `يرجى الانتظار ${waitSec} ثانية قبل طلب إرسال رمز تحقق جديد.`,
         });
       }
 
-      // Check 15-minute window limit (max 5 sends for registration)
+      // Check 10-minute window limit (max 3 sends per 10 minutes)
       const windowExpired = !existing?.windowStartMs || nowMs - existing.windowStartMs >= OTP_WINDOW_MS;
       const sendCount = windowExpired ? 0 : existing?.sendCount || 0;
-      if (sendCount >= 5) {
-        const retryAfterSec = Math.ceil((OTP_WINDOW_MS - (nowMs - (existing?.windowStartMs || nowMs))) / 1000);
+      if (sendCount >= OTP_MAX_SENDS_PER_WINDOW) {
+        const retryAfterSec = Math.max(
+          1,
+          Math.ceil((OTP_WINDOW_MS - (nowMs - (existing?.windowStartMs || nowMs))) / 1000)
+        );
         return res.status(429).json({
           success: false,
           rateLimited: true,
           retryAfterSeconds: retryAfterSec,
-          error: `تم تجاوز الحد المسموح من طلبات الكود. يرجى الانتظار ${Math.ceil(retryAfterSec / 60)} دقيقة قبل المحاولة مجدداً.`,
+          error: `تم تجاوز الحد المسموح لإرسال الرمز (${OTP_MAX_SENDS_PER_WINDOW} مرات كل 10 دقائق). يرجى الانتظار ${Math.ceil(retryAfterSec / 60)} دقيقة.`,
         });
       }
 
-      // Generate secure 6-digit OTP code (100000 - 999999)
-      const otpCode = String(crypto.randomInt(100000, 1000000));
-      const expiresAtMs = nowMs + OTP_TTL_MS; // Strictly 5 minutes
+      // Generate secure 6-digit random OTP and hash it immediately (never store or log plain code)
+      const otpCode = generateSixDigitOtp();
+      const otpHash = hashOtpCode(otpCode, rawEmail);
+      const expiresAtMs = nowMs + OTP_TTL_MS; // 10 minutes
+
+      const emailDelivery = await sendVerificationOtpEmail(rawEmail, otpCode);
+
+      if (!emailDelivery.delivered) {
+        return res.status(500).json({
+          success: false,
+          deliveredViaGmail: false,
+          error: emailDelivery.error || 'تعذر إرسال رمز التحقق عبر خدمة البريد',
+        });
+      }
 
       const newRecord: RegistrationEmailOtpRecord = {
         email: rawEmail,
-        otpCode,
+        otpHash,
         expiresAtMs,
         attempts: 0,
         sendCount: sendCount + 1,
@@ -288,42 +152,18 @@ async function startServer() {
       };
       registrationEmailOtpStore.set(rawEmail, newRecord);
 
-      // Send 6-digit OTP code directly to Gmail via Nodemailer with Gmail App Password
-      const emailDelivery = await sendOtpViaNodemailerGmail({
-        toEmail: rawEmail,
-        otpCode,
-        subject: `مرحبا ${userName || 'Anas'}، كود التحقق ديالك هو ${otpCode} - Sahara Express`,
-        headerTitle: 'تأكيد التسجيل في Sahara Express',
-        leadMessage: 'لتأكيد عنوان بريدك الإلكتروني وإتمام إنشاء حسابك، يرجى استخدام كود التحقق السري:',
-        userName: userName || 'Anas',
-        actionNote: 'أدخل هذا الكود المكون من 6 أرقام في شاشة التسجيل للمتابعة.',
-      });
-
-      if (!emailDelivery.delivered) {
-        console.error('[Registration Send Email OTP Failed]:', emailDelivery.error);
-        return res.status(500).json({
-          success: false,
-          deliveredViaGmail: false,
-          error: emailDelivery.error === 'GMAIL_CREDENTIALS_MISSING'
-            ? 'بيانات Gmail غير متوفرة بالسيرفر. يرجى ضبط GMAIL_USER و GMAIL_APP_PASSWORD في Vercel.'
-            : `تعذر إرسال الإيميل عبر خادم SMTP: ${emailDelivery.error || 'خطأ غير معروف في خادم البريد'}`,
-          previewCode: emailDelivery.previewCode,
-        });
-      }
-
       return res.status(200).json({
         success: true,
         email: rawEmail,
         expiresAtMs,
-        ttlSeconds: 600,
+        ttlSeconds: Math.floor(OTP_TTL_MS / 1000),
         cooldownSeconds: Math.floor(OTP_COOLDOWN_MS / 1000),
-        remainingSends: Math.max(0, 5 - newRecord.sendCount),
+        remainingSends: Math.max(0, OTP_MAX_SENDS_PER_WINDOW - newRecord.sendCount),
         deliveredViaGmail: true,
         messageId: emailDelivery.messageId || null,
-        previewCode: emailDelivery.previewCode || undefined,
       });
     } catch (err: any) {
-      console.error('[Registration Send Email OTP Crash]:', err);
+      console.error('[Registration Send Email OTP Error]:', { message: err?.message });
       return res.status(500).json({
         success: false,
         error: err?.message || 'حدث خطأ في الخادم أثناء معالجة طلب البريد الإلكتروني',
@@ -344,7 +184,7 @@ async function startServer() {
       if (!rawEmail || !/^\d{6}$/.test(codeInput)) {
         return res.status(400).json({
           success: false,
-          error: 'يرجى إدخال كود التحقق المكون من 6 أرقام كاملاً',
+          error: 'يرجى إدخال رمز التحقق المكون من 6 أرقام كاملاً',
         });
       }
 
@@ -352,7 +192,7 @@ async function startServer() {
       if (!record) {
         return res.status(400).json({
           success: false,
-          error: 'لم يتم العثور على طلب تحقق نشط لهذا البريد. يرجى طلب كود جديد.',
+          error: 'لم يتم العثور على طلب تحقق نشط لهذا البريد. يرجى طلب رمز جديد.',
         });
       }
 
@@ -361,7 +201,7 @@ async function startServer() {
         return res.status(400).json({
           success: false,
           expired: true,
-          error: 'انتهت صلاحية كود التحقق (مرت 5 دقائق). يرجى طلب كود جديد.',
+          error: 'انتهت صلاحية رمز التحقق (مرت 10 دقائق). يرجى طلب رمز جديد.',
         });
       }
 
@@ -369,12 +209,13 @@ async function startServer() {
         return res.status(429).json({
           success: false,
           locked: true,
-          error: 'تم تجاوز الحد الأقصى للمحاولات الخاطئة (5 محاولات). يرجى طلب كود جديد.',
+          error: 'تم تجاوز الحد الأقصى للمحاولات الخاطئة (5 محاولات). يرجى طلب رمز جديد.',
         });
       }
 
-      if (record.otpCode !== codeInput) {
+      if (!verifyOtpHash(codeInput, record.otpHash, rawEmail)) {
         record.attempts += 1;
+        registrationEmailOtpStore.set(rawEmail, record);
         const remainingAttempts = Math.max(0, OTP_MAX_VERIFY_ATTEMPTS - record.attempts);
         return res.status(400).json({
           success: false,
@@ -382,12 +223,11 @@ async function startServer() {
           remainingAttempts,
           error:
             remainingAttempts > 0
-              ? `كود التحقق غير صحيح. المحاولات المتبقية: ${remainingAttempts}`
-              : 'تم استنفاد جميع المحاولات المسموحة لهذا الكود. يرجى طلب كود جديد.',
+              ? `رمز التحقق غير صحيح. المحاولات المتبقية: ${remainingAttempts}`
+              : 'تم استنفاد جميع المحاولات المسموحة (5 محاولات). يرجى طلب رمز جديد.',
         });
       }
 
-      // Mark verified
       record.verified = true;
       registrationEmailOtpStore.set(rawEmail, record);
 
@@ -397,30 +237,29 @@ async function startServer() {
         email: rawEmail,
       });
     } catch (err: any) {
-      console.error('[Registration Verify Email OTP Error]:', err);
+      console.error('[Registration Verify Email OTP Error]:', { message: err?.message });
       return res.status(500).json({
         success: false,
-        error: 'حدث خطأ أثناء التحقق من كود البريد الإلكتروني',
+        error: 'حدث خطأ أثناء التحقق من رمز البريد الإلكتروني',
       });
     }
   });
 
   // ============================================================================
-  // FORGOT PASSWORD GMAIL OTP ENDPOINT (6-Digit OTP + 5-Min Expiry via Nodemailer)
+  // FORGOT PASSWORD EMAIL OTP ENDPOINT (6-Digit Hashed OTP + 10-Min Expiry)
   // ============================================================================
   app.post('/api/auth/forgot-password/send-otp', async (req, res) => {
     try {
       const rawPhone = String(req.body?.phone || '').trim();
       const rawEmail = String(req.body?.targetEmail || req.body?.email || '').trim().toLowerCase();
-      const userName = String(req.body?.userName || '').trim();
       const clientOtpRecord = req.body?.existingRateState;
 
       const canonicalPhone = cleanPhoneNumber(rawPhone) || (rawEmail ? rawEmail.replace(/[^a-zA-Z0-9]/g, '_') : '');
 
-      if (!rawEmail || !rawEmail.includes('@')) {
+      if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
         return res.status(400).json({
           success: false,
-          error: 'هذا الحساب لا يتوفر على بريد Gmail مسجل لاستلام كود التحقق. يرجى إدخال بريدك Gmail المسجل.',
+          error: 'يرجى إدخال البريد الإلكتروني المسجل لاستلام رمز التحقق.',
         });
       }
 
@@ -430,23 +269,23 @@ async function startServer() {
         req.socket.remoteAddress ||
         'unknown-ip';
 
-      // 1. Check IP-level Rate Limit
+      // 1. Check IP-level Rate Limit (3 sends per 10 minutes)
       const ipState = ipRateLimitStore.get(clientIp);
       if (ipState) {
         const ipWindowExpired = nowMs - ipState.windowStartMs >= OTP_WINDOW_MS;
-        if (!ipWindowExpired && ipState.count >= OTP_MAX_SENDS_PER_WINDOW * 2) {
-          const retryAfterSec = Math.ceil((OTP_WINDOW_MS - (nowMs - ipState.windowStartMs)) / 1000);
+        if (!ipWindowExpired && ipState.count >= OTP_MAX_SENDS_PER_WINDOW) {
+          const retryAfterSec = Math.max(1, Math.ceil((OTP_WINDOW_MS - (nowMs - ipState.windowStartMs)) / 1000));
           return res.status(429).json({
             success: false,
             rateLimited: true,
             retryAfterSeconds: retryAfterSec,
-            error: `تم تجاوز الحد المسموح من طلبات الكود. يرجى الانتظار ${Math.ceil(retryAfterSec / 60)} دقيقة قبل المحاولة مجدداً.`,
+            error: `تم تجاوز الحد المسموح لإرسال الرمز (${OTP_MAX_SENDS_PER_WINDOW} مرات كل 10 دقائق). يرجى الانتظار ${Math.ceil(retryAfterSec / 60)} دقيقة.`,
           });
         }
       }
 
-      // 2. Check User / Phone Rate Limit (merges server state + Firestore client state)
-      const existing = serverOtpStore.get(canonicalPhone);
+      // 2. Check User Rate Limit (max 3 sends per 10 minutes)
+      const existing = serverOtpStore.get(canonicalPhone) || serverOtpStore.get(rawEmail);
       const refWindowStartMs = Math.max(
         existing?.windowStartMs || 0,
         Number(clientOtpRecord?.window_start_ms || 0)
@@ -460,7 +299,6 @@ async function startServer() {
         ? 0
         : Math.max(existing?.sendCount || 0, Number(clientOtpRecord?.send_count || 0));
 
-      // Enforce 60-second cooldown between consecutive sends
       if (refLastSentMs && nowMs - refLastSentMs < OTP_COOLDOWN_MS) {
         const waitSec = Math.ceil((OTP_COOLDOWN_MS - (nowMs - refLastSentMs)) / 1000);
         return res.status(429).json({
@@ -468,11 +306,10 @@ async function startServer() {
           rateLimited: true,
           cooldownSeconds: waitSec,
           retryAfterSeconds: waitSec,
-          error: `يرجى الانتظار ${waitSec} ثانية قبل طلب إرسال كود OTP جديد.`,
+          error: `يرجى الانتظار ${waitSec} ثانية قبل طلب إرسال رمز جديد.`,
         });
       }
 
-      // Enforce maximum 3 OTP sends per 15-minute window
       if (currentSendCount >= OTP_MAX_SENDS_PER_WINDOW) {
         const retryAfterSec = Math.max(
           1,
@@ -483,22 +320,34 @@ async function startServer() {
           success: false,
           rateLimited: true,
           retryAfterSeconds: retryAfterSec,
-          error: `لقد وصلت للحد الأقصى لإرسال الكود (${OTP_MAX_SENDS_PER_WINDOW} مرات خلال 15 دقيقة). يرجى المحاولة بعد ${mins} دقيقة.`,
+          error: `لقد وصلت للحد الأقصى لإرسال الرمز (${OTP_MAX_SENDS_PER_WINDOW} مرات كل 10 دقائق). يرجى المحاولة بعد ${mins} دقيقة.`,
         });
       }
 
-      // 3. Generate cryptographically secure 6-digit OTP code (100000 - 999999)
-      const otpCode = String(crypto.randomInt(100000, 1000000));
-      const expiresAtMs = nowMs + OTP_TTL_MS; // Strictly 5 minutes
+      // 3. Generate cryptographically random 6-digit OTP and store only its hash
+      const otpCode = generateSixDigitOtp();
+      const otpHash = hashOtpCode(otpCode, canonicalPhone);
+      const expiresAtMs = nowMs + OTP_TTL_MS; // 10 minutes
       const nextWindowStartMs = windowExpired ? nowMs : refWindowStartMs || nowMs;
       const nextSendCount = currentSendCount + 1;
       const nowIso = new Date(nowMs).toISOString();
+
+      // 4. Send 6-digit OTP via dedicated transactional email API (Resend or Brevo)
+      const emailDelivery = await sendVerificationOtpEmail(rawEmail, otpCode);
+
+      if (!emailDelivery.delivered) {
+        return res.status(500).json({
+          success: false,
+          deliveredViaGmail: false,
+          error: emailDelivery.error || 'تعذر إرسال رمز التحقق عبر خدمة البريد',
+        });
+      }
 
       const newRecord: ServerOtpRecord = {
         id: canonicalPhone,
         phone: canonicalPhone,
         email: rawEmail,
-        otpCode,
+        otpHash,
         expiresAtMs,
         attempts: 0,
         sendCount: nextSendCount,
@@ -511,8 +360,8 @@ async function startServer() {
       };
 
       serverOtpStore.set(canonicalPhone, newRecord);
+      serverOtpStore.set(rawEmail, newRecord);
 
-      // Update IP rate limit tracker
       ipRateLimitStore.set(clientIp, {
         count: ipState && nowMs - ipState.windowStartMs < OTP_WINDOW_MS ? ipState.count + 1 : 1,
         windowStartMs:
@@ -520,36 +369,13 @@ async function startServer() {
         lastSentMs: nowMs,
       });
 
-      // 4. Send 6-digit OTP exclusively to user's registered Gmail via Nodemailer
-      const emailDelivery = await sendOtpViaNodemailerGmail({
-        toEmail: rawEmail,
-        otpCode,
-        subject: `مرحبا ${userName || 'Anas'}، كود التحقق ديالك هو ${otpCode} - Sahara Express`,
-        headerTitle: 'استعادة كلمة المرور',
-        leadMessage: 'لقد تم طلب كود لإعادة تعيين كلمة المرور الخاصة بحسابك في Sahara Express. استخدم الكود السري التالي للمتابعة:',
-        userName: userName || 'Anas',
-        actionNote: 'أدخل هذا الكود في شاشة استعادة كلمة المرور لتعيين كلمة مرورك الجديدة.',
-      });
-
-      if (!emailDelivery.delivered) {
-        console.error('[Forgot Password Send OTP Failed]:', emailDelivery.error);
-        return res.status(500).json({
-          success: false,
-          deliveredViaGmail: false,
-          error: emailDelivery.error === 'GMAIL_CREDENTIALS_MISSING'
-            ? 'بيانات Gmail غير متوفرة بالسيرفر. يرجى ضبط GMAIL_USER و GMAIL_APP_PASSWORD في Vercel.'
-            : `تعذر إرسال الإيميل عبر خادم SMTP: ${emailDelivery.error || 'خطأ في خادم البريد'}`,
-          previewCode: emailDelivery.previewCode,
-        });
-      }
-
       return res.status(200).json({
         success: true,
         otpRecord: {
           id: canonicalPhone,
           phone: canonicalPhone,
           email: rawEmail,
-          otp_code: otpCode,
+          otp_hash: otpHash,
           expires_at: new Date(expiresAtMs).toISOString(),
           expires_at_ms: expiresAtMs,
           attempts: 0,
@@ -562,42 +388,63 @@ async function startServer() {
           updated_at: nowIso,
         },
         expiresAtMs,
-        ttlSeconds: 300,
+        ttlSeconds: Math.floor(OTP_TTL_MS / 1000),
         cooldownSeconds: Math.floor(OTP_COOLDOWN_MS / 1000),
         remainingSends: Math.max(0, OTP_MAX_SENDS_PER_WINDOW - nextSendCount),
         maxSendsPerWindow: OTP_MAX_SENDS_PER_WINDOW,
-        deliveredViaGmail: emailDelivery.delivered,
+        deliveredViaGmail: true,
         emailMessageId: emailDelivery.messageId || null,
         targetEmail: rawEmail,
-        previewCode: emailDelivery.previewCode || (!emailDelivery.delivered ? otpCode : undefined),
       });
     } catch (err: any) {
-      console.error('[Forgot Password Send OTP Error]:', err);
+      console.error('[Forgot Password Send OTP Error]:', { message: err?.message });
       return res.status(500).json({
         success: false,
-        error: 'حدث خطأ في الخادم أثناء توليد أو إرسال كود التحقق',
+        error: 'حدث خطأ في الخادم أثناء توليد أو إرسال رمز التحقق',
       });
     }
   });
 
   app.post('/api/auth/forgot-password/verify-otp', async (req, res) => {
     try {
-      const canonicalPhone = cleanPhoneNumber(String(req.body?.phone || req.body?.whatsappNumber || ''));
+      const rawPhone = String(req.body?.phone || req.body?.whatsappNumber || '').trim();
+      const rawEmail = String(req.body?.email || '').trim().toLowerCase();
+      const canonicalPhone = cleanPhoneNumber(rawPhone) || (rawEmail ? rawEmail.replace(/[^a-zA-Z0-9]/g, '_') : '');
       const codeInput = String(req.body?.otpCode || '').trim().replace(/\s+/g, '');
+      const clientRecord = req.body?.otpRecord;
 
-      if (!canonicalPhone || !/^\d{6}$/.test(codeInput)) {
+      if ((!canonicalPhone && !rawEmail) || !/^\d{6}$/.test(codeInput)) {
         return res.status(400).json({
           success: false,
-          error: 'يرجى إدخال كود التحقق المكون من 6 أرقام بشكل صحيح',
+          error: 'يرجى إدخال رمز التحقق المكون من 6 أرقام بشكل صحيح',
         });
       }
 
-      const record = serverOtpStore.get(canonicalPhone);
+      let record = serverOtpStore.get(canonicalPhone) || (rawEmail ? serverOtpStore.get(rawEmail) : undefined);
+
+      // Reconstruct from hashed client/cloud state if serverless instance restarted
+      if (!record && clientRecord?.otp_hash && clientRecord?.expires_at_ms) {
+        record = {
+          id: canonicalPhone,
+          phone: canonicalPhone,
+          email: rawEmail || String(clientRecord.email || ''),
+          otpHash: String(clientRecord.otp_hash),
+          expiresAtMs: Number(clientRecord.expires_at_ms),
+          attempts: Number(clientRecord.attempts || 0),
+          sendCount: Number(clientRecord.send_count || 1),
+          windowStartMs: Number(clientRecord.window_start_ms || Date.now()),
+          lastSentMs: Number(clientRecord.last_sent_ms || Date.now()),
+          verified: Boolean(clientRecord.verified),
+          used: Boolean(clientRecord.used),
+          createdAt: String(clientRecord.created_at || new Date().toISOString()),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
       if (!record) {
-        // Defer to Firestore verification on client if server restarted
-        return res.json({
-          success: true,
-          deferToCloudDb: true,
+        return res.status(400).json({
+          success: false,
+          error: 'لا يوجد رمز تحقق نشط. يرجى طلب إرسال رمز جديد.',
         });
       }
 
@@ -605,7 +452,7 @@ async function startServer() {
       if (record.used) {
         return res.status(400).json({
           success: false,
-          error: 'تم استخدام هذا الكود مسبقاً. يرجى طلب كود جديد.',
+          error: 'تم استخدام هذا الرمز مسبقاً. يرجى طلب رمز جديد.',
         });
       }
 
@@ -613,7 +460,7 @@ async function startServer() {
         return res.status(400).json({
           success: false,
           expired: true,
-          error: 'انتهت صلاحية كود التحقق (مرت أكثر من 5 دقائق). يرجى طلب كود جديد.',
+          error: 'انتهت صلاحية رمز التحقق (مرت 10 دقائق). يرجى طلب رمز جديد.',
         });
       }
 
@@ -621,39 +468,48 @@ async function startServer() {
         return res.status(429).json({
           success: false,
           locked: true,
-          error: 'تم تجاوز الحد الأقصى لمحاولات إدخال الكود (5 محاولات خاطئة). يرجى طلب كود جديد.',
+          remainingAttempts: 0,
+          error: 'تم تجاوز الحد الأقصى لمحاولات إدخال الرمز (5 محاولات خاطئة). يرجى طلب رمز جديد.',
         });
       }
 
-      if (record.otpCode !== codeInput) {
+      const isValid =
+        verifyOtpHash(codeInput, record.otpHash, record.id) ||
+        (record.email ? verifyOtpHash(codeInput, record.otpHash, record.email) : false);
+
+      if (!isValid) {
         record.attempts += 1;
         record.updatedAt = new Date(nowMs).toISOString();
-        serverOtpStore.set(canonicalPhone, record);
+        serverOtpStore.set(record.id, record);
+        if (record.email) serverOtpStore.set(record.email, record);
         const remainingAttempts = Math.max(0, OTP_MAX_VERIFY_ATTEMPTS - record.attempts);
         return res.status(400).json({
           success: false,
           attempts: record.attempts,
           remainingAttempts,
+          locked: remainingAttempts === 0,
           error:
             remainingAttempts > 0
-              ? `كود التحقق غير صحيح. تبقى لديك ${remainingAttempts} محاولات.`
-              : 'تم استنفاد جميع المحاولات المسموحة لهذا الكود. يرجى طلب كود جديد.',
+              ? `رمز التحقق غير صحيح. تبقى لديك ${remainingAttempts} محاولات.`
+              : 'تم استنفاد جميع المحاولات المسموحة لهذا الرمز (5 محاولات). يرجى طلب رمز جديد.',
         });
       }
 
       record.verified = true;
       record.updatedAt = new Date(nowMs).toISOString();
-      serverOtpStore.set(canonicalPhone, record);
+      serverOtpStore.set(record.id, record);
+      if (record.email) serverOtpStore.set(record.email, record);
 
       return res.json({
         success: true,
         verified: true,
+        remainingAttempts: Math.max(0, OTP_MAX_VERIFY_ATTEMPTS - record.attempts),
       });
-    } catch (err) {
-      console.error('[Forgot Password Verify OTP Error]:', err);
+    } catch (err: any) {
+      console.error('[Forgot Password Verify OTP Error]:', { message: err?.message });
       return res.status(500).json({
         success: false,
-        error: 'حدث خطأ أثناء التحقق من الكود',
+        error: 'حدث خطأ أثناء التحقق من الرمز',
       });
     }
   });
@@ -667,6 +523,7 @@ async function startServer() {
         record.verified = true;
         record.updatedAt = new Date().toISOString();
         serverOtpStore.set(canonicalPhone, record);
+        if (record.email) serverOtpStore.set(record.email, record);
       }
       return res.json({ success: true });
     } catch {

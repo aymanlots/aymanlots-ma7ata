@@ -6004,12 +6004,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // ============================================================================
-  // MULTI-USER WHATSAPP & GMAIL 6-DIGIT OTP PASSWORD RECOVERY (5-MIN EXPIRY)
+  // MULTI-USER EMAIL 6-DIGIT HASHED OTP PASSWORD RECOVERY (10-MIN EXPIRY)
   // ============================================================================
-  const OTP_TTL_MS = 5 * 60 * 1000; // 5 minutes expiration
+  const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes expiration
   const OTP_COOLDOWN_MS = 60 * 1000; // 60 seconds cooldown between sends
-  const OTP_WINDOW_MS = 15 * 60 * 1000; // 15 minutes rate limit window
-  const OTP_MAX_SENDS = 3; // Max 3 sends per 15 minutes
+  const OTP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes rate limit window
+  const OTP_MAX_SENDS = 3; // Max 3 sends per 10 minutes
   const OTP_MAX_ATTEMPTS = 5; // Max 5 verification attempts per code
 
   const resolveMultiUserAccountByWhatsapp = async (inputWhatsappOrPhoneOrEmail: string) => {
@@ -6032,7 +6032,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           phone: acctPhone,
           whatsapp: acctWhatsapp,
           email: cloudAcc.email,
-          name: cloudAcc.name || 'مستخدم Sahara📦 Express',
+          name: cloudAcc.name || 'مستخدم Sahara Express',
           role: cloudAcc.role || 'owner',
           revoked: Boolean(cloudAcc.deleted || cloudAcc.status === 'revoked'),
           cloudAccount: cloudAcc,
@@ -6058,7 +6058,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             phone: cleanAccPhone || phoneKey,
             whatsapp: cleanAccWa || cleanAccPhone || phoneKey,
             email: acc?.email,
-            name: acc?.name || 'مستخدم Sahara📦 Express',
+            name: acc?.name || 'مستخدم Sahara Express',
             role: acc?.isOwner ? ('owner' as const) : ('worker' as const),
             revoked: isAccountRevokedLocally(acc?.id, cleanAccPhone),
             cloudAccount: null,
@@ -6082,7 +6082,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         phone: mPhone,
         whatsapp: mWa,
         email: matchedMember.profile?.email,
-        name: matchedMember.profile?.name || 'مستخدم Sahara📦 Express',
+        name: matchedMember.profile?.name || 'مستخدم Sahara Express',
         role: matchedMember.role === 'worker' ? ('worker' as const) : ('owner' as const),
         revoked: matchedMember.status !== 'active' || isAccountRevokedLocally(matchedMember.user_id, mPhone),
         cloudAccount: null,
@@ -6135,11 +6135,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!rawInput || (rawInput.length < 5 && !rawInput.includes('@'))) {
       return {
         success: false,
-        error: 'يرجى إدخال رقم الهاتف المسجل بالحساب أو بريد Gmail',
+        error: 'يرجى إدخال رقم الهاتف المسجل بالحساب أو البريد الإلكتروني',
       };
     }
 
-    // 1. Find the multi-user account registered with this phone number or Gmail
+    // 1. Find the multi-user account registered with this phone number or email
     const resolvedAccount = await resolveMultiUserAccountByWhatsapp(rawInput);
     if (!resolvedAccount) {
       return {
@@ -6162,7 +6162,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!targetEmail || !targetEmail.includes('@')) {
       return {
         success: false,
-        error: 'هذا الحساب لا يتوفر على بريد Gmail مسجل لاستلام كود التحقق. يرجى إدخال بريدك Gmail المسجل.',
+        error: 'هذا الحساب لا يتوفر على بريد إلكتروني مسجل لاستلام رمز التحقق.',
       };
     }
 
@@ -6179,7 +6179,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    // 3. Enforce Rate Limit locally/DB before generating or sending
+    // 3. Enforce Rate Limit locally/DB before sending (3 sends per 10 minutes)
     if (existingRecord) {
       const lastSentMs = Number(existingRecord.last_sent_ms || 0);
       const windowStartMs = Number(existingRecord.window_start_ms || 0);
@@ -6196,11 +6196,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           retryAfterSeconds: waitSec,
           remainingSends: Math.max(0, OTP_MAX_SENDS - sendCount),
           maxSendsPerWindow: OTP_MAX_SENDS,
-          error: `يرجى الانتظار ${waitSec} ثانية قبل طلب إرسال كود تحقق جديد.`,
+          error: `يرجى الانتظار ${waitSec} ثانية قبل طلب إرسال رمز تحقق جديد.`,
         };
       }
 
-      // Window quota check (max 3 OTP requests per 15 minutes)
+      // Window quota check (max 3 OTP requests per 10 minutes)
       if (sendCount >= OTP_MAX_SENDS) {
         const retryAfterSec = Math.max(1, Math.ceil((OTP_WINDOW_MS - (nowMs - windowStartMs)) / 1000));
         const mins = Math.ceil(retryAfterSec / 60);
@@ -6210,18 +6210,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           retryAfterSeconds: retryAfterSec,
           remainingSends: 0,
           maxSendsPerWindow: OTP_MAX_SENDS,
-          error: `تم تجاوز الحد المسموح (${OTP_MAX_SENDS} رسائل خلال 15 دقيقة لحماية الحساب). يرجى المحاولة بعد ${mins} دقيقة.`,
+          error: `تم تجاوز الحد المسموح (${OTP_MAX_SENDS} رسائل كل 10 دقائق لحماية الحساب). يرجى المحاولة بعد ${mins} دقيقة.`,
         };
       }
     }
 
-    // 4. Call Server Endpoint (generates 6-digit OTP, sends strictly to registered Gmail via Nodemailer)
-    let otpRecord: any = null;
-    let deliveredViaGmail = false;
-    let cooldownSeconds = 60;
-    let remainingSends = OTP_MAX_SENDS - 1;
-    let previewCodeFromServer: string | undefined = undefined;
-
+    // 4. Call Server Endpoint (generates 6-digit OTP, stores hash, sends via Resend/Brevo API)
     try {
       const response = await fetch('/api/auth/forgot-password/send-otp', {
         method: 'POST',
@@ -6248,65 +6242,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           rateLimited: Boolean(data?.rateLimited),
           retryAfterSeconds: data?.retryAfterSeconds,
           cooldownSeconds: data?.cooldownSeconds,
-          error: data?.error || 'تعذر إرسال كود التحقق إلى البريد الإلكتروني',
+          error: data?.error || 'تعذر إرسال رمز التحقق إلى البريد الإلكتروني',
         };
       }
-      otpRecord = data.otpRecord;
-      deliveredViaGmail = Boolean(data.deliveredViaGmail);
-      cooldownSeconds = Number(data.cooldownSeconds || 60);
-      remainingSends = Number(data.remainingSends ?? 2);
-      previewCodeFromServer = data.previewCode;
-    } catch {
-      // Offline / Fallback generation if server route is unreachable
-      const windowExpired =
-        !existingRecord?.window_start_ms || nowMs - Number(existingRecord.window_start_ms) >= OTP_WINDOW_MS;
-      const nextSendCount = (windowExpired ? 0 : Number(existingRecord?.send_count || 0)) + 1;
-      const nextWindowStartMs = windowExpired ? nowMs : Number(existingRecord?.window_start_ms || nowMs);
-      const fallbackOtp = String(Math.floor(100000 + Math.random() * 900000));
-      const expiresAtMs = nowMs + OTP_TTL_MS;
-      const nowIso = new Date(nowMs).toISOString();
 
-      otpRecord = {
-        id: targetPhone,
-        phone: targetPhone,
-        whatsapp_number: targetWhatsapp,
-        email: targetEmail,
-        otp_code: fallbackOtp,
-        expires_at: new Date(expiresAtMs).toISOString(),
-        expires_at_ms: expiresAtMs,
-        attempts: 0,
-        send_count: nextSendCount,
-        window_start_ms: nextWindowStartMs,
-        last_sent_ms: nowMs,
-        verified: false,
-        used: false,
-        created_at: existingRecord?.created_at || nowIso,
-        updated_at: nowIso,
+      const otpRecord = data.otpRecord;
+      const deliveredViaGmail = Boolean(data.deliveredViaGmail);
+      const cooldownSeconds = Number(data.cooldownSeconds || 60);
+      const remainingSends = Number(data.remainingSends ?? 2);
+
+      // 5. Persist hashed OTP record & 10-minute expiration in Database (Firestore + Local)
+      if (otpRecord) {
+        saveLocalOtpRecord(targetPhone, otpRecord);
+        if (firebaseSyncService.isAvailable()) {
+          await firebaseSyncService.savePasswordResetOtp(targetPhone, otpRecord);
+        }
+      }
+
+      return {
+        success: true,
+        expiresAtMs: Number(otpRecord?.expires_at_ms || Date.now() + OTP_TTL_MS),
+        cooldownSeconds,
+        remainingSends,
+        maxSendsPerWindow: OTP_MAX_SENDS,
+        targetPhone,
+        targetWhatsapp,
+        targetEmail,
+        userName: resolvedAccount.name,
+        userRoleLabel: resolvedAccount.role === 'worker' ? 'موظف محطة' : 'مدير / مالك المحطة',
+        deliveredViaGmail,
       };
-      remainingSends = Math.max(0, OTP_MAX_SENDS - nextSendCount);
-      previewCodeFromServer = fallbackOtp;
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'تعذر الاتصال بخادم البريد لإرسال رمز التحقق',
+      };
     }
-
-    // 5. Persist 6-digit OTP & 5-minute expiration in Database (Firestore + Local)
-    saveLocalOtpRecord(targetPhone, otpRecord);
-    if (firebaseSyncService.isAvailable()) {
-      await firebaseSyncService.savePasswordResetOtp(targetPhone, otpRecord);
-    }
-
-    return {
-      success: true,
-      expiresAtMs: Number(otpRecord.expires_at_ms),
-      cooldownSeconds,
-      remainingSends,
-      maxSendsPerWindow: OTP_MAX_SENDS,
-      targetPhone,
-      targetWhatsapp,
-      targetEmail,
-      userName: resolvedAccount.name,
-      userRoleLabel: resolvedAccount.role === 'worker' ? 'موظف محطة' : 'مدير / مالك المحطة',
-      deliveredViaGmail,
-      otpCodeForPreview: previewCodeFromServer || (!deliveredViaGmail ? String(otpRecord.otp_code) : undefined),
-    };
   };
 
   const verifyWhatsAppOtpCode = async (whatsappOrPhone: string, otpCode: string) => {
@@ -6314,109 +6285,92 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!/^\d{6}$/.test(cleanCode)) {
       return {
         success: false,
-        error: 'يرجى إدخال كود التحقق المكون من 6 أرقام كاملاً',
+        error: 'يرجى إدخال رمز التحقق المكون من 6 أرقام كاملاً',
       };
     }
 
     const resolvedAccount = await resolveMultiUserAccountByWhatsapp(whatsappOrPhone);
     const targetPhone = resolvedAccount?.phone || cleanPhoneNumber(whatsappOrPhone);
-    if (!targetPhone) {
-      return { success: false, error: 'رقم الواتساب غير صالح' };
+    const targetEmail = (resolvedAccount?.email || (whatsappOrPhone.includes('@') ? whatsappOrPhone : '')).trim().toLowerCase();
+    if (!targetPhone && !targetEmail) {
+      return { success: false, error: 'بيانات الحساب غير صالحة' };
     }
 
-    // 1. Load OTP record from Firestore Database (authoritative) + Local fallback
+    // 1. Load hashed OTP record from Firestore Database + Local
     let record: any = null;
-    if (firebaseSyncService.isAvailable()) {
+    if (firebaseSyncService.isAvailable() && targetPhone) {
       record = await firebaseSyncService.getPasswordResetOtp(targetPhone);
     }
-    const localRec = getLocalOtpRecord(targetPhone);
+    const localRec = targetPhone ? getLocalOtpRecord(targetPhone) : null;
     if (!record || (localRec && (localRec.last_sent_ms || 0) > (record.last_sent_ms || 0))) {
       record = localRec;
     }
 
-    if (!record || !record.otp_code) {
-      return {
-        success: false,
-        error: 'لا يوجد كود تحقق نشط لهذا الرقم. يرجى طلب إرسال كود جديد.',
-      };
-    }
-
-    const nowMs = Date.now();
-    if (record.used) {
-      return {
-        success: false,
-        error: 'تم استخدام كود التحقق هذا مسبقاً. يرجى طلب كود جديد.',
-      };
-    }
-
-    if (nowMs > Number(record.expires_at_ms)) {
-      return {
-        success: false,
-        expired: true,
-        error: 'انتهت صلاحية كود التحقق (مرت 5 دقائق). يرجى الضغط على إعادة إرسال الكود.',
-      };
-    }
-
-    const currentAttempts = Number(record.attempts || 0);
-    if (currentAttempts >= OTP_MAX_ATTEMPTS) {
-      return {
-        success: false,
-        locked: true,
-        remainingAttempts: 0,
-        error: 'تم إيقاف هذا الكود بعد 5 محاولات خاطئة. يرجى طلب كود جديد.',
-      };
-    }
-
-    if (String(record.otp_code) !== cleanCode) {
-      const nextAttempts = currentAttempts + 1;
-      const remaining = Math.max(0, OTP_MAX_ATTEMPTS - nextAttempts);
-      const updatedRecord = {
-        ...record,
-        attempts: nextAttempts,
-        updated_at: new Date(nowMs).toISOString(),
-      };
-      saveLocalOtpRecord(targetPhone, updatedRecord);
-      if (firebaseSyncService.isAvailable()) {
-        await firebaseSyncService.savePasswordResetOtp(targetPhone, updatedRecord);
-      }
-      // Also notify server store
-      fetch('/api/auth/forgot-password/verify-otp', {
+    // 2. Verify OTP on the server against the HMAC-SHA256 hash
+    try {
+      const verifyResponse = await fetch('/api/auth/forgot-password/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: targetPhone, otpCode: cleanCode }),
-      }).catch(() => {});
+        body: JSON.stringify({
+          phone: targetPhone,
+          email: targetEmail,
+          otpCode: cleanCode,
+          otpRecord: record || undefined,
+        }),
+      });
+
+      const verifyData: any = await verifyResponse.json().catch(() => null);
+
+      if (!verifyResponse.ok || !verifyData?.success) {
+        const nextAttempts = Number(verifyData?.attempts || (Number(record?.attempts || 0) + 1));
+        const remaining =
+          typeof verifyData?.remainingAttempts === 'number'
+            ? verifyData.remainingAttempts
+            : Math.max(0, OTP_MAX_ATTEMPTS - nextAttempts);
+
+        if (record && targetPhone) {
+          const updatedRecord = {
+            ...record,
+            attempts: nextAttempts,
+            updated_at: new Date().toISOString(),
+          };
+          saveLocalOtpRecord(targetPhone, updatedRecord);
+          if (firebaseSyncService.isAvailable()) {
+            await firebaseSyncService.savePasswordResetOtp(targetPhone, updatedRecord);
+          }
+        }
+
+        return {
+          success: false,
+          expired: Boolean(verifyData?.expired),
+          locked: Boolean(verifyData?.locked || remaining === 0),
+          remainingAttempts: remaining,
+          error: verifyData?.error || 'رمز التحقق غير صحيح أو منتهي الصلاحية',
+        };
+      }
+
+      if (record && targetPhone) {
+        const verifiedRecord = {
+          ...record,
+          verified: true,
+          updated_at: new Date().toISOString(),
+        };
+        saveLocalOtpRecord(targetPhone, verifiedRecord);
+        if (firebaseSyncService.isAvailable()) {
+          await firebaseSyncService.savePasswordResetOtp(targetPhone, verifiedRecord);
+        }
+      }
 
       return {
+        success: true,
+        remainingAttempts: verifyData?.remainingAttempts ?? OTP_MAX_ATTEMPTS,
+      };
+    } catch {
+      return {
         success: false,
-        remainingAttempts: remaining,
-        locked: remaining === 0,
-        error:
-          remaining > 0
-            ? `كود التحقق غير صحيح. المحاولات المتبقية: ${remaining}`
-            : 'تم استنفاد جميع المحاولات (5 محاولات). يرجى طلب كود جديد.',
+        error: 'تعذر الاتصال بالخادم للتحقق من الرمز',
       };
     }
-
-    // OTP Matches & is within 5-minute window! Mark as verified
-    const verifiedRecord = {
-      ...record,
-      verified: true,
-      updated_at: new Date(nowMs).toISOString(),
-    };
-    saveLocalOtpRecord(targetPhone, verifiedRecord);
-    if (firebaseSyncService.isAvailable()) {
-      await firebaseSyncService.savePasswordResetOtp(targetPhone, verifiedRecord);
-    }
-    fetch('/api/auth/forgot-password/verify-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: targetPhone, otpCode: cleanCode }),
-    }).catch(() => {});
-
-    return {
-      success: true,
-      remainingAttempts: OTP_MAX_ATTEMPTS - currentAttempts,
-    };
   };
 
   const resetPasswordWithWhatsAppOtp = async (
