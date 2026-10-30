@@ -448,7 +448,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 <span>استعادة آمنة عبر بريد Gmail المسجل بالحساب</span>
               </div>
               <p className="text-[11px] text-[#C8B08A] leading-relaxed">
-                أدخل <strong className="text-[#F5D799]">بريد Gmail</strong> الذي أنشأت به حسابك أو رقم الهاتف المسجل. سيقوم النظام بإرسال كود تحقق سري من <strong className="text-[#F5D799]">6 أرقام</strong> مباشرة إلى بريدك الإلكتروني عبر <strong className="text-amber-400">Nodemailer</strong> صالح لمدة <strong className="text-emerald-400">10 دقائق</strong>.
+                أدخل <strong className="text-[#F5D799]">البريد الإلكتروني</strong> الذي أنشأت به حسابك أو رقم الهاتف المسجل. سيقوم النظام بإرسال رمز تحقق سري من <strong className="text-[#F5D799]">6 أرقام</strong> مباشرة إلى بريدك عبر <strong className="text-amber-400">Resend</strong> من <span className="font-mono text-[#F5D799]">noreply@sahara-express.com</span> صالح لمدة <strong className="text-emerald-400">10 دقائق</strong>.
               </p>
             </div>
 
@@ -526,8 +526,8 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 <span className="text-xs font-black text-emerald-400 font-mono">10 دقائق</span>
               </div>
               <div className="p-2 rounded-xl bg-[#120a00] border border-[#D4AF37]/25">
-                <span className="block text-[10px] text-[#C8B08A]">المحرك</span>
-                <span className="text-xs font-black text-amber-400 font-mono">Nodemailer</span>
+                <span className="block text-[10px] text-[#C8B08A]">المزوّد</span>
+                <span className="text-xs font-black text-amber-400 font-mono">Resend</span>
               </div>
             </div>
 
@@ -590,7 +590,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 </div>
                 {deliveredViaGmail ? (
                   <p className="text-[11px] text-emerald-400 font-bold mt-1">
-                    ✓ تم إرسال الرسالة بنجاح عبر Nodemailer (تفقد الوارد أو Spam).
+                    ✓ تم إرسال الرسالة بنجاح عبر Resend من noreply@sahara-express.com
                   </p>
                 ) : (
                   <p className="text-[11px] text-[#C8B08A] mt-1">

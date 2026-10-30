@@ -360,7 +360,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                 {email}
               </p>
               <p className="text-[11px] text-[#C8B08A]">
-                تم إرسال الكود من <strong>Sahara Express 📦</strong> عبر خدمة <strong>Nodemailer</strong>. تفقد صندوق الوارد أو البريد غير المرغوب فيه (Spam). الكود صالح لمدة 10 دقائق.
+                تم إرسال الرمز من <strong>Sahara Express</strong> (<span className="font-mono">noreply@sahara-express.com</span>) عبر خدمة <strong>Resend</strong>. الرمز صالح لمدة 10 دقائق.
               </p>
             </div>
 
@@ -495,7 +495,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                   <Mail className="w-4 h-4 text-[#F5B05B] absolute left-3 top-1/2 -translate-y-1/2" />
                 </div>
                 <span className="text-[10px] text-[#C8B08A] block mt-1">
-                  * سنرسل كوداً من 6 أرقام عبر Nodemailer للتأكد من ملكيتك للبريد قبل تفعيل الحساب
+                  * سنرسل رمزاً من 6 أرقام عبر Resend للتأكد من ملكيتك للبريد قبل تفعيل الحساب
                 </span>
               </div>
             )}

@@ -78,7 +78,7 @@ function stripEmojis(text: string): string {
 }
 
 /**
- * Parses and validates MAIL_FROM from environment variables.
+ * Parses and validates MAIL_FROM from environment variables (e.g. noreply@sahara-express.com).
  * Rejects missing MAIL_FROM or free consumer domains like gmail.com.
  */
 export function resolveValidatedSender(): {
@@ -92,7 +92,7 @@ export function resolveValidatedSender(): {
   if (!rawFrom) {
     return {
       valid: false,
-      error: 'متغير البيئة MAIL_FROM غير مضبوط. يجب ضبطه على بريد من دومين خاص بك مثل: Sahara Express <no-reply@yourdomain.com>',
+      error: 'متغير البيئة MAIL_FROM غير مضبوط. يرجى ضبط MAIL_FROM="Sahara Express <noreply@sahara-express.com>" في متغيرات البيئة.',
     };
   }
 
@@ -113,7 +113,7 @@ export function resolveValidatedSender(): {
   if (!domainMatch) {
     return {
       valid: false,
-      error: 'صيغة MAIL_FROM غير صالحة. استخدم الصيغة: Sahara Express <no-reply@yourdomain.com>',
+      error: 'صيغة MAIL_FROM غير صالحة. استخدم: Sahara Express <noreply@sahara-express.com>',
     };
   }
 
@@ -121,7 +121,7 @@ export function resolveValidatedSender(): {
   if (domain === 'gmail.com' || domain === 'googlemail.com') {
     return {
       valid: false,
-      error: 'لا يُسمح باستخدام gmail.com في عنوان المرسل MAIL_FROM. يجب استخدام دومين خاص تملكه (مثل no-reply@yourdomain.com).',
+      error: 'لا يُسمح باستخدام gmail.com في MAIL_FROM. يجب استخدام دومين خاص مثل noreply@sahara-express.com.',
     };
   }
 
@@ -135,13 +135,13 @@ export function resolveValidatedSender(): {
 
 export interface SendOtpEmailResult {
   delivered: boolean;
-  provider?: 'resend' | 'brevo';
+  provider?: 'resend';
   messageId?: string;
   error?: string;
 }
 
 /**
- * Sends a 6-digit OTP email via a dedicated transactional email API (Resend or Brevo).
+ * Sends a 6-digit OTP email exclusively via Resend API using RESEND_API_KEY and MAIL_FROM.
  * - Plain text + minimal HTML (white background, short sentence, bold code, "الرمز صالح 10 دقائق").
  * - No images, no buttons, no links, no emojis, no tracking.
  * - Subject: "رمز التحقق: 123456"
@@ -155,20 +155,20 @@ export async function sendVerificationOtpEmail(
   const cleanRecipient = toEmail.trim().toLowerCase();
   const senderConfig = resolveValidatedSender();
 
-  if (!senderConfig.valid || !senderConfig.fromHeader || !senderConfig.senderEmail || !senderConfig.senderName) {
+  if (!senderConfig.valid || !senderConfig.fromHeader) {
     return {
       delivered: false,
+      provider: 'resend',
       error: senderConfig.error || 'إعداد MAIL_FROM غير صالح',
     };
   }
 
   const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
-  const brevoApiKey = (process.env.BREVO_API_KEY || '').trim();
-
-  if (!resendApiKey && !brevoApiKey) {
+  if (!resendApiKey) {
     return {
       delivered: false,
-      error: 'مفتاح خدمة البريد غير متوفر. يرجى ضبط RESEND_API_KEY أو BREVO_API_KEY في متغيرات البيئة.',
+      provider: 'resend',
+      error: 'مفتاح RESEND_API_KEY غير مضبوط في متغيرات البيئة.',
     };
   }
 
@@ -186,109 +186,52 @@ export async function sendVerificationOtpEmail(
     '</html>',
   ].join('');
 
-  // 1. Prefer Resend API if RESEND_API_KEY is configured
-  if (resendApiKey) {
-    try {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: senderConfig.fromHeader,
-          to: [cleanRecipient],
-          subject,
-          text: textBody,
-          html: htmlBody,
-        }),
-      });
-
-      const data: any = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        console.error('[Resend API Error]:', {
-          status: response.status,
-          name: data?.name,
-          message: data?.message,
-        });
-        return {
-          delivered: false,
-          provider: 'resend',
-          error: data?.message || `Resend API HTTP ${response.status}`,
-        };
-      }
-
-      console.log('[Transactional Mail Sent]:', {
-        provider: 'resend',
-        messageId: data?.id || 'ok',
-      });
-
-      return {
-        delivered: true,
-        provider: 'resend',
-        messageId: data?.id,
-      };
-    } catch (err: any) {
-      console.error('[Resend Network Error]:', { message: err?.message });
-      return {
-        delivered: false,
-        provider: 'resend',
-        error: err?.message || 'تعذر الاتصال بخدمة Resend API',
-      };
-    }
-  }
-
-  // 2. Otherwise use Brevo API if BREVO_API_KEY is configured
   try {
-    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'api-key': brevoApiKey,
+        Authorization: `Bearer ${resendApiKey}`,
         'Content-Type': 'application/json',
-        Accept: 'application/json',
       },
       body: JSON.stringify({
-        sender: {
-          name: senderConfig.senderName,
-          email: senderConfig.senderEmail,
-        },
-        to: [{ email: cleanRecipient }],
+        from: senderConfig.fromHeader,
+        to: [cleanRecipient],
         subject,
-        textContent: textBody,
-        htmlContent: htmlBody,
+        text: textBody,
+        html: htmlBody,
       }),
     });
 
     const data: any = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.error('[Brevo API Error]:', {
+      console.error('[Resend API Error]:', {
         status: response.status,
-        code: data?.code,
+        name: data?.name,
         message: data?.message,
       });
       return {
         delivered: false,
-        provider: 'brevo',
-        error: data?.message || `Brevo API HTTP ${response.status}`,
+        provider: 'resend',
+        error: data?.message || `Resend API HTTP ${response.status}`,
       };
     }
 
-    console.log('[Transactional Mail Sent]:', {
-      provider: 'brevo',
-      messageId: data?.messageId || 'ok',
+    console.log('[Resend Mail Sent]:', {
+      from: senderConfig.fromHeader,
+      messageId: data?.id || 'ok',
     });
 
     return {
       delivered: true,
-      provider: 'brevo',
-      messageId: data?.messageId,
+      provider: 'resend',
+      messageId: data?.id,
     };
   } catch (err: any) {
-    console.error('[Brevo Network Error]:', { message: err?.message });
+    console.error('[Resend Network Error]:', { message: err?.message });
     return {
       delivered: false,
-      provider: 'brevo',
-      error: err?.message || 'تعذر الاتصال بخدمة Brevo API',
+      provider: 'resend',
+      error: err?.message || 'تعذر الاتصال بخدمة Resend API',
     };
   }
 }
