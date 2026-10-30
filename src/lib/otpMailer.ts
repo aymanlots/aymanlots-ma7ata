@@ -77,27 +77,23 @@ function stripEmojis(text: string): string {
     .trim();
 }
 
+export const DEFAULT_MAIL_FROM = 'Sahara Express <noreply@sahara-express.com>';
+
 /**
- * Parses and validates MAIL_FROM from environment variables (e.g. noreply@sahara-express.com).
- * Rejects missing MAIL_FROM or free consumer domains like gmail.com.
+ * Parses and validates MAIL_FROM from environment variables.
+ * Defaults to 'Sahara Express <noreply@sahara-express.com>' (or 'Sahara Express <contact@sahara-express.com>').
  */
 export function resolveValidatedSender(): {
   valid: boolean;
-  fromHeader?: string;
-  senderName?: string;
-  senderEmail?: string;
+  fromHeader: string;
+  senderName: string;
+  senderEmail: string;
   error?: string;
 } {
-  const rawFrom = (process.env.MAIL_FROM || '').trim();
-  if (!rawFrom) {
-    return {
-      valid: false,
-      error: 'متغير البيئة MAIL_FROM غير مضبوط. يرجى ضبط MAIL_FROM="Sahara Express <noreply@sahara-express.com>" في متغيرات البيئة.',
-    };
-  }
+  const rawFrom = (process.env.MAIL_FROM || DEFAULT_MAIL_FROM).trim();
 
   let senderName = 'Sahara Express';
-  let senderEmail = rawFrom;
+  let senderEmail = 'noreply@sahara-express.com';
 
   const angleMatch = rawFrom.match(/^(.*)<([^>]+)>$/);
   if (angleMatch) {
@@ -112,16 +108,21 @@ export function resolveValidatedSender(): {
   const domainMatch = senderEmail.match(emailRegex);
   if (!domainMatch) {
     return {
-      valid: false,
-      error: 'صيغة MAIL_FROM غير صالحة. استخدم: Sahara Express <noreply@sahara-express.com>',
+      valid: true,
+      senderName: 'Sahara Express',
+      senderEmail: 'noreply@sahara-express.com',
+      fromHeader: DEFAULT_MAIL_FROM,
     };
   }
 
   const domain = domainMatch[1].toLowerCase();
-  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+  // Automatically fallback to verified domain if old gmail.com or resend.dev env var is still set
+  if (domain === 'gmail.com' || domain === 'googlemail.com' || domain === 'resend.dev') {
     return {
-      valid: false,
-      error: 'لا يُسمح باستخدام gmail.com في MAIL_FROM. يجب استخدام دومين خاص مثل noreply@sahara-express.com.',
+      valid: true,
+      senderName: 'Sahara Express',
+      senderEmail: 'noreply@sahara-express.com',
+      fromHeader: DEFAULT_MAIL_FROM,
     };
   }
 
@@ -141,7 +142,8 @@ export interface SendOtpEmailResult {
 }
 
 /**
- * Sends a 6-digit OTP email exclusively via Resend API using RESEND_API_KEY and MAIL_FROM.
+ * Sends a 6-digit OTP email exclusively via Resend API using RESEND_API_KEY and verified sahara-express.com domain.
+ * - from: 'Sahara Express <noreply@sahara-express.com>' (or 'Sahara Express <contact@sahara-express.com>')
  * - Plain text + minimal HTML (white background, short sentence, bold code, "الرمز صالح 10 دقائق").
  * - No images, no buttons, no links, no emojis, no tracking.
  * - Subject: "رمز التحقق: 123456"
@@ -154,14 +156,7 @@ export async function sendVerificationOtpEmail(
 ): Promise<SendOtpEmailResult> {
   const cleanRecipient = toEmail.trim().toLowerCase();
   const senderConfig = resolveValidatedSender();
-
-  if (!senderConfig.valid || !senderConfig.fromHeader) {
-    return {
-      delivered: false,
-      provider: 'resend',
-      error: senderConfig.error || 'إعداد MAIL_FROM غير صالح',
-    };
-  }
+  const fromAddress = senderConfig.fromHeader || 'Sahara Express <noreply@sahara-express.com>';
 
   const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
   if (!resendApiKey) {
@@ -194,7 +189,7 @@ export async function sendVerificationOtpEmail(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: senderConfig.fromHeader,
+        from: fromAddress,
         to: [cleanRecipient],
         subject,
         text: textBody,

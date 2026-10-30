@@ -8,7 +8,7 @@ import {
   hashOtpCode,
   verifyOtpHash,
   sendVerificationOtpEmail,
-} from '../src/lib/otpMailer.ts';
+} from '../src/lib/otpMailer';
 
 interface OtpEntry {
   otpHash: string;

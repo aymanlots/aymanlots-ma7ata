@@ -6,7 +6,7 @@ import {
   generateSixDigitOtp,
   hashOtpCode,
   sendVerificationOtpEmail,
-} from '../src/lib/otpMailer.ts';
+} from '../src/lib/otpMailer';
 
 interface RateEntry {
   otpHash: string;
