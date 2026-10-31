@@ -274,10 +274,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
     }
   };
 
-  // Standard Login submit
+  // Standard Login or Direct Worker Login submit
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!isOwnerRole && (!name || name.trim().length < 2)) {
+      setError('يرجى إدخال اسم العامل الكامل');
+      return;
+    }
 
     const cleanPhone = phone.trim();
     if (!cleanPhone || cleanPhone.length < 6) {
@@ -289,14 +294,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
       localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
     } catch {}
 
-    if (!password || password.length < 6) {
-      setError('كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام');
+    if (!password || password.trim().length < 4) {
+      setError('يرجى إدخال كلمة المرور أو كلمة المرور المؤقتة التي أعطاك إياها الأدمين');
       return;
     }
 
     setIsLoading(true);
     try {
-      const res = await loginWithCredentials(cleanPhone, password.trim());
+      const res = await loginWithCredentials(
+        cleanPhone,
+        password.trim(),
+        !isOwnerRole ? name.trim() : undefined
+      );
       setIsLoading(false);
       if (res.success && onClose) {
         onClose();
@@ -330,13 +339,56 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
         </div>
 
         <h2 className="text-base sm:text-lg font-black text-[#F5D799] text-center mb-1">
-          {isSignUp 
-            ? (signUpStep === 'verify_email' ? 'تأكيد بريد Gmail بكود 6 أرقام' : 'إنشاء حساب جديد في Sahara📦 Express') 
+          {!isOwnerRole
+            ? 'دخول العامل المباشر إلى Sahara📦 Express'
+            : isSignUp
+            ? (signUpStep === 'verify_email' ? 'تأكيد بريد Gmail بكود 6 أرقام' : 'إنشاء حساب أدمين جديد في Sahara📦 Express')
             : 'تسجيل الدخول إلى Sahara📦 Express'}
         </h2>
-        <p className="text-[11px] font-bold text-[#E6C37A] text-center mb-4 tracking-wide">
+        <p className="text-[11px] font-bold text-[#E6C37A] text-center mb-3 tracking-wide">
           للسفر ونقل البضائع والكوليات
         </p>
+
+        {/* TOP ROLE SELECTOR: ADMIN vs WORKER (Visible on first entry!) */}
+        {signUpStep !== 'verify_email' && (
+          <div className="mb-4">
+            <label className="block text-[#E6C37A] text-xs font-bold mb-1.5 text-center">
+              اختر صفتك للدخول أو التسجيل:
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOwnerRole(true);
+                  setError(null);
+                }}
+                className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                  isOwnerRole
+                    ? 'bg-gradient-to-r from-[#F5B05B] to-[#D4882A] border-[#F8C885] text-[#1a0f00] font-black shadow-md'
+                    : 'bg-[#120a00] border-[#D4AF37]/35 text-[#C8B08A] hover:border-[#D4AF37]/60'
+                }`}
+              >
+                👑 أدمين (مدير المحطة)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOwnerRole(false);
+                  setIsSignUp(false);
+                  setSignUpStep('form');
+                  setError(null);
+                }}
+                className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                  !isOwnerRole
+                    ? 'bg-gradient-to-r from-[#F5B05B] to-[#D4882A] border-[#F8C885] text-[#1a0f00] font-black shadow-md'
+                    : 'bg-[#120a00] border-[#D4AF37]/35 text-[#C8B08A] hover:border-[#D4AF37]/60'
+                }`}
+              >
+                💼 عامل (موظف محطة)
+              </button>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="p-3 bg-rose-950/70 border border-rose-500/40 rounded-xl text-xs text-rose-300 font-semibold mb-4 leading-relaxed">
@@ -345,9 +397,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
         )}
 
         {/* ================================================================ */}
-        {/* SIGN UP STEP 2: VERIFY GMAIL OTP (6 Digits + 5-Min Expiry)       */}
+        {/* SIGN UP STEP 2: VERIFY GMAIL OTP (Admin Only)                    */}
         {/* ================================================================ */}
-        {isSignUp && signUpStep === 'verify_email' ? (
+        {isOwnerRole && isSignUp && signUpStep === 'verify_email' ? (
           <div className="space-y-4 text-xs">
             <div className="p-3.5 rounded-2xl bg-[#120a00] border border-[#D4AF37]/40 space-y-2 text-center">
               <div className="w-9 h-9 mx-auto rounded-full bg-[#F5B05B]/20 border border-[#D4AF37]/50 text-[#F5D799] flex items-center justify-center">
@@ -454,55 +506,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
               <span>تعديل بريد Gmail أو معلومات الحساب</span>
             </button>
           </div>
-        ) : (
+        ) : !isOwnerRole ? (
           /* ================================================================ */
-          /* SIGN IN / SIGN UP MAIN FORM                                      */
+          /* WORKER DIRECT LOGIN FORM (Name + Phone + Admin Temp Password)    */
+          /* NO GMAIL, NO OTP REQUIRED!                                       */
           /* ================================================================ */
-          <form onSubmit={isSignUp ? handleInitiateSignUp : handleLoginSubmit} className="space-y-3 text-xs">
-            {isSignUp && (
-              <div>
-                <label className="block text-[#E6C37A] font-bold mb-1">الاسم الكامل *</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="مثال: سيدي محمد أو عبد الله"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9"
-                    required
-                  />
-                  <User className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
-                </div>
-              </div>
-            )}
+          <form onSubmit={handleLoginSubmit} className="space-y-3 text-xs">
+            <div className="p-2.5 rounded-xl bg-[#120a00] border border-[#D4AF37]/40 text-[11px] text-[#F5D799] leading-relaxed">
+              حساب العامل مسجل مسبقاً عند الأدمين. أدخل <strong>السمية</strong> و<strong>النمرة</strong> و<strong>كلمة المرور المؤقتة</strong> التي أعطاك إياها الأدمين للدخول مباشرة <strong>بدون Gmail</strong>.
+            </div>
 
-            {/* MANDATORY GMAIL FIELD FOR SIGN-UP */}
-            {isSignUp && (
-              <div>
-                <label className="block text-[#E6C37A] font-bold mb-1">
-                  بريد Gmail الخاص بك (إجباري) *
-                </label>
-                <div className="relative">
-                  <input
-                    type="email"
-                    dir="ltr"
-                    placeholder="example@gmail.com"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono text-left"
-                    required
-                  />
-                  <Mail className="w-4 h-4 text-[#F5B05B] absolute left-3 top-1/2 -translate-y-1/2" />
-                </div>
-                <span className="text-[10px] text-[#C8B08A] block mt-1">
-                  * سنرسل رمزاً من 6 أرقام عبر Resend للتأكد من ملكيتك للبريد قبل تفعيل الحساب
-                </span>
+            <div>
+              <label className="block text-[#E6C37A] font-bold mb-1">اسم العامل (السمية) *</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="مثال: أمين أو سيدي محمد"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9"
+                  required
+                />
+                <User className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
               </div>
-            )}
+            </div>
 
             <div>
               <label className="block text-[#E6C37A] font-bold mb-1">
-                {isSignUp ? 'رقم الهاتف *' : 'رقم الهاتف أو المعرّف *'}
+                رقم هاتف العامل (النمرة اللي قيدك بيها الأدمين) *
               </label>
               <div className="relative">
                 <input
@@ -517,7 +548,96 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
               </div>
             </div>
 
+            <div>
+              <label className="block text-[#E6C37A] font-bold mb-1">
+                كلمة المرور المؤقتة (أو كلمة المرور من الأدمين) *
+              </label>
+              <div className="relative">
+                <input
+                  type="password"
+                  placeholder="أدخل كلمة المرور المؤقتة (مثل Itt-...)"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono"
+                  required
+                />
+                <Lock className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
+              </div>
+              <span className="text-[10px] text-[#C8B08A] block mt-1">
+                * دخول مباشر إلى المحطة المخصصة لك بدون الحاجة لبريد Gmail أو كود تفعيل
+              </span>
+            </div>
 
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full mt-3 py-3 rounded-2xl bg-gradient-to-r from-[#F5B05B] via-[#E5953E] to-[#D4882A] hover:brightness-110 text-[#1a0f00] font-black text-sm shadow-lg shadow-[#E5953E]/25 border border-[#F8C885] transition active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {isLoading ? 'جاري الدخول للمحطة...' : 'دخول مباشر لحساب العامل (بلا Gmail) ←'}
+            </button>
+          </form>
+        ) : (
+          /* ================================================================ */
+          /* ADMIN (OWNER) SIGN IN / SIGN UP MAIN FORM                        */
+          /* ================================================================ */
+          <form onSubmit={isSignUp ? handleInitiateSignUp : handleLoginSubmit} className="space-y-3 text-xs">
+            {isSignUp && (
+              <div>
+                <label className="block text-[#E6C37A] font-bold mb-1">الاسم الكامل للأدمين *</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="مثال: سيدي محمد أو عبد الله"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9"
+                    required
+                  />
+                  <User className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+            )}
+
+            {/* MANDATORY GMAIL FIELD FOR ADMIN SIGN-UP ONLY */}
+            {isSignUp && (
+              <div>
+                <label className="block text-[#E6C37A] font-bold mb-1">
+                  بريد Gmail الخاص بالأدمين (إجباري) *
+                </label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    dir="ltr"
+                    placeholder="example@gmail.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono text-left"
+                    required
+                  />
+                  <Mail className="w-4 h-4 text-[#F5B05B] absolute left-3 top-1/2 -translate-y-1/2" />
+                </div>
+                <span className="text-[10px] text-[#C8B08A] block mt-1">
+                  * سنرسل رمزاً من 6 أرقام لتأكيد بريدك قبل تفعيل حساب الأدمين
+                </span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[#E6C37A] font-bold mb-1">
+                {isSignUp ? 'رقم الهاتف *' : 'رقم هاتف الأدمين *'}
+              </label>
+              <div className="relative">
+                <input
+                  type="tel"
+                  placeholder="0600000000 أو 22200000000"
+                  value={phone}
+                  onChange={e => handlePhoneChange(e.target.value)}
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono"
+                  required
+                />
+                <Phone className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
 
             <div>
               <label className="block text-[#E6C37A] font-bold mb-1">كلمة المرور *</label>
@@ -534,60 +654,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
               </div>
               {!isSignUp && (
                 <span className="text-[10px] text-[#C8B08A] block mt-1">
-                  تسجيل الدخول برقم الهاتف وكلمة المرور مباشرة دون الحاجة لرسائل SMS
+                  تسجيل الدخول برقم الهاتف وكلمة المرور مباشرة
                 </span>
               )}
             </div>
-
-            {isSignUp && (
-              <div className="pt-1">
-                <label className="block text-[#E6C37A] font-bold mb-1.5">نوع الحساب *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsOwnerRole(true)}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                      isOwnerRole
-                        ? 'bg-gradient-to-r from-[#F5B05B] to-[#D4882A] border-[#F8C885] text-[#1a0f00] font-black shadow-sm'
-                        : 'bg-[#120a00] border-[#D4AF37]/35 text-[#C8B08A]'
-                    }`}
-                  >
-                    👑 مالك المحطة (مدير)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsOwnerRole(false)}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                      !isOwnerRole
-                        ? 'bg-gradient-to-r from-[#F5B05B] to-[#D4882A] border-[#F8C885] text-[#1a0f00] font-black shadow-sm'
-                        : 'bg-[#120a00] border-[#D4AF37]/35 text-[#C8B08A]'
-                    }`}
-                  >
-                    💼 موظف محطة
-                  </button>
-                </div>
-
-                {!isOwnerRole && (
-                  <div className="mt-2.5">
-                    <label className="block text-[#C8B08A] font-medium mb-1">رمز دعوة مساحة العمل (من المدير)</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="أدخل رمز الدعوة هنا"
-                        value={teamInviteCode}
-                        onChange={e => setTeamInviteCode(e.target.value.toUpperCase())}
-                        className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2 text-white font-mono text-center tracking-widest pl-9"
-                        required
-                      />
-                      <KeyRound className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
-                    </div>
-                    <span className="text-[10px] text-[#E6C37A] block mt-1">
-                      * سيتم إرسال طلب انضمام إلى مدير مساحة العمل للموافقة عليه
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
 
             {!isSignUp && (
               <div className="flex justify-between items-center pt-2">
@@ -611,24 +681,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                 ? 'جاري المعالجة...' 
                 : isSignUp 
                 ? 'متابعة وإرسال كود التحقق لبريد Gmail ←' 
-                : 'تسجيل الدخول'}
+                : 'تسجيل الدخول كأدمين'}
             </button>
           </form>
         )}
 
-        {/* Toggle Sign in / Sign up */}
+        {/* Toggle Sign in / Sign up (For Admin) + Public Tracking */}
         <div className="text-center mt-4 pt-3 border-t border-[#D4AF37]/25 space-y-2">
-          <button
-            type="button"
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setSignUpStep('form');
-              setError(null);
-            }}
-            className="w-full py-2.5 px-3 rounded-xl bg-[#120a00] border border-[#D4AF37]/50 text-[#F5D799] hover:bg-[#2a1800] text-xs font-black transition cursor-pointer"
-          >
-            {isSignUp ? 'لديك حساب بالفعل؟ تسجيل الدخول' : 'إنشاء حساب جديد'}
-          </button>
+          {isOwnerRole && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setSignUpStep('form');
+                setError(null);
+              }}
+              className="w-full py-2.5 px-3 rounded-xl bg-[#120a00] border border-[#D4AF37]/50 text-[#F5D799] hover:bg-[#2a1800] text-xs font-black transition cursor-pointer"
+            >
+              {isSignUp ? 'لديك حساب أدمين بالفعل؟ تسجيل الدخول' : 'إنشاء حساب أدمين جديد'}
+            </button>
+          )}
           {onOpenPublicTracking && (
             <button
               type="button"

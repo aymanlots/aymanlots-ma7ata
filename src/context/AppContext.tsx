@@ -171,7 +171,7 @@ interface AppContextType {
     error?: string;
     remainingAttempts?: number;
   }>;
-  loginWithCredentials: (phone: string, password?: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithCredentials: (phone: string, password?: string, workerName?: string) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 
@@ -2240,15 +2240,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const loginWithCredentials = async (phone: string, password?: string) => {
+  const loginWithCredentials = async (phone: string, password?: string, workerName?: string) => {
     try {
       const cleanPhone = cleanPhoneNumber(phone);
-      if (!cleanPhone || cleanPhone.length < 8) {
+      if (!cleanPhone || cleanPhone.length < 6) {
         return { success: false, error: 'يرجى إدخال رقم هاتف صحيح' };
       }
-      if (!password || password.trim().length < 6) {
-        return { success: false, error: 'كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام' };
+      if (!password || password.trim().length < 4) {
+        return { success: false, error: 'يرجى إدخال كلمة المرور أو كلمة المرور المؤقتة بشكل صحيح' };
       }
+      const trimmedWorkerName = (workerName || '').trim();
+
       try {
         localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
       } catch {}
@@ -2265,68 +2267,71 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const supabase = getSupabaseClient();
 
       if (supabase) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: syntheticEmail,
-          password: password.trim(),
-        });
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: syntheticEmail,
+            password: password.trim(),
+          });
 
-        if (error) {
-          return { success: false, error: 'رقم الهاتف أو كلمة المرور غير صحيحة' };
-        }
+          if (!error && data?.user) {
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', data.user.id)
+              .maybeSingle();
 
-        if (data.user) {
-          // Fetch real profile
-          const { data: prof } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', data.user.id)
-            .maybeSingle();
+            const { data: mem } = await supabase
+              .from('workspace_members')
+              .select('*, workspaces(*)')
+              .eq('user_id', data.user.id)
+              .eq('status', 'active')
+              .maybeSingle();
 
-          const mustChange = Boolean(prof?.must_change_password || data.user.user_metadata?.must_change_password);
+            if (!mem) {
+              await supabase.auth.signOut().catch(() => {});
+              return {
+                success: false,
+                error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
+              };
+            }
 
-          // Fetch member workspace
-          const { data: mem } = await supabase
-            .from('workspace_members')
-            .select('*, workspaces(*)')
-            .eq('user_id', data.user.id)
-            .eq('status', 'active')
-            .maybeSingle();
+            const finalName =
+              trimmedWorkerName ||
+              prof?.name ||
+              data.user.user_metadata?.name ||
+              'مستخدم Sahara📦 Express';
 
-          if (!mem) {
-            await supabase.auth.signOut().catch(() => {});
-            return {
-              success: false,
-              error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
-            };
+            if (prof) {
+              setCurrentUser({ ...prof, name: finalName, must_change_password: false });
+            } else {
+              setCurrentUser({
+                id: data.user.id,
+                phone: cleanPhone,
+                whatsapp_number: data.user.user_metadata?.whatsapp_number || cleanPhone,
+                name: finalName,
+                must_change_password: false,
+                created_at: new Date().toISOString(),
+              });
+            }
+
+            const wsData = Array.isArray(mem?.workspaces) ? mem?.workspaces[0] : mem?.workspaces;
+            if (wsData) {
+              setCurrentWorkspace(wsData);
+              await loadWorkspaceFromCloud(wsData.id, data.user.id);
+            }
+
+            showToast(`مرحباً بك يا ${finalName}! تم تسجيل الدخول بنجاح`, 'success');
+            return { success: true };
           }
-
-          if (prof) {
-            setCurrentUser({ ...prof, must_change_password: mustChange });
-          } else {
-            setCurrentUser({
-              id: data.user.id,
-              phone: cleanPhone,
-              whatsapp_number: data.user.user_metadata?.whatsapp_number || cleanPhone,
-              name: data.user.user_metadata?.name || 'مستخدم Sahara📦 Express',
-              must_change_password: mustChange,
-              created_at: new Date().toISOString(),
-            });
-          }
-
-          const wsData = Array.isArray(mem?.workspaces) ? mem?.workspaces[0] : mem?.workspaces;
-          if (wsData) {
-            setCurrentWorkspace(wsData);
-            await loadWorkspaceFromCloud(wsData.id, data.user.id);
-          }
-
-          showToast('تم تسجيل الدخول بنجاح عبر السحابة', 'success');
-          return { success: true };
-        }
+        } catch {}
       }
 
-      // 2. Check Firebase Firestore Cloud Account for Cross-Device Login (Phone + Password)
+      // 2. Check Firebase Firestore Cloud Account for Cross-Device Login (Phone + Password / Admin Temp Password)
       if (firebaseSyncService.isAvailable()) {
-        const cloudAcc = await firebaseSyncService.getUserAccount(cleanPhone);
+        let cloudAcc = await firebaseSyncService.getUserAccount(cleanPhone);
+        if (!cloudAcc) {
+          cloudAcc = await firebaseSyncService.findUserAccountByIdentifier(phone.trim());
+        }
         if (cloudAcc) {
           if (cloudAcc.deleted || cloudAcc.status === 'revoked') {
             return {
@@ -2335,16 +2340,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             };
           }
           if (cloudAcc.password && cloudAcc.password !== password.trim()) {
-            return { success: false, error: 'رقم الهاتف أو كلمة المرور غير صحيحة' };
+            return { success: false, error: 'رقم الهاتف أو كلمة المرور (أو كلمة المرور المؤقتة) غير صحيحة' };
           }
+          const finalName = trimmedWorkerName || cloudAcc.name || 'موظف المحطة';
           const restoredProfile: Profile = {
             id: cloudAcc.id,
-            name: cloudAcc.name,
+            name: finalName,
             phone: cleanPhone,
             whatsapp_number: cloudAcc.whatsapp_number || cleanPhone,
-            must_change_password: Boolean(cloudAcc.must_change_password),
+            must_change_password: false,
             created_at: cloudAcc.created_at || new Date().toISOString(),
           };
+
+          if (trimmedWorkerName && trimmedWorkerName !== cloudAcc.name) {
+            firebaseSyncService
+              .saveUserAccount(cleanPhone, {
+                ...cloudAcc,
+                name: finalName,
+                must_change_password: false,
+              })
+              .catch(() => {});
+          }
 
           // Restore full workspace & data from Firebase
           if (cloudAcc.workspace_id) {
@@ -2354,7 +2370,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             if (cloudAcc.role === 'worker' && cloudData.members.length > 0) {
               const activeWorkerMember = cloudData.members.find(
                 m =>
-                  (m.user_id === cloudAcc.id ||
+                  (m.user_id === cloudAcc!.id ||
                     cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone) &&
                   m.status === 'active'
               );
@@ -2402,8 +2418,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             setAllTransactions(cloudData.transactions);
             setAllTrips(cloudData.trips);
             if (cloudData.members.length > 0) {
-              setWorkspaceMembers(cloudData.members);
-              const swList: StationWorker[] = cloudData.members
+              const updatedMembers = cloudData.members.map(m =>
+                (m.user_id === cloudAcc!.id ||
+                  cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone) &&
+                m.profile
+                  ? { ...m, profile: { ...m.profile, name: finalName, must_change_password: false } }
+                  : m
+              );
+              setWorkspaceMembers(updatedMembers);
+              const swList: StationWorker[] = updatedMembers
                 .filter(m => m.role === 'worker' && m.station_id && m.status === 'active')
                 .map(m => ({
                   station_id: m.station_id!,
@@ -2434,35 +2457,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
             localAccounts[cleanPhone] = {
               id: cloudAcc.id,
-              name: cloudAcc.name,
+              name: finalName,
               phone: cleanPhone,
               whatsapp_number: cloudAcc.whatsapp_number || cleanPhone,
               password: password.trim(),
               isOwner: cloudAcc.role === 'owner',
               workspace_id: cloudAcc.workspace_id,
+              station_id: cloudAcc.station_id,
             };
             localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
           } catch {}
 
-          showToast(`مرحباً بعودتك يا ${restoredProfile.name}! تم استرجاع حسابك وبياناتك من السحابة بنجاح`, 'success');
+          showToast(`مرحباً بك يا ${restoredProfile.name}! تم الدخول لحسابك مباشرة بنجاح`, 'success');
           return { success: true };
         }
       }
 
       // Check local temporary password table or saved local accounts if offline/demo
-      let mustChangeLocal = false;
       try {
         const tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
+        const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
         if (tempMap[cleanPhone]) {
-          if (tempMap[cleanPhone] !== password.trim()) {
-            return { success: false, error: 'كلمة المرور المؤقتة غير صحيحة' };
+          const matchesTemp = tempMap[cleanPhone] === password.trim();
+          const matchesSaved = localAccounts[cleanPhone]?.password === password.trim();
+          if (!matchesTemp && !matchesSaved) {
+            return { success: false, error: 'كلمة المرور المؤقتة غير صحيحة. تأكد من الكلمة التي أعطاك إياها الأدمين.' };
           }
-          mustChangeLocal = true;
-        } else {
-          const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
-          if (localAccounts[cleanPhone]?.password && localAccounts[cleanPhone].password !== password.trim()) {
-            return { success: false, error: 'رقم الهاتف أو كلمة المرور غير صحيحة' };
-          }
+        } else if (localAccounts[cleanPhone]?.password && localAccounts[cleanPhone].password !== password.trim()) {
+          return { success: false, error: 'رقم الهاتف أو كلمة المرور غير صحيحة' };
         }
       } catch {}
 
@@ -2471,13 +2493,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
       );
       if (member && member.profile) {
-        const profileWithFlag = {
+        const finalName = trimmedWorkerName || member.profile.name || 'موظف المحطة';
+        const profileWithFlag: Profile = {
           ...member.profile,
+          name: finalName,
           phone: cleanPhone,
-          must_change_password: Boolean(member.profile.must_change_password || mustChangeLocal),
+          must_change_password: false,
         };
+        if (trimmedWorkerName && trimmedWorkerName !== member.profile.name) {
+          setWorkspaceMembers(prev =>
+            prev.map(m => (m.user_id === member.user_id ? { ...m, profile: profileWithFlag } : m))
+          );
+        }
         setCurrentUser(profileWithFlag);
-        showToast(`مرحباً بعودتك يا ${member.profile.name}`, 'success');
+        showToast(`مرحباً بك يا ${finalName}! تم الدخول للمحطة بنجاح`, 'success');
         return { success: true };
       }
 
@@ -2486,46 +2515,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
         const savedAcc = localAccounts[cleanPhone];
         if (savedAcc) {
-          // If this local account was a worker, ensure they haven't been removed from workspaceMembers
           if (!savedAcc.isOwner) {
             const stillInMembers = workspaceMembers.some(
               m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
             );
-            if (!stillInMembers) {
+            if (!stillInMembers && workspaceMembers.length > 0) {
               return {
                 success: false,
                 error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
               };
             }
           }
+          const finalName = trimmedWorkerName || savedAcc.name || 'موظف المحطة';
           const restoredProfile: Profile = {
             id: savedAcc.id || `usr-${cleanPhone}`,
-            name: savedAcc.name || 'مدير المحطة',
+            name: finalName,
             phone: cleanPhone,
             whatsapp_number: savedAcc.whatsapp_number || cleanPhone,
-            must_change_password: mustChangeLocal,
+            must_change_password: false,
             created_at: new Date().toISOString(),
           };
           setCurrentUser(restoredProfile);
-          showToast(`مرحباً بعودتك يا ${restoredProfile.name}`, 'success');
+          showToast(`مرحباً بك يا ${restoredProfile.name}`, 'success');
           return { success: true };
         }
       } catch {}
 
       // Existing local user
       if (currentUser && cleanPhoneNumber(currentUser.phone) === cleanPhone) {
+        const finalName = trimmedWorkerName || currentUser.name;
         setCurrentUser({
           ...currentUser,
+          name: finalName,
           phone: cleanPhone,
-          must_change_password: Boolean(currentUser.must_change_password || mustChangeLocal),
+          must_change_password: false,
         });
-        showToast(`مرحباً بعودتك يا ${currentUser.name}`, 'success');
+        showToast(`مرحباً بك يا ${finalName}`, 'success');
         return { success: true };
       }
 
       return { 
         success: false, 
-        error: 'لم يتم العثور على حساب بهذا الهاتف. يرجى الضغط على "إنشاء حساب جديد كمدير" أولاً.' 
+        error: 'لم يتم العثور على حساب بهذا الرقم. إذا كنت عاملاً، اطلب من الأدمين تسجيل رقمك وإعطائك كلمة المرور المؤقتة.' 
       };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -3091,33 +3122,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             phone: canonicalPhone,
           },
         });
-        if (fnErr || (fnData && !fnData.success)) {
-          const errMsg = fnData?.error || fnErr?.message || 'تعذر إنشاء حساب العامل عبر الخادم. يمكنك دعوته عبر رمز الدعوة الخاص بمساحة العمل.';
-          showToast(errMsg, 'error');
-          return { success: false, error: errMsg };
+        if (!fnErr && fnData?.success) {
+          if (fnData?.user_id) workerUserId = fnData.user_id;
+          if (fnData?.temporary_password) tempPassword = fnData.temporary_password;
         }
-        if (fnData?.user_id) workerUserId = fnData.user_id;
-        if (fnData?.temporary_password) tempPassword = fnData.temporary_password;
-      } catch (e: any) {
-        const errMsg = 'تعذر الاتصال بدالة الخادم لإنشاء حساب العامل. يرجى استخدام رمز الدعوة أو المحاولة لاحقاً.';
-        showToast(errMsg, 'error');
-        return { success: false, error: errMsg };
-      }
-    } else {
-      // Save local temporary password for offline/demo mode
-      try {
-        const tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
-        tempMap[canonicalPhone] = tempPassword;
-        localStorage.setItem('alittihadia_temp_passwords', JSON.stringify(tempMap));
       } catch {}
     }
+
+    // Always save temporary password & local account entry so worker can log in directly with Name + Phone + Temp Password
+    try {
+      const tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
+      tempMap[canonicalPhone] = tempPassword;
+      localStorage.setItem('alittihadia_temp_passwords', JSON.stringify(tempMap));
+
+      const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+      localAccounts[canonicalPhone] = {
+        id: workerUserId,
+        name: name.trim(),
+        phone: canonicalPhone,
+        whatsapp_number: canonicalPhone,
+        password: tempPassword,
+        isOwner: false,
+        workspace_id: currentWorkspace.id,
+        station_id: stationId,
+      };
+      localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
+    } catch {}
 
     const newWorkerProfile: Profile = {
       id: workerUserId,
       name: name.trim(),
       phone: canonicalPhone,
       whatsapp_number: canonicalPhone,
-      must_change_password: true,
+      must_change_password: false,
       created_at: new Date().toISOString(),
     };
 
@@ -3185,7 +3222,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         role: role === 'owner' ? 'owner' : 'worker',
         workspace_id: currentWorkspace.id,
         station_id: stationId,
-        must_change_password: true,
+        must_change_password: false,
         status: 'active',
         deleted: false,
         created_at: newWorkerProfile.created_at,
