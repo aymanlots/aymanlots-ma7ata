@@ -42,6 +42,7 @@ interface SettingsViewProps {
   onOpenCollabRoom?: () => void;
   onOpenCustomerAccounts?: () => void;
   onOpenGuidedTour?: () => void;
+  onOpenBackupModal?: () => void;
   initialOpenTeam?: boolean;
   onTeamOpened?: () => void;
 }
@@ -51,6 +52,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenPrivacyModal,
   onOpenPlatformOwner,
   onOpenGuidedTour,
+  onOpenBackupModal,
   initialOpenTeam = false,
   onTeamOpened
 }) => {
@@ -654,14 +656,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onOpenPaywall}
-            className="btn-gold w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
-          >
-            <Crown className="w-4 h-4" />
-            <span>فتح نافذة الاشتراك وطلب التفعيل عبر واتساب</span>
-          </button>
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              type="button"
+              onClick={onOpenPaywall}
+              className="btn-gold w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+            >
+              <Crown className="w-4 h-4" />
+              <span>فتح نافذة الاشتراك وطلب التفعيل عبر واتساب</span>
+            </button>
+
+            {onOpenPlatformOwner && (
+              <button
+                type="button"
+                onClick={onOpenPlatformOwner}
+                className="w-full py-2.5 px-3 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 hover:bg-amber-500/30 font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition"
+              >
+                <Crown className="w-4 h-4 text-amber-400" />
+                <span>إدارة اشتراكات الشركات (تفعيل / توقيف حسابات الشركات اللي كتشري منك)</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1855,6 +1870,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {openExportSection && (
           <div className="mt-3.5 pt-3 border-t border-white/15 grid grid-cols-1 gap-2">
+            {/* 1-Click Monthly Excel / CSV Backup */}
+            {onOpenBackupModal && (
+              <button
+                type="button"
+                onClick={onOpenBackupModal}
+                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl bg-emerald-950/75 border-2 border-emerald-500/55 text-emerald-300 hover:bg-emerald-900/70 transition text-right active:scale-95 cursor-pointer shadow-lg"
+              >
+                <div className="flex items-center gap-2.5">
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="font-black text-xs text-white block">
+                      نسخة احتياطية Excel / CSV شهرية بنقرة واحدة
+                    </span>
+                    <span className="text-[10px] text-emerald-300/90 block">
+                      تحميل جرد الشهر الكامل (كوليات + صناديق + رحلات) بصيغة Excel
+                    </span>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-black text-[10px] shrink-0">
+                  فتح Excel
+                </span>
+              </button>
+            )}
+
             {/* Export Cash Transactions PDF */}
             <button
               onClick={() => {

@@ -680,11 +680,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return [];
     }
   });
+  const allParcelsRef = useRef<Parcel[]>(allParcels);
+  allParcelsRef.current = allParcels;
 
   // 10.b All Trips & Dispatch
   const [allTrips, setAllTrips] = useState<Trip[]>(() => {
     return storageService.get<Trip[]>('TRIPS', []);
   });
+  const allTripsRef = useRef<Trip[]>(allTrips);
+  allTripsRef.current = allTrips;
 
   const [rememberedDrivers, setRememberedDrivers] = useState<RememberedDriver[]>(() => {
     return tripService.getRememberedDrivers();
@@ -781,8 +785,69 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTimeout(() => setToast(null), 4000);
   }, []);
 
-  // Load all workspaces for Platform Owner from server-side RPC
+  // Load all workspaces for Platform Owner from Firebase Firestore & server-side RPC
   const refreshPlatformWorkspaces = useCallback(async () => {
+    // 1. Load from Firebase Firestore when available
+    if (firebaseSyncService.isAvailable()) {
+      try {
+        const cloudWorkspaces = await firebaseSyncService.listAllWorkspacesFromCloud();
+        if (cloudWorkspaces.length > 0) {
+          const wsList: Workspace[] = [];
+          const subList: Subscription[] = [];
+          cloudWorkspaces.forEach((item: Workspace) => {
+            const defaultEnd = item.created_at
+              ? new Date(new Date(item.created_at).getTime() + 30 * 86400000).toISOString()
+              : new Date(Date.now() + 30 * 86400000).toISOString();
+            const endDate = item.subscription_end_date || defaultEnd;
+            const rawStatus = item.subscription_status || 'active';
+            const effectiveStatus: 'active' | 'expired' | 'suspended' =
+              rawStatus === 'suspended'
+                ? 'suspended'
+                : new Date(endDate).getTime() <= Date.now()
+                ? 'expired'
+                : 'active';
+
+            wsList.push({
+              ...item,
+              plan_name:
+                item.plan_name ||
+                (item.plan_tier === 'plan_2_two_stations'
+                  ? 'الباك الأول (99 درهم — محطتين)'
+                  : 'الباك الثاني (199 درهم — الباقة الشاملة)'),
+              max_workers: item.max_workers ?? (item.plan_tier === 'plan_2_two_stations' ? 2 : 999),
+              max_stations: item.max_stations ?? (item.plan_tier === 'plan_2_two_stations' ? 2 : 999),
+              max_collaborations: item.max_collaborations ?? 99,
+              subscription_status: effectiveStatus,
+              subscription_end_date: endDate,
+            });
+
+            subList.push({
+              id: `sub-${item.id}`,
+              workspace_id: item.id,
+              team_id: item.id,
+              status: effectiveStatus,
+              plan_name:
+                item.plan_name ||
+                (item.plan_tier === 'plan_2_two_stations'
+                  ? 'الباك الأول (99 درهم — محطتين)'
+                  : 'الباك الثاني (199 درهم — الباقة الشاملة)'),
+              start_date: item.created_at || new Date().toISOString(),
+              end_date: endDate,
+              is_trial: false,
+              created_at: item.created_at || new Date().toISOString(),
+            });
+          });
+          setAllWorkspacesState(wsList);
+          setAllSubscriptionsState(subList);
+          localStorage.setItem('alittihadia_all_workspaces', JSON.stringify(wsList));
+          localStorage.setItem('alittihadia_all_subscriptions', JSON.stringify(subList));
+          return;
+        }
+      } catch (err) {
+        console.warn('Error loading workspaces from Firestore:', err);
+      }
+    }
+
     if (!isSupabaseConfigured()) return;
     const supabase = getSupabaseClient();
     if (!supabase) return;
@@ -834,6 +899,71 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.warn('Error refreshing platform workspaces:', err);
     }
   }, []);
+
+  // Automatically detect Platform Owner account & keep workspaces list synced in real time
+  useEffect(() => {
+    if (!currentUser) {
+      setIsPlatformOwner(false);
+      return;
+    }
+    const emailNorm = (currentUser.email || '').trim().toLowerCase();
+    const phoneNorm = cleanPhoneNumber(currentUser.phone || '');
+    const isMasterAccount =
+      emailNorm === 'aissaaimanekhlifi@gmail.com' ||
+      phoneNorm === '212618961387' ||
+      phoneNorm === '0618961387';
+
+    if (isMasterAccount) {
+      setIsPlatformOwner(true);
+      refreshPlatformWorkspaces();
+    }
+  }, [currentUser, refreshPlatformWorkspaces]);
+
+  useEffect(() => {
+    if (!firebaseSyncService.isAvailable() || !currentUser) return;
+    const unsub = firebaseSyncService.subscribeToAllWorkspaces((cloudWorkspaces) => {
+      if (!cloudWorkspaces || cloudWorkspaces.length === 0) return;
+      const wsList: Workspace[] = [];
+      const subList: Subscription[] = [];
+      cloudWorkspaces.forEach((item: Workspace) => {
+        const defaultEnd = item.created_at
+          ? new Date(new Date(item.created_at).getTime() + 30 * 86400000).toISOString()
+          : new Date(Date.now() + 30 * 86400000).toISOString();
+        const endDate = item.subscription_end_date || defaultEnd;
+        const rawStatus = item.subscription_status || 'active';
+        const effectiveStatus: 'active' | 'expired' | 'suspended' =
+          rawStatus === 'suspended'
+            ? 'suspended'
+            : new Date(endDate).getTime() <= Date.now()
+            ? 'expired'
+            : 'active';
+
+        wsList.push({
+          ...item,
+          subscription_status: effectiveStatus,
+          subscription_end_date: endDate,
+        });
+        subList.push({
+          id: `sub-${item.id}`,
+          workspace_id: item.id,
+          team_id: item.id,
+          status: effectiveStatus,
+          plan_name:
+            item.plan_name ||
+            (item.plan_tier === 'plan_2_two_stations'
+              ? 'الباك الأول (99 درهم — محطتين)'
+              : 'الباك الثاني (199 درهم — الباقة الشاملة)'),
+          start_date: item.created_at || new Date().toISOString(),
+          end_date: endDate,
+          is_trial: false,
+          created_at: item.created_at || new Date().toISOString(),
+        });
+      });
+      setAllWorkspacesState(wsList);
+      setAllSubscriptionsState(subList);
+    });
+    return () => unsub();
+  }, [currentUser?.id]);
 
   // Load workspace data from Supabase when configured and logged in
   const loadWorkspaceFromCloud = useCallback(async (wsId: string, userId?: string) => {
@@ -1883,45 +2013,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const effectiveSubscriptionStatus = useMemo(() => {
     return currentWorkspace?.subscription_status || subscription?.status || 'active';
   }, [currentWorkspace?.subscription_status, subscription?.status]);
-
-  // Restore workspace subscription to 30 full days after the 5-minute test
-  useEffect(() => {
-    if (!currentWorkspace?.id) return;
-    const wsId = currentWorkspace.id;
-    const restoreKey = `alittihadia_30day_restored_v2_${wsId}`;
-    if (localStorage.getItem(restoreKey)) return;
-
-    const isManager =
-      userRole === 'owner' ||
-      userRole === 'platform_owner' ||
-      !currentWorkspace.created_by ||
-      currentWorkspace.created_by === currentUser?.id;
-    if (!isManager) return;
-
-    localStorage.setItem(restoreKey, 'true');
-    const thirtyDaysEnd = new Date(Date.now() + 30 * 86400000).toISOString();
-    const updatedSub: Subscription = {
-      id: subscription?.id || `sub-${wsId}`,
-      workspace_id: wsId,
-      team_id: wsId,
-      status: 'active',
-      is_trial: true,
-      start_date: new Date().toISOString(),
-      end_date: thirtyDaysEnd,
-      created_at: subscription?.created_at || new Date().toISOString(),
-    };
-    setSubscription(updatedSub);
-    localStorage.setItem('aman_subscription', JSON.stringify(updatedSub));
-    const updatedWs: Workspace = {
-      ...currentWorkspace,
-      subscription_end_date: thirtyDaysEnd,
-      subscription_status: 'active',
-    };
-    setCurrentWorkspace(updatedWs);
-    if (firebaseSyncService.isAvailable()) {
-      firebaseSyncService.syncWorkspace(updatedWs).catch(() => {});
-    }
-  }, [currentWorkspace?.id, userRole, currentUser?.id]);
 
   // Subscription calculation (expired OR suspended blocks all writes)
   const isSubscriptionExpired = useMemo(() => {
@@ -4240,10 +4331,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const parcel = allParcels.find(p => p.id === id);
+    const parcel = allParcelsRef.current.find(p => p.id === id);
     if (!parcel) return { success: false, error: 'الكولي غير موجود' };
     if (currentWorkspace && parcel.workspace_id && parcel.workspace_id !== currentWorkspace.id) {
       const msg = 'لا يمكن تعديل حالة طرد تابع لمساحة عمل أخرى (صلاحية قراءة وتتبع فقط)';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    // قيد منطق مراحل الكولي (State Machine): منع تسليم الكولي مباشرة وهو لا يزال في الطريق أو لم يدخل للستوك بعد
+    if (status === 'delivered') {
+      if (parcel.status === 'delivered') {
+        const msg = `الكولي #${parcel.parcel_number} تم تسليمه للمستلم مسبقاً!`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (parcel.status === 'in_transit') {
+        const msg = `تنبيه: لا يمكن تسليم الكولي #${parcel.parcel_number} لأنه لا يزال في الطريق على متن الشاحنة (${parcel.driver_name || 'الرحلة'}) ولم يدخل بعد إلى ستوك محطة "${parcel.destination_station_name}"! يجب استقبال وتفريغ الكولي في المحطة أولاً.`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (parcel.status === 'registered' || parcel.status === 'pending') {
+        const msg = `تنبيه: لا يمكن تسليم الكولي #${parcel.parcel_number} لأنه لا يزال مسجلاً في محطة الانطلاق "${parcel.origin_station_name}" ولم يصل بعد إلى ستوك محطة "${parcel.destination_station_name}"!`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (parcel.status === 'return_in_transit' || parcel.status === 'returned') {
+        const msg = `الكولي #${parcel.parcel_number} في مسار الإرجاع للمرسل ولا يمكن تسليمه كطرد عادي (استخدم تسليم المرتجع للمرسل).`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (parcel.status !== 'arrived') {
+        const msg = `لا يمكن تسليم الكولي #${parcel.parcel_number} إلا بعد وصوله وتأكيد دخوله لستوك المحطة (الحالة الحالية: ${parcel.status}).`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
+
+    if (status === 'in_transit' && (parcel.status === 'delivered' || parcel.status === 'returned')) {
+      const msg = `لا يمكن تحويل الكولي #${parcel.parcel_number} إلى "في الطريق" لأنه تم تسليمه مسبقاً.`;
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
@@ -4272,9 +4398,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ? (metaConditionNotes || parcel.condition_notes) 
       : (metaCondition === 'normal' ? null : parcel.condition_notes);
 
+    const nowIso = new Date().toISOString();
     const newHistoryEntry: ParcelStatusHistoryEntry = {
       status,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso,
       changed_by_id: currentUser?.id || 'sys',
       changed_by_name: currentUser?.name || 'المستخدم',
       notes: noteText || undefined,
@@ -4287,17 +4414,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       status,
       condition: finalCondition,
       condition_notes: finalConditionNotes,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
       notes: noteText ? `${parcel.notes || ''} [${noteText}]` : parcel.notes,
       status_history: [...(parcel.status_history || []), newHistoryEntry],
     };
 
+    if (status === 'arrived' && !updated.arrived_at) {
+      updated.arrived_at = nowIso;
+    }
+
     if (status === 'delivered') {
-      updated.delivered_at = new Date().toISOString();
+      updated.delivered_at = nowIso;
       updated.delivered_to = deliveredPerson || parcel.receiver_name;
 
+      // Only record explicit separate COD if cod_amount > 0 and not merely computed from shipping fee
       const codAmount = parcel.cod_amount ?? 0;
-      if (codAmount > 0) {
+      const isComputedFromShipping = codAmount > 0 && codAmount === Math.max(0, (parcel.amount_due || 0) - (parcel.amount_paid || 0));
+      if (codAmount > 0 && !isComputedFromShipping) {
         await createTransaction({
           station_id: parcel.destination_station_id,
           type: 'parcel_cod_collection',
@@ -4311,7 +4444,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    setAllParcels(prev => prev.map(p => p.id === id ? updated : p));
+    const nextParcels = allParcelsRef.current.map(p => p.id === id ? updated : p);
+    allParcelsRef.current = nextParcels;
+    setAllParcels(nextParcels);
 
     if (isSupabaseConfigured()) {
       const synced = await parcelService.syncParcelToCloud(
@@ -4319,7 +4454,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         (msg: string) => showToast(msg, 'error')
       );
       if (!synced) {
-        setAllParcels(prev => prev.map(p => p.id === id ? { ...p, pending_sync: true } : p));
+        const fallbackParcels = allParcelsRef.current.map(p => p.id === id ? { ...p, pending_sync: true } : p);
+        allParcelsRef.current = fallbackParcels;
+        setAllParcels(fallbackParcels);
       }
     }
 
@@ -4330,7 +4467,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
 
-    showToast(`تم تحديث حالة الكولي [${parcel.tracking_code}] إلى "${status}"`, 'success');
+    showToast(`تم تحديث حالة الكولي [${parcel.tracking_code}] بنجاح`, 'success');
     return { success: true };
   };
 
@@ -4343,7 +4480,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const parcel = allParcels.find(p => p.id === parcelId);
+    const parcel = allParcelsRef.current.find(p => p.id === parcelId);
     if (!parcel) return { success: false, error: 'الكولي غير موجود' };
     if (currentWorkspace && parcel.workspace_id && parcel.workspace_id !== currentWorkspace.id) {
       const msg = 'لا يمكن تسجيل دفعة لطرد تابع لمساحة عمل أخرى';
@@ -4374,7 +4511,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updated_at: new Date().toISOString(),
     };
 
-    setAllParcels(prev => prev.map(p => p.id === parcelId ? updated : p));
+    const nextParcels = allParcelsRef.current.map(p => p.id === parcelId ? updated : p);
+    allParcelsRef.current = nextParcels;
+    setAllParcels(nextParcels);
 
     if (isSupabaseConfigured()) {
       const synced = await parcelService.syncParcelToCloud(
@@ -4382,7 +4521,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         (msg: string) => showToast(msg, 'error')
       );
       if (!synced) {
-        setAllParcels(prev => prev.map(p => p.id === parcelId ? { ...p, pending_sync: true } : p));
+        const fallbackParcels = allParcelsRef.current.map(p => p.id === parcelId ? { ...p, pending_sync: true } : p);
+        allParcelsRef.current = fallbackParcels;
+        setAllParcels(fallbackParcels);
       }
     }
 
@@ -4494,11 +4635,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: 'يرجى اختيار سبب إرجاع الطرد إلى المرسل (حقل إلزامي)' };
     }
 
-    const parcel = allParcels.find(p => p.id === parcelId);
+    const parcel = allParcelsRef.current.find(p => p.id === parcelId);
     if (!parcel) return { success: false, error: 'الطرد غير موجود' };
 
     if (parcel.status === 'delivered' || parcel.status === 'returned') {
       return { success: false, error: 'لا يمكن إرجاع طرد تم تسليمه مسبقاً' };
+    }
+    if (parcel.status === 'in_transit') {
+      return {
+        success: false,
+        error: `لا يمكن إرجاع الطرد #${parcel.parcel_number} وهو لا يزال في الطريق على متن الشاحنة؛ يجب استقباله وتفريغه في ستوك المحطة أولاً.`
+      };
     }
 
     // Check role / station authorization: admin or worker assigned to destination station
@@ -5008,7 +5155,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const targetTripForLoad = allTrips.find(t => t.id === tripId);
+    const targetTripForLoad = allTripsRef.current.find(t => t.id === tripId);
     if (userRole === 'worker' && userAssignedStationId && targetTripForLoad && targetTripForLoad.origin_station_id !== userAssignedStationId) {
       const msg = `لا يمكنك شحن الكوليات في هذه الرحلة لأنها تنطلق من محطة "${targetTripForLoad.origin_station_name}"`;
       showToast(msg, 'error');
@@ -5019,13 +5166,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       tripId,
       parcelIdentifier,
       { id: currentUser.id, name: currentUser.name },
-      allTrips,
-      allParcels,
+      allTripsRef.current,
+      allParcelsRef.current,
       userAssignedStationId || undefined,
       (msg: string) => showToast(msg, 'error')
     );
 
     if (res.success) {
+      allTripsRef.current = res.updatedTrips;
+      allParcelsRef.current = res.updatedParcels;
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
       if (firebaseSyncService.isAvailable()) {
@@ -5050,7 +5199,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const targetTripForUnload = allTrips.find(t => t.id === tripId);
+    const targetTripForUnload = allTripsRef.current.find(t => t.id === tripId);
     if (userRole === 'worker' && userAssignedStationId && targetTripForUnload && targetTripForUnload.origin_station_id !== userAssignedStationId) {
       const msg = `لا يمكنك تعديل شحن هذه الرحلة لأنها تنطلق من محطة "${targetTripForUnload.origin_station_name}"`;
       showToast(msg, 'error');
@@ -5061,11 +5210,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       tripId,
       parcelId,
       { id: currentUser.id, name: currentUser.name },
-      allTrips,
-      allParcels,
+      allTripsRef.current,
+      allParcelsRef.current,
       (msg: string) => showToast(msg, 'error')
     );
     if (res.success) {
+      allTripsRef.current = res.updatedTrips;
+      allParcelsRef.current = res.updatedParcels;
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
       if (firebaseSyncService.isAvailable()) {
@@ -5084,7 +5235,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const targetTripForDepart = allTrips.find(t => t.id === tripId);
+    const targetTripForDepart = allTripsRef.current.find(t => t.id === tripId);
     if (userRole === 'worker' && userAssignedStationId && targetTripForDepart && targetTripForDepart.origin_station_id !== userAssignedStationId) {
       const msg = `لا يمكنك إطلاق هذه الرحلة لأنها تابعة لمحطة "${targetTripForDepart.origin_station_name}"`;
       showToast(msg, 'error');
@@ -5094,14 +5245,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const res = tripService.departTrip(
       tripId,
       { id: currentUser.id, name: currentUser.name },
-      allTrips,
-      allParcels,
+      allTripsRef.current,
+      allParcelsRef.current,
       (msg: string) => showToast(msg, 'error')
     );
     if (res.success) {
+      allTripsRef.current = res.updatedTrips;
+      allParcelsRef.current = res.updatedParcels;
       setAllTrips(res.updatedTrips);
+      setAllParcels(res.updatedParcels);
       if (firebaseSyncService.isAvailable() && res.trip) {
         firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
+        for (const pid of res.trip.loaded_parcel_ids) {
+          const updatedP = res.updatedParcels.find(p => p.id === pid);
+          if (updatedP) firebaseSyncService.syncParcel(updatedP.workspace_id, updatedP).catch(() => {});
+        }
       }
     }
     return { success: res.success, error: res.error, trip: res.trip };
@@ -5117,7 +5275,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const targetTripForReceive = allTrips.find(t => t.id === tripId);
+    const targetTripForReceive = allTripsRef.current.find(t => t.id === tripId);
     if (userRole === 'worker' && userAssignedStationId && targetTripForReceive && targetTripForReceive.destination_station_id !== userAssignedStationId) {
       const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTripForReceive.destination_station_name}"`;
       showToast(msg, 'error');
@@ -5130,11 +5288,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       condition,
       conditionNotes,
       { id: currentUser.id, name: currentUser.name },
-      allTrips,
-      allParcels,
+      allTripsRef.current,
+      allParcelsRef.current,
       (msg: string) => showToast(msg, 'error')
     );
     if (res.success) {
+      allTripsRef.current = res.updatedTrips;
+      allParcelsRef.current = res.updatedParcels;
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
       if (firebaseSyncService.isAvailable()) {
@@ -5159,7 +5319,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    const targetTripForClose = allTrips.find(t => t.id === tripId);
+    const targetTripForClose = allTripsRef.current.find(t => t.id === tripId);
     if (userRole === 'worker' && userAssignedStationId && targetTripForClose && targetTripForClose.destination_station_id !== userAssignedStationId) {
       const msg = `لا يمكنك إغلاق هذه الرحلة لأنها متجهة إلى محطة "${targetTripForClose.destination_station_name}"`;
       showToast(msg, 'error');
@@ -5170,10 +5330,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       tripId,
       { id: currentUser.id, name: currentUser.name },
       closeReason,
-      allTrips,
+      allTripsRef.current,
       (msg: string) => showToast(msg, 'error')
     );
     if (res.success) {
+      allTripsRef.current = res.updatedTrips;
       setAllTrips(res.updatedTrips);
       if (firebaseSyncService.isAvailable() && res.trip) {
         firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
@@ -5813,7 +5974,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast('تم ضبط توقيت الاشتراك على 5 دقائق للتجربة! سيظهر العد التنازلي الآن.', 'info');
   };
 
-  // Platform Owner Controls: Update Subscription via server-side RPC
+  // Platform Owner Controls: Update Subscription via Firestore & server-side RPC
   const updateWorkspaceSubscription = async (
     workspaceId: string, 
     action: 'activate' | 'extend' | 'suspend', 
@@ -5826,77 +5987,92 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         p_action: action,
         p_months: months
       });
-      if (error || (rpcRes && !rpcRes.success)) {
-        const msg = error?.message || rpcRes?.error || 'تعذر تحديث الاشتراك في السحابة';
-        showToast(msg, 'error');
-        return { success: false, error: msg };
-      }
-      await refreshPlatformWorkspaces();
-      if (currentWorkspace?.id === workspaceId && rpcRes?.subscription) {
-        setSubscription({ ...rpcRes.subscription, team_id: workspaceId });
-      }
-      return { success: true };
-    }
-
-    setAllSubscriptionsState(prev => {
-      const existing = prev.find(s => s.workspace_id === workspaceId);
-      const now = new Date();
-      let newEndDate = existing && new Date(existing.end_date).getTime() > now.getTime()
-        ? new Date(existing.end_date)
-        : new Date();
-      
-      if (action === 'extend' || action === 'activate') {
-        newEndDate.setMonth(newEndDate.getMonth() + months);
-      }
-
-      const updatedSub: Subscription = {
-        id: existing?.id || `sub-${workspaceId}`,
-        workspace_id: workspaceId,
-        team_id: workspaceId,
-        status: action === 'suspend' ? 'suspended' : 'active',
-        start_date: existing?.start_date || now.toISOString(),
-        end_date: newEndDate.toISOString(),
-        is_trial: false,
-        created_at: existing?.created_at || now.toISOString(),
-      };
-
-      const next = prev.filter(s => s.workspace_id !== workspaceId).concat(updatedSub);
-      localStorage.setItem('alittihadia_all_subscriptions', JSON.stringify(next));
-
-      if (currentWorkspace?.id === workspaceId) {
-        setSubscription(updatedSub);
-        localStorage.setItem('aman_subscription', JSON.stringify(updatedSub));
-        const updatedWs: Workspace = {
-          ...currentWorkspace,
-          subscription_end_date: updatedSub.end_date,
-          subscription_status: updatedSub.status,
-        };
-        setCurrentWorkspace(updatedWs);
-        if (firebaseSyncService.isAvailable()) {
-          firebaseSyncService.syncWorkspace(updatedWs).catch(() => {});
+      if (!error && rpcRes?.success) {
+        await refreshPlatformWorkspaces();
+        if (currentWorkspace?.id === workspaceId && rpcRes?.subscription) {
+          setSubscription({ ...rpcRes.subscription, team_id: workspaceId });
         }
       }
+    }
 
+    const existingSub = allSubscriptionsState.find((s: Subscription) => s.workspace_id === workspaceId);
+    const existingWs = allWorkspacesState.find((w: Workspace) => w.id === workspaceId);
+    const now = new Date();
+    const baseEndStr = existingWs?.subscription_end_date || existingSub?.end_date;
+    let newEndDate = baseEndStr && new Date(baseEndStr).getTime() > now.getTime()
+      ? new Date(baseEndStr)
+      : new Date();
+
+    if (action === 'extend' || action === 'activate') {
+      if (months < 1) {
+        // Fractional months e.g. 0.25 = 7 days
+        const daysToAdd = Math.max(1, Math.round(months * 30));
+        newEndDate = new Date(newEndDate.getTime() + daysToAdd * 86400000);
+      } else {
+        newEndDate.setMonth(newEndDate.getMonth() + Math.round(months));
+      }
+    }
+
+    const newStatus: 'active' | 'suspended' = action === 'suspend' ? 'suspended' : 'active';
+    const newEndIso = newEndDate.toISOString();
+
+    const updatedSub: Subscription = {
+      id: existingSub?.id || `sub-${workspaceId}`,
+      workspace_id: workspaceId,
+      team_id: workspaceId,
+      status: newStatus,
+      start_date: existingSub?.start_date || now.toISOString(),
+      end_date: newEndIso,
+      is_trial: false,
+      created_at: existingSub?.created_at || now.toISOString(),
+    };
+
+    setAllSubscriptionsState(prev => {
+      const next = prev.filter(s => s.workspace_id !== workspaceId).concat(updatedSub);
+      localStorage.setItem('alittihadia_all_subscriptions', JSON.stringify(next));
       return next;
     });
+
+    setAllWorkspacesState(prev => {
+      const next = prev.map(ws =>
+        ws.id === workspaceId
+          ? { ...ws, subscription_status: newStatus, subscription_end_date: newEndIso }
+          : ws
+      );
+      localStorage.setItem('alittihadia_all_workspaces', JSON.stringify(next));
+      return next;
+    });
+
+    if (currentWorkspace?.id === workspaceId) {
+      setSubscription(updatedSub);
+      localStorage.setItem('aman_subscription', JSON.stringify(updatedSub));
+      const updatedWs: Workspace = {
+        ...currentWorkspace,
+        subscription_end_date: newEndIso,
+        subscription_status: newStatus,
+      };
+      setCurrentWorkspace(updatedWs);
+    }
+
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.updateWorkspaceFieldsInCloud(workspaceId, {
+        subscription_status: newStatus,
+        subscription_end_date: newEndIso,
+      });
+    }
+
     return { success: true };
   };
 
-  // Platform Owner Controls: Update Workspace Notes via server-side RPC
+  // Platform Owner Controls: Update Workspace Notes via Firestore & server-side RPC
   const updateWorkspaceNotes = async (workspaceId: string, notes: string) => {
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(workspaceId)) {
-      const { data: rpcRes, error } = await supabase.rpc('rpc_platform_update_subscription', {
+      await supabase.rpc('rpc_platform_update_subscription', {
         p_workspace_id: workspaceId,
         p_action: 'update_meta',
         p_admin_notes: notes
       });
-      if (error || (rpcRes && !rpcRes.success)) {
-        const msg = error?.message || rpcRes?.error || 'تعذر حفظ الملاحظات في السحابة';
-        showToast(msg, 'error');
-        return { success: false, error: msg };
-      }
-      await refreshPlatformWorkspaces();
     }
 
     setAllWorkspacesState(prev => {
@@ -5907,10 +6083,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (currentWorkspace?.id === workspaceId) {
       setCurrentWorkspace(prev => prev ? { ...prev, admin_notes: notes } : null);
     }
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.updateWorkspaceFieldsInCloud(workspaceId, {
+        admin_notes: notes,
+      });
+    }
     return { success: true };
   };
 
-  // Platform Owner Controls: Update Workspace Quotas & Plan via server-side RPC
+  // Platform Owner Controls: Update Workspace Quotas & Plan via Firestore & server-side RPC
   const updateWorkspaceQuotas = async (
     workspaceId: string,
     quotas: {
@@ -5924,31 +6105,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   ) => {
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(workspaceId)) {
-      const { data: rpcRes, error } = await supabase.rpc('rpc_platform_update_subscription', {
+      await supabase.rpc('rpc_platform_update_subscription', {
         p_workspace_id: workspaceId,
         p_action: 'update_meta',
         p_max_workers: quotas.max_workers,
         p_max_stations: quotas.max_stations,
         p_max_collaborations: quotas.max_collaborations,
-        p_plan_name: quotas.plan_name || 'الباك الأول (الشامل المفتوح)'
+        p_plan_name: quotas.plan_name || 'الباك الثاني (199 درهم — الباقة الشاملة)'
       });
-      if (error || (rpcRes && !rpcRes.success)) {
-        const msg = error?.message || rpcRes?.error || 'تعذر تحديث حصص الباقة في السحابة';
-        showToast(msg, 'error');
-        return { success: false, error: msg };
-      }
-      await refreshPlatformWorkspaces();
     }
+
+    const nextTier = quotas.plan_tier || (quotas.max_stations === 2 ? 'plan_2_two_stations' : 'plan_1_full');
+    const nextPlanName =
+      quotas.plan_name ||
+      (nextTier === 'plan_2_two_stations'
+        ? 'الباك الأول (99 درهم — محطتين وعامل لكل محطة)'
+        : 'الباك الثاني (199 درهم — محطات وعمال غير محدودين)');
 
     setAllWorkspacesState(prev => {
       const next = prev.map(ws => ws.id === workspaceId ? {
         ...ws,
-        plan_tier: quotas.plan_tier || (quotas.max_stations === 2 ? 'plan_2_two_stations' : 'plan_1_full'),
+        plan_tier: nextTier,
         max_workers: quotas.max_workers,
         max_stations: quotas.max_stations,
         max_workers_per_station: quotas.max_workers_per_station ?? (quotas.max_stations === 2 ? 1 : 99),
         max_collaborations: quotas.max_collaborations,
-        plan_name: quotas.plan_name || ws.plan_name || 'الباك الأول (الشامل المفتوح)'
+        plan_name: nextPlanName
       } : ws);
       localStorage.setItem('alittihadia_all_workspaces', JSON.stringify(next));
       return next;
@@ -5957,28 +6139,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (currentWorkspace?.id === workspaceId) {
       setCurrentWorkspace(prev => prev ? {
         ...prev,
-        plan_tier: quotas.plan_tier || (quotas.max_stations === 2 ? 'plan_2_two_stations' : 'plan_1_full'),
+        plan_tier: nextTier,
         max_workers: quotas.max_workers,
         max_stations: quotas.max_stations,
         max_workers_per_station: quotas.max_workers_per_station ?? (quotas.max_stations === 2 ? 1 : 99),
         max_collaborations: quotas.max_collaborations,
-        plan_name: quotas.plan_name || prev.plan_name || 'الباك الأول (الشامل المفتوح)'
+        plan_name: nextPlanName
       } : null);
     }
-    // Sync plan_tier change to Firebase Firestore so workers and all devices see the updated plan immediately
-    if (currentWorkspace?.id === workspaceId && firebaseSyncService.isAvailable()) {
-      const nextTier = quotas.plan_tier || (quotas.max_stations === 2 ? 'plan_2_two_stations' : 'plan_1_full');
-      firebaseSyncService
-        .syncWorkspace({
-          ...currentWorkspace,
-          plan_tier: nextTier,
-          max_workers: quotas.max_workers,
-          max_stations: quotas.max_stations,
-          max_workers_per_station: quotas.max_workers_per_station ?? (quotas.max_stations === 2 ? 1 : 99),
-          max_collaborations: quotas.max_collaborations,
-          plan_name: quotas.plan_name || currentWorkspace.plan_name || 'الباك الثاني (199 درهم — الباقة الشاملة)',
-        })
-        .catch(() => {});
+
+    // Sync plan_tier change to Firebase Firestore for ANY workspaceId
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.updateWorkspaceFieldsInCloud(workspaceId, {
+        plan_tier: nextTier,
+        max_workers: quotas.max_workers,
+        max_stations: quotas.max_stations,
+        max_workers_per_station: quotas.max_workers_per_station ?? (quotas.max_stations === 2 ? 1 : 99),
+        max_collaborations: quotas.max_collaborations,
+        plan_name: nextPlanName,
+      });
     }
     return { success: true };
   };

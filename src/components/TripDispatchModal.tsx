@@ -82,13 +82,17 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
     .map(id => parcels.find(p => p.id === id))
     .filter((p): p is Parcel => Boolean(p));
 
-  // Available registered or returning parcels ready to be loaded onto this trip
-  const availableParcelsToLoad = parcels.filter(
-    p =>
-      !p.is_collaborator_data &&
-      (p.status === 'registered' || p.status === 'return_in_transit') &&
-      !trip.loaded_parcel_ids.includes(p.id)
-  );
+  // Available registered or returning parcels at this trip's origin station ready to be loaded
+  const availableParcelsToLoad = parcels.filter(p => {
+    if (p.is_collaborator_data) return false;
+    if (p.status !== 'registered' && p.status !== 'return_in_transit') return false;
+    if (trip.loaded_parcel_ids.includes(p.id)) return false;
+    const isAtTripOrigin =
+      p.is_returning || p.status === 'return_in_transit'
+        ? p.destination_station_id === trip.origin_station_id
+        : p.origin_station_id === trip.origin_station_id;
+    return isAtTripOrigin;
+  });
 
   // Calculate Trip Revenue, Road Expenses & Net Profit
   const expCurr = (trip.expense_currency as 'MAD' | 'MRU') || 'MAD';

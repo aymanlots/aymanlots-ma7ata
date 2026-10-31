@@ -19,6 +19,8 @@ import {
   ArrowUpRight,
   ChevronDown,
   X,
+  FileSpreadsheet,
+  Crown,
 } from 'lucide-react';
 import { NewVoucherModal } from './NewVoucherModal';
 import { MoneyTransferModal } from './MoneyTransferModal';
@@ -45,6 +47,8 @@ interface OwnerDashboardProps {
   onOpenCustomerAccounts?: () => void;
   onOpenPublicTracking?: () => void;
   onOpenGuidedTour?: () => void;
+  onOpenBackupModal?: () => void;
+  onOpenPlatformOwner?: () => void;
 }
 
 export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
@@ -55,6 +59,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   onOpenNewParcel,
   onOpenLedger,
   onOpenParcels,
+  onOpenBackupModal,
+  onOpenPlatformOwner,
 }) => {
   const {
     userRole,
@@ -993,6 +999,61 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             )}
           </div>
         )}
+      </div>
+
+      {/* 3 Commercial Features: Monthly Excel Backup, Subscription Management, and PWA App Install */}
+      <div className="space-y-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {onOpenBackupModal && (
+            <button
+              type="button"
+              onClick={onOpenBackupModal}
+              className="luxury-card rounded-[20px] p-3.5 border border-emerald-500/45 hover:border-emerald-400 transition flex items-center justify-between gap-2.5 text-right cursor-pointer shadow-lg"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-emerald-300 truncate">
+                    نسخة احتياطية Excel / CSV شهرية
+                  </p>
+                  <p className="text-[10px] text-white/75 truncate">
+                    تحميل جرد الشهر والمحاسبة بنقرة واحدة
+                  </p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-black text-[10px] shrink-0">
+                تحميل Excel
+              </span>
+            </button>
+          )}
+
+          {onOpenPlatformOwner && (
+            <button
+              type="button"
+              onClick={onOpenPlatformOwner}
+              className="luxury-card rounded-[20px] p-3.5 border border-[#D4AF37]/50 hover:border-[#F5C84C] transition flex items-center justify-between gap-2.5 text-right cursor-pointer shadow-lg"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#F5C84C] flex items-center justify-center shrink-0">
+                  <Crown className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-[#F5C84C] truncate">
+                    إدارة اشتراكات الشركات
+                  </p>
+                  <p className="text-[10px] text-white/75 truncate">
+                    تفعيل / توقيف حسابات الشركات المشتركة
+                  </p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 rounded-lg bg-[#F5C84C] text-slate-950 font-black text-[10px] shrink-0">
+                إدارة
+              </span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* نافذة التنبيه عند تسليم حوالة ولاكيس المحطة خاوية */}

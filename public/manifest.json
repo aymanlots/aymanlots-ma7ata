@@ -1,17 +1,19 @@
 {
   "id": "/",
-  "name": "Sahara Express",
-  "short_name": "Sahara Express",
-  "description": "تطبيق Sahara Express لإدارة الإرساليات والتحويلات المالية والصناديق النقدية",
+  "name": "Sahara Express - للسفر ونقل البضائع والكوليات",
+  "short_name": "SaharaExp",
+  "description": "نظام إدارة الشحن واللوجستيك والكوليات والصناديق النقدية بين المغرب وموريتانيا",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
   "background_color": "#0B1220",
   "theme_color": "#0B1220",
   "dir": "rtl",
   "lang": "ar",
-  "categories": ["finance", "business"],
+  "categories": ["business", "finance", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icon-192.png",
@@ -20,7 +22,19 @@
       "purpose": "any"
     },
     {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"

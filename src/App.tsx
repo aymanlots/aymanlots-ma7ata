@@ -29,6 +29,7 @@ import { CustomerAccountsModal } from './components/CustomerAccountsModal';
 import { PublicTrackingModal } from './components/PublicTrackingModal';
 import { ForcePasswordChangeModal } from './components/ForcePasswordChangeModal';
 import { GuidedSetupTourModal } from './components/GuidedSetupTourModal';
+import { BackupExportModal } from './components/BackupExportModal';
 import { StationScopeBar } from './components/StationScopeBar';
 import { Toast } from './components/Toast';
 import { Parcel, TransactionType } from './types/database';
@@ -64,6 +65,7 @@ const MainApp: React.FC = () => {
   const [stickerBatchParcels, setStickerBatchParcels] = useState<Parcel[] | undefined>(undefined);
   const [showGuidedTour, setShowGuidedTour] = useState(false);
   const [showQuickDeliver, setShowQuickDeliver] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState(false);
 
   // Auto-open public tracking modal if URL has ?track=CODE
   useEffect(() => {
@@ -165,6 +167,8 @@ const MainApp: React.FC = () => {
           onOpenPublicTracking={() => setShowPublicTracking(true)}
           onOpenCollabRoom={() => setShowCollabRoom(true)}
           onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
+          onOpenBackupModal={() => setShowBackupModal(true)}
+          onOpenPlatformOwner={() => setShowPlatformOwnerDashboard(true)}
         />
 
         {/* 3-Day Pre-Expiry Reminder Banner */}
@@ -176,7 +180,7 @@ const MainApp: React.FC = () => {
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-[#D4AF37] shrink-0" />
               <span>
-                🔔 تذكير قبل الانتهاء: متبقي <strong className="font-mono text-[#F5C84C]">{subscriptionRemainingLabel}</strong> على انتهاء الـ 30 يوماً.
+                🔔 تذكير قبل الانتهاء: متبقي <strong className="font-mono text-[#F5C84C]">{subscriptionRemainingLabel}</strong> على انتهاء الاشتراك.
               </span>
             </div>
             <span className="text-[10px] font-black text-[#111111] bg-[#F5C84C] px-2 py-0.5 rounded-lg shrink-0">
@@ -185,7 +189,7 @@ const MainApp: React.FC = () => {
           </div>
         )}
 
-        {/* Expired Paywall Warning Banner (Full Write Lock for Admin & Worker) */}
+        {/* Expired or Suspended Paywall Warning Banner (Full Write Lock for Admin & Worker) */}
         {isSubscriptionExpired && (
           <div 
             onClick={() => setShowPaywall(true)}
@@ -194,7 +198,9 @@ const MainApp: React.FC = () => {
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
               <span>
-                انتهت مدة 30 يوماً — تم إيقاف الإضافة والإرسال والاستقبال للأدمين والعامل حتى التجديد.
+                {currentWorkspace?.subscription_status === 'suspended'
+                  ? '⛔ تم توقيف الحساب مؤقتاً من طرف إدارة المنصة — لا يمكن إضافة أو إرسال أو استقبال أي كولي حتى إعادة التفعيل.'
+                  : 'انتهت مدة الاشتراك — تم إيقاف الإضافة والإرسال والاستقبال للأدمين والعامل حتى التجديد.'}
               </span>
             </div>
             <span className="text-[10px] px-2 py-0.5 rounded-lg bg-rose-500/30 border border-rose-400/40 text-white font-black shrink-0">
@@ -239,6 +245,8 @@ const MainApp: React.FC = () => {
                 onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
                 onOpenPublicTracking={() => setShowPublicTracking(true)}
                 onOpenGuidedTour={() => setShowGuidedTour(true)}
+                onOpenBackupModal={() => setShowBackupModal(true)}
+                onOpenPlatformOwner={() => setShowPlatformOwnerDashboard(true)}
               />
             ) : (
               <WorkerStationView
@@ -290,6 +298,7 @@ const MainApp: React.FC = () => {
                 setShowNewVoucher(true);
               }}
               onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
+              onOpenBackupModal={() => setShowBackupModal(true)}
             />
           )}
 
@@ -302,6 +311,7 @@ const MainApp: React.FC = () => {
               onOpenCollabRoom={() => setShowCollabRoom(true)}
               onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
               onOpenGuidedTour={() => setShowGuidedTour(true)}
+              onOpenBackupModal={() => setShowBackupModal(true)}
               initialOpenTeam={openSettingsTeam}
               onTeamOpened={() => setOpenSettingsTeam(false)}
             />
@@ -418,6 +428,12 @@ const MainApp: React.FC = () => {
         <PlatformOwnerDashboard
           isOpen={showPlatformOwnerDashboard}
           onClose={() => setShowPlatformOwnerDashboard(false)}
+        />
+
+        {/* One-Click Monthly Excel / CSV & Full Backup Modal */}
+        <BackupExportModal
+          isOpen={showBackupModal}
+          onClose={() => setShowBackupModal(false)}
         />
 
         {/* Onboarding Modal */}

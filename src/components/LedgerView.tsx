@@ -27,15 +27,21 @@ import {
   SlidersHorizontal,
   Store,
   Trash2,
-  CheckCircle2
+  CheckCircle2,
+  FileSpreadsheet
 } from 'lucide-react';
 
 interface LedgerViewProps {
   onOpenNewVoucher: (initialType?: TransactionType) => void;
   onOpenCustomerAccounts?: () => void;
+  onOpenBackupModal?: () => void;
 }
 
-export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpenCustomerAccounts }) => {
+export const LedgerView: React.FC<LedgerViewProps> = ({
+  onOpenNewVoucher,
+  onOpenCustomerAccounts,
+  onOpenBackupModal,
+}) => {
   const { 
     transactions, 
     stations, 
@@ -405,6 +411,17 @@ export const LedgerView: React.FC<LedgerViewProps> = ({ onOpenNewVoucher, onOpen
               >
                 <Download className="w-3.5 h-3.5 text-emerald-400" />
                 <span>تصدير PDF</span>
+              </button>
+            )}
+
+            {onOpenBackupModal && (userRole === 'owner' || userRole === 'platform_owner') && (
+              <button
+                type="button"
+                onClick={onOpenBackupModal}
+                className="col-span-2 py-2.5 px-3 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 font-black text-xs flex items-center justify-center gap-2 hover:bg-emerald-900/60 transition cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                <span>نسخة احتياطية Excel / CSV شهرية بنقرة واحدة</span>
               </button>
             )}
           </div>

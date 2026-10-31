@@ -302,14 +302,25 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
 
         {/* Parcels Manifest & Scanning Status (Loading Order) */}
         <div className="flex-1 overflow-y-auto p-3.5 space-y-2 text-xs">
-          <div className="flex items-center justify-between pb-1">
+          <div className="flex items-center justify-between pb-1 flex-wrap gap-1.5">
             <span className="font-bold text-[#C2A878] text-[11px] flex items-center gap-1">
               <Layers className="w-3.5 h-3.5 text-[#D4AF37]" />
-              <span>مانيفست الشحنة:</span>
+              <span>مانيفست الشحنة ({receivedCount}/{totalCount} في الستوك):</span>
             </span>
-            <span className="text-[10px] font-mono text-[#F5D799]">
-              {receivedCount} تم مسحه • {missingCount} متبقي
-            </span>
+            {trip.status !== 'closed' && missingCount > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const unscanned = allLoadedParcels.filter(p => !trip.received_parcel_ids.includes(p.id));
+                  for (const p of unscanned) {
+                    await handleScanOrInput(p.tracking_code);
+                  }
+                }}
+                className="text-[10px] font-black px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition cursor-pointer"
+              >
+                ✓ تفريغ وإدخال الكل للستوك ({missingCount})
+              </button>
+            )}
           </div>
 
           {allLoadedParcels.map((parcel, idx) => {
@@ -378,6 +389,17 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
                     </button>
                   )}
 
+                  {!isScanned && trip.status !== 'closed' && (
+                    <button
+                      type="button"
+                      onClick={() => handleScanOrInput(parcel.tracking_code)}
+                      className="px-2 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-black text-[10px] transition cursor-pointer"
+                      title="تأكيد وصول الكولي وإدخاله لستوك المحطة"
+                    >
+                      + إدخال للستوك
+                    </button>
+                  )}
+
                   {onOpenTicket && (
                     <button
                       type="button"
@@ -398,12 +420,12 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
                     {isScanned ? (
                       <>
                         <CheckCircle2 className="w-3 h-3" />
-                        <span>دخلت</span>
+                        <span>بالستوك ✓</span>
                       </>
                     ) : (
                       <>
                         <AlertCircle className="w-3 h-3" />
-                        <span>انتظار</span>
+                        <span>بالشاحنة</span>
                       </>
                     )}
                   </span>

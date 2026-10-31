@@ -723,7 +723,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
           <button
             type="button"
             onClick={() => setShowLegalTerms(true)}
-            className="text-[11px] text-[#C8B08A] hover:text-[#F5D799] underline transition cursor-pointer"
+            className="text-[11px] text-[#C8B08A] hover:text-[#F5D799] underline transition cursor-pointer block mx-auto pt-1"
           >
             الشروط والأحكام وسياسة الخصوصية
           </button>

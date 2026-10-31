@@ -64,22 +64,58 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmDebtNotice, setConfirmDebtNotice] = useState(false);
 
+  // Only parcels that have arrived in destination station stock (status === 'arrived') are eligible for delivery
+  const arrivedStockParcels = useMemo(() => {
+    const activeStation = workerStationId || (selectedStationId && selectedStationId !== 'all' ? selectedStationId : '');
+    return parcels.filter(p => {
+      if (p.is_collaborator_data) return false;
+      if (p.status !== 'arrived') return false;
+      if (activeStation && p.destination_station_id !== activeStation) return false;
+      if (selectedParcels.some(sel => sel.id === p.id)) return false;
+      return true;
+    });
+  }, [parcels, workerStationId, selectedStationId, selectedParcels]);
+
+  const getNonArrivedErrorMessage = (found: Parcel): string => {
+    if (found.status === 'delivered') {
+      return `تنبيه: الكولي #${found.parcel_number} تم تسليمه مسبقاً للزبون (${found.delivered_to || found.receiver_name}).`;
+    }
+    if (found.status === 'in_transit') {
+      return `⛔ الكولي #${found.parcel_number} مازال في الطريق داخل الشاحنة (${found.driver_name || 'الرحلة'}${found.vehicle_plate ? ' - ' + found.vehicle_plate : ''}) ولم يصل بعد إلى ستوك محطة "${found.destination_station_name}"! يجب استقبال وتفريغ الرحلة أولاً قبل تسليمه للزبون.`;
+    }
+    if (found.status === 'registered' || found.status === 'pending') {
+      return `⛔ الكولي #${found.parcel_number} مازال مسجلاً في محطة الانطلاق "${found.origin_station_name}" ولم ينطلق أو يصل لستوك محطة "${found.destination_station_name}" بعد!`;
+    }
+    if (found.status === 'return_in_transit' || found.status === 'returned') {
+      return `⛔ الكولي #${found.parcel_number} في مسار الإرجاع للمرسل ولا يمكن تسليمه من نافذة التسليم العادي.`;
+    }
+    return `⛔ لا يمكن تسليم الكولي #${found.parcel_number} لأنه غير موجود في ستوك المحطة حالياً.`;
+  };
+
   // Synchronize initial parcel when modal opens
   useEffect(() => {
     if (isOpen) {
+      setConfirmDebtNotice(false);
+      setPaymentNote('');
       if (initialParcel) {
-        setSelectedParcels([initialParcel]);
-        setDeliveredTo(initialParcel.receiver_name);
-        const rem = Math.max(0, Math.round((initialParcel.amount_due - initialParcel.amount_paid) * 100) / 100);
-        setPaymentAmount(rem > 0 ? rem.toString() : '0');
+        if (initialParcel.status !== 'arrived') {
+          setSelectedParcels([]);
+          setDeliveredTo('');
+          setPaymentAmount('');
+          setErrorMessage(getNonArrivedErrorMessage(initialParcel));
+        } else {
+          setSelectedParcels([initialParcel]);
+          setDeliveredTo(initialParcel.receiver_name);
+          const rem = Math.max(0, Math.round((initialParcel.amount_due - initialParcel.amount_paid) * 100) / 100);
+          setPaymentAmount(rem > 0 ? rem.toString() : '0');
+          setErrorMessage(null);
+        }
       } else {
         setSelectedParcels([]);
         setDeliveredTo('');
         setPaymentAmount('');
+        setErrorMessage(null);
       }
-      setConfirmDebtNotice(false);
-      setErrorMessage(null);
-      setPaymentNote('');
     }
   }, [initialParcel, isOpen]);
 
@@ -147,10 +183,10 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
       return;
     }
 
-    // Check if already delivered
-    if (found.status === 'delivered') {
+    // Strictly require parcel to be in station stock (status === 'arrived')
+    if (found.status !== 'arrived') {
       playErrorBeep();
-      setErrorMessage(`تنبيه: الكولي #${found.parcel_number} تم تسليمه مسبقاً للزبون.`);
+      setErrorMessage(getNonArrivedErrorMessage(found));
       return;
     }
 
@@ -162,6 +198,21 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     setSearchQuery('');
   };
 
+  const handleSelectSameReceiverStock = (receiverPhone: string, receiverName: string) => {
+    const cleanPhone = (receiverPhone || '').replace(/\D/g, '');
+    const matching = arrivedStockParcels.filter(p => {
+      const pPhone = (p.receiver_phone || '').replace(/\D/g, '');
+      return (cleanPhone && pPhone === cleanPhone) || (receiverName && p.receiver_name.trim() === receiverName.trim());
+    });
+    if (matching.length > 0) {
+      playSuccessBeep();
+      setSelectedParcels(prev => [...prev, ...matching]);
+      if (!deliveredTo.trim() && receiverName) {
+        setDeliveredTo(receiverName);
+      }
+    }
+  };
+
   const handleRemoveParcel = (parcelId: string) => {
     setSelectedParcels(prev => prev.filter(p => p.id !== parcelId));
   };
@@ -169,11 +220,19 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
   const handleConfirmBatchDelivery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedParcels.length === 0) {
-      setErrorMessage('يرجى مسح أو إضافة كولي واحد على الأقل للتسليم.');
+      setErrorMessage('يرجى مسح أو اختيار كولي واحد على الأقل من ستوك المحطة للتسليم.');
       return;
     }
 
     setErrorMessage(null);
+
+    // Ensure every parcel in the batch is strictly in 'arrived' status
+    const notArrivedParcel = selectedParcels.find(p => p.status !== 'arrived');
+    if (notArrivedParcel) {
+      playErrorBeep();
+      setErrorMessage(getNonArrivedErrorMessage(notArrivedParcel));
+      return;
+    }
 
     // Validate worker restrictions across all parcels
     if (userRole === 'worker' && workerStationId) {
@@ -200,29 +259,35 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
         const parcelRem = Math.max(0, Math.round((parcel.amount_due - parcel.amount_paid) * 100) / 100);
         if (parcelRem > 0 && unallocatedPayment > 0) {
           const allocate = Math.min(unallocatedPayment, parcelRem);
-          await recordParcelPayment(
+          const payRes = await recordParcelPayment(
             parcel.id,
             allocate,
             recipientName,
             paymentNote.trim() || `استخلاص نقدي عند تسليم دفعة كوليات (${selectedParcels.length} كوليات)`
           );
+          if (!payRes.success) {
+            throw new Error(payRes.error || `تعذر تسجيل دفعة الكولي #${parcel.parcel_number}`);
+          }
           unallocatedPayment = Math.max(0, Math.round((unallocatedPayment - allocate) * 100) / 100);
         }
       }
 
       // If user paid more than remaining due across unpaid parcels, allocate remainder to first parcel
       if (unallocatedPayment > 0 && selectedParcels.length > 0) {
-        await recordParcelPayment(
+        const extraRes = await recordParcelPayment(
           selectedParcels[0].id,
           unallocatedPayment,
           recipientName,
           paymentNote.trim() || 'فارق استخلاص نقدي إضافي'
         );
+        if (!extraRes.success) {
+          throw new Error(extraRes.error || 'تعذر تسجيل الدفعة الإضافية');
+        }
       }
 
       // 2. Mark all parcels as delivered
       for (const parcel of selectedParcels) {
-        await updateParcelStatus(
+        const statusRes = await updateParcelStatus(
           parcel.id,
           'delivered',
           {
@@ -230,6 +295,9 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
             notes: `تم التسليم بنجاح في دفعة (${selectedParcels.length} كوليات)`
           }
         );
+        if (!statusRes.success) {
+          throw new Error(statusRes.error || `تعذر تسليم الكولي #${parcel.parcel_number}`);
+        }
       }
 
       try {
@@ -239,6 +307,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
       showToast(`تم تسليم (${selectedParcels.length}) كوليات للزبون بنجاح واستخلاص ${payAmt} ${currency}`, 'success');
       onClose();
     } catch (err: any) {
+      playErrorBeep();
       setErrorMessage(err.message || 'حدث خطأ أثناء تسليم الكوليات');
     } finally {
       setIsSubmitting(false);
@@ -263,9 +332,9 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
               <UserCheck className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
-              <h3 className="text-xs font-black text-white">تسليم سريع لكولي أو دفعة كوليات</h3>
+              <h3 className="text-xs font-black text-white">تسليم الكوليات من الستوك (فردي أو جماعي)</h3>
               <p className="text-[10px] text-[#D4AF37] font-medium">
-                مسح مستمر، تسليم كوليات متعددة للزبون دفعة واحدة
+                خاص فقط بالكوليات المتوفرة في ستوك المحطة (وصلت المحطة ✓)
               </p>
             </div>
           </div>
@@ -315,7 +384,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
           </div>
 
           {errorMessage && (
-            <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center gap-1.5 animate-fadeIn">
+            <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center gap-1.5 animate-fadeIn leading-relaxed">
               <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
               <span>{errorMessage}</span>
             </div>
@@ -324,12 +393,85 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
 
         {/* Body */}
         <div className="p-3.5 overflow-y-auto flex-1 text-xs space-y-3.5">
+          {/* Arrived Stock Quick-Picker for Bulk Delivery */}
+          <div className="bg-[#120a00]/90 p-3 rounded-2xl border border-emerald-500/30 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-black text-emerald-300 text-[11px] flex items-center gap-1.5">
+                <Package className="w-3.5 h-3.5 text-emerald-400" />
+                <span>كوليات الستوك الجاهزة للتسليم ({arrivedStockParcels.length}):</span>
+              </span>
+              {arrivedStockParcels.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSuccessBeep();
+                    setSelectedParcels(prev => [...prev, ...arrivedStockParcels]);
+                    if (!deliveredTo.trim() && arrivedStockParcels[0]?.receiver_name) {
+                      setDeliveredTo(arrivedStockParcels[0].receiver_name);
+                    }
+                  }}
+                  className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition cursor-pointer"
+                >
+                  + تحديد كل الستوك ({arrivedStockParcels.length})
+                </button>
+              )}
+            </div>
+
+            {arrivedStockParcels.length === 0 ? (
+              <p className="text-[10px] text-[#C2A878] bg-[#0d0700] p-2.5 rounded-xl border border-[#D4AF37]/20 text-center">
+                {selectedParcels.length > 0
+                  ? 'تم تحديد جميع كوليات الستوك المتوفرة في الدفعة أدناه ✓'
+                  : 'لا توجد حالياً كوليات في ستوك المحطة (وصلت المحطة). الكوليات التي لا تزال في الطريق يجب تفريغها من نافذة وصول الرحلات أولاً.'}
+              </p>
+            ) : (
+              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5">
+                {arrivedStockParcels.map(sp => {
+                  const spRem = Math.max(0, Math.round((sp.amount_due - sp.amount_paid) * 100) / 100);
+                  return (
+                    <div
+                      key={sp.id}
+                      className="bg-[#0d0700] px-2.5 py-2 rounded-xl border border-[#D4AF37]/25 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] font-black text-[#F5D799] bg-[#D4AF37]/15 px-1.5 py-0.5 rounded border border-[#D4AF37]/30">
+                            #{sp.parcel_number}
+                          </span>
+                          <span className="font-bold text-white text-[11px] truncate">
+                            {sp.receiver_name}
+                          </span>
+                          <span className="text-[9px] text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded-full border border-emerald-500/30 font-bold">
+                            في الستوك ✓
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-[#C2A878] flex items-center gap-2 mt-0.5">
+                          <span>📦 {sp.description}</span>
+                          <span>•</span>
+                          <span className="font-mono text-white font-bold" dir="ltr">
+                            {spRem <= 0 ? 'خالص' : `باقي: ${spRem} ${sp.currency}`}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddParcelByCode(sp.tracking_code)}
+                        className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-black text-[10px] shrink-0 cursor-pointer transition"
+                      >
+                        + إضافة للدفعة
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {selectedParcels.length === 0 ? (
-            <div className="text-center py-10 bg-[#120a00]/80 rounded-2xl border border-dashed border-[#D4AF37]/30 p-5 space-y-2.5">
-              <Package className="w-10 h-10 text-[#D4AF37]/60 mx-auto" />
+            <div className="text-center py-6 bg-[#120a00]/80 rounded-2xl border border-dashed border-[#D4AF37]/30 p-4 space-y-2">
+              <Package className="w-8 h-8 text-[#D4AF37]/60 mx-auto" />
               <h4 className="text-xs font-bold text-[#F5D799]">لم يتم تحديد أي كولي للتسليم بعد</h4>
               <p className="text-[10px] text-[#C2A878] leading-relaxed max-w-[280px] mx-auto">
-                امسح باركود أو QR كود الكولي بالكاميرا (يمكنك مسح عدة كوليات متتالية لنفس الزبون) أو اكتب الرقم للإضافة.
+                اختر من قائمة كوليات الستوك أعلاه أو امسح باركود الكولي بالكاميرا لتسليمه.
               </p>
               <button
                 type="button"
@@ -357,7 +499,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
 
                 {/* Scanned Items Cards */}
                 <div className="max-h-48 overflow-y-auto space-y-2 pr-0.5">
-                  {selectedParcels.map((parcel, idx) => {
+                  {selectedParcels.map((parcel) => {
                     const rem = Math.max(0, Math.round((parcel.amount_due - parcel.amount_paid) * 100) / 100);
                     return (
                       <div 
@@ -415,15 +557,24 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
                   })}
                 </div>
 
-                <div className="pt-1 flex items-center justify-between">
+                <div className="pt-1 flex items-center justify-between flex-wrap gap-1.5">
                   <button
                     type="button"
                     onClick={() => setShowScanner(true)}
                     className="text-[10px] text-[#F5D799] font-bold flex items-center gap-1 hover:underline cursor-pointer"
                   >
                     <Plus className="w-3 h-3" />
-                    <span>+ مسح كولي إضافي وإضافته لنفس الزبون</span>
+                    <span>+ مسح كولي إضافي</span>
                   </button>
+                  {selectedParcels.length === 1 && arrivedStockParcels.some(p => p.receiver_phone === selectedParcels[0].receiver_phone || p.receiver_name === selectedParcels[0].receiver_name) && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectSameReceiverStock(selectedParcels[0].receiver_phone, selectedParcels[0].receiver_name)}
+                      className="text-[10px] text-emerald-300 font-bold hover:underline cursor-pointer"
+                    >
+                      + إضافة باقي كوليات الزبون من الستوك
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setSelectedParcels([])}

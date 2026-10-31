@@ -1012,7 +1012,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                               <span>واتساب QR</span>
                             </button>
 
-                            {parcel.status !== 'delivered' &&
+                            {parcel.status === 'arrived' &&
                               (userRole !== 'worker' || parcel.destination_station_id === activeStationId) && (
                                 <button
                                   type="button"
@@ -1020,10 +1020,26 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                                     setQuickDeliverParcel(parcel);
                                     setIsQuickDeliverOpen(true);
                                   }}
-                                  className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] transition"
+                                  className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] border border-emerald-500/45 text-emerald-300 transition"
                                 >
-                                  <UserCheck className="w-3.5 h-3.5" />
-                                  <span>تسليم</span>
+                                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>تسليم للزبون</span>
+                                </button>
+                              )}
+
+                            {(parcel.status === 'in_transit' || parcel.status === 'registered') &&
+                              (userRole !== 'worker' || parcel.destination_station_id === activeStationId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuickDeliverParcel(parcel);
+                                    setIsQuickDeliverOpen(true);
+                                  }}
+                                  className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] opacity-75 border border-amber-500/40 text-amber-300 transition"
+                                  title="الكولي لم يدخل ستوك المحطة بعد"
+                                >
+                                  <Truck className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>{parcel.status === 'in_transit' ? 'في الطريق (لم تصل للستوك)' : 'بمحطة الانطلاق'}</span>
                                 </button>
                               )}
 

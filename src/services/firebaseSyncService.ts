@@ -433,6 +433,7 @@ export const firebaseSyncService = {
           owner_id: ws.created_by || null,
           owner_phone: ws.owner_phone || null,
           owner_whatsapp: ws.owner_whatsapp || null,
+          admin_notes: ws.admin_notes || null,
           custom_brand_name: ws.custom_brand_name || null,
           custom_brand_subtitle: ws.custom_brand_subtitle || null,
           custom_brand_phone: ws.custom_brand_phone || null,
@@ -441,6 +442,7 @@ export const firebaseSyncService = {
           plan_name: ws.plan_name || 'الباقة الشاملة المفتوحة (30 يوم مجاناً)',
           max_workers: ws.max_workers ?? 999,
           max_stations: ws.max_stations ?? 999,
+          max_workers_per_station: ws.max_workers_per_station ?? 99,
           max_collaborations: ws.max_collaborations ?? 999,
           last_reset_at: ws.last_reset_at || null,
           subscription_end_date: ws.subscription_end_date || null,
@@ -453,6 +455,90 @@ export const firebaseSyncService = {
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
+  },
+
+  async updateWorkspaceFieldsInCloud(wsId: string, fields: Record<string, any>): Promise<void> {
+    if (!this.isAvailable() || !wsId) return;
+    const path = `workspaces/${wsId}`;
+    try {
+      await setDoc(
+        doc(db, 'workspaces', wsId),
+        sanitizeForFirestore({
+          ...fields,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  async listAllWorkspacesFromCloud(): Promise<Workspace[]> {
+    if (!this.isAvailable()) return [];
+    try {
+      const [wsSnap, usersSnap] = await Promise.all([
+        getDocs(collection(db, 'workspaces')),
+        getDocs(collection(db, 'users')),
+      ]);
+      const ownersByWs = new Map<string, CloudUserAccount>();
+      const workersCountByWs = new Map<string, number>();
+
+      usersSnap.forEach((d) => {
+        if (d.id.startsWith('code_')) return;
+        const u = d.data() as CloudUserAccount;
+        if (u.deleted || u.status === 'revoked' || !u.workspace_id) return;
+        if (u.role === 'owner') {
+          ownersByWs.set(u.workspace_id, u);
+        } else if (u.role === 'worker') {
+          workersCountByWs.set(u.workspace_id, (workersCountByWs.get(u.workspace_id) || 0) + 1);
+        }
+      });
+
+      const list: Workspace[] = [];
+      wsSnap.forEach((d) => {
+        const ws = d.data() as Workspace;
+        const ownerAcc = ownersByWs.get(ws.id);
+        list.push({
+          ...ws,
+          id: ws.id || d.id,
+          owner_phone: ws.owner_phone || ownerAcc?.phone || '',
+          owner_whatsapp: ws.owner_whatsapp || ownerAcc?.whatsapp_number || ownerAcc?.phone || '',
+          workers_count: ws.workers_count ?? (workersCountByWs.get(ws.id) || 0),
+        });
+      });
+
+      return list.sort(
+        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      );
+    } catch (err) {
+      console.warn('Firestore listAllWorkspacesFromCloud warning:', err);
+      return [];
+    }
+  },
+
+  subscribeToAllWorkspaces(onUpdate: (workspaces: Workspace[]) => void): Unsubscribe {
+    if (!this.isAvailable()) return () => {};
+    return onSnapshot(
+      collection(db, 'workspaces'),
+      (snap) => {
+        const list: Workspace[] = [];
+        snap.forEach((d) => {
+          const ws = d.data() as Workspace;
+          list.push({
+            ...ws,
+            id: ws.id || d.id,
+          });
+        });
+        list.sort(
+          (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        );
+        onUpdate(list);
+      },
+      (err) => {
+        console.warn('subscribeToAllWorkspaces warning:', err);
+      }
+    );
   },
 
   async syncWorkspaceMember(wsId: string, member: WorkspaceMember): Promise<void> {

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   X,
@@ -9,12 +9,28 @@ import {
   Upload,
   CheckCircle2,
   Printer,
+  Calendar,
 } from 'lucide-react';
 
 interface BackupExportModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const ARABIC_MONTHS: Record<string, string> = {
+  '01': 'يناير',
+  '02': 'فبراير',
+  '03': 'مارس',
+  '04': 'أبريل',
+  '05': 'ماي',
+  '06': 'يونيو',
+  '07': 'يوليوز',
+  '08': 'غشت',
+  '09': 'شتنبر',
+  '10': 'أكتوبر',
+  '11': 'نونبر',
+  '12': 'دجنبر',
+};
 
 export const BackupExportModal: React.FC<BackupExportModalProps> = ({
   isOpen,
@@ -32,11 +48,76 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const currentYearMonth = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  }, []);
+
+  const prevYearMonth = useMemo(() => {
+    const now = new Date();
+    now.setMonth(now.getMonth() - 1);
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  }, []);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentYearMonth);
+
+  const formatMonthLabel = (ym: string) => {
+    if (ym === 'all') return 'جميع الأشهر (كامل السجل)';
+    const [y, m] = ym.split('-');
+    return `${ARABIC_MONTHS[m] || m} ${y}`;
+  };
+
+  // Filter records by selectedMonth ('YYYY-MM' or 'all')
+  const filteredData = useMemo(() => {
+    const matchMonth = (isoStr?: string) => {
+      if (!isoStr) return false;
+      if (selectedMonth === 'all') return true;
+      return isoStr.startsWith(selectedMonth);
+    };
+
+    const mParcels = parcels.filter(p => matchMonth(p.created_at));
+    const mTransactions = transactions.filter(t => matchMonth(t.created_at));
+    const mTrips = trips.filter(tr => matchMonth(tr.created_at));
+
+    let totalDueMAD = 0;
+    let totalPaidMAD = 0;
+    let totalDueMRU = 0;
+    let totalPaidMRU = 0;
+
+    mParcels.forEach(p => {
+      if (p.status === 'cancelled') return;
+      if (p.currency === 'MRU') {
+        totalDueMRU += p.amount_due || 0;
+        totalPaidMRU += p.amount_paid || 0;
+      } else {
+        totalDueMAD += p.amount_due || 0;
+        totalPaidMAD += p.amount_paid || 0;
+      }
+    });
+
+    return {
+      parcels: mParcels,
+      transactions: mTransactions,
+      trips: mTrips,
+      totalDueMAD,
+      totalPaidMAD,
+      remMAD: Math.max(0, totalDueMAD - totalPaidMAD),
+      totalDueMRU,
+      totalPaidMRU,
+      remMRU: Math.max(0, totalDueMRU - totalPaidMRU),
+    };
+  }, [parcels, transactions, trips, selectedMonth]);
+
   if (!isOpen) return null;
 
   const wsName =
-    currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'إكسبريس الصحراء لوجستيك';
+    currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'Sahara Express';
   const todayStr = new Date().toISOString().slice(0, 10);
+  const periodSlug = selectedMonth === 'all' ? `All_${todayStr}` : selectedMonth;
 
   // Helper to download UTF-8 BOM CSV for Excel
   const downloadExcelCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
@@ -46,7 +127,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
     };
     const csvContent =
       '\uFEFF' +
-      [headers.map(escapeCell).join(','), ...rows.map((r) => r.map(escapeCell).join(','))].join(
+      [headers.map(escapeCell).join(','), ...rows.map(r => r.map(escapeCell).join(','))].join(
         '\r\n'
       );
 
@@ -59,6 +140,145 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  // ONE-CLICK MONTHLY COMPREHENSIVE EXCEL/CSV BACKUP
+  const handleOneClickMonthlyExcelBackup = () => {
+    const label = formatMonthLabel(selectedMonth);
+    const headers = [
+      'القسم',
+      'المرجع / الرقم',
+      'التاريخ',
+      'من محطة',
+      'إلى محطة',
+      'الطرف الأول (المرسل / المسؤول)',
+      'هاتف 1',
+      'الطرف الثاني (المستلم / الزبون)',
+      'هاتف 2',
+      'البيان / وصف البضاعة',
+      'الإجمالي / المبلغ',
+      'المدفوع',
+      'المتبقي (الكريدي)',
+      'العملة',
+      'الحالة',
+    ];
+
+    const rows: (string | number)[][] = [];
+
+    // 1. Summary Header Rows
+    rows.push([
+      'ملخص الشهر',
+      wsName,
+      label,
+      `الكوليات: ${filteredData.parcels.length}`,
+      `الرحلات: ${filteredData.trips.length}`,
+      `سندات الصندوق: ${filteredData.transactions.length}`,
+      '',
+      '',
+      '',
+      'إجمالي مداخيل الدرهم (MAD)',
+      filteredData.totalDueMAD,
+      filteredData.totalPaidMAD,
+      filteredData.remMAD,
+      'MAD',
+      'مكتمل',
+    ]);
+
+    if (filteredData.totalDueMRU > 0 || filteredData.totalPaidMRU > 0) {
+      rows.push([
+        'ملخص الشهر',
+        wsName,
+        label,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        'إجمالي مداخيل الأوقية (MRU)',
+        filteredData.totalDueMRU,
+        filteredData.totalPaidMRU,
+        filteredData.remMRU,
+        'MRU',
+        'مكتمل',
+      ]);
+    }
+
+    // 2. Parcels Rows
+    filteredData.parcels.forEach(p => {
+      const rem = Math.max(0, (p.amount_due || 0) - (p.amount_paid || 0));
+      rows.push([
+        'كولي / إرسالية',
+        `#${p.parcel_number} (${p.tracking_code})`,
+        new Date(p.created_at).toLocaleString('ar-MA'),
+        p.origin_station_name || '',
+        p.destination_station_name || '',
+        p.sender_name || '',
+        p.sender_phone || '',
+        p.receiver_name || '',
+        p.receiver_phone || '',
+        `${p.description || ''} (${p.items_count || 1} طرد)`,
+        p.amount_due || 0,
+        p.amount_paid || 0,
+        rem,
+        p.currency || 'MAD',
+        p.status,
+      ]);
+    });
+
+    // 3. Cashbox Transactions Rows
+    filteredData.transactions.forEach(t => {
+      const stName = t.station_name || stations.find(s => s.id === t.station_id)?.name || '';
+      rows.push([
+        'عملية صندوق',
+        t.id.slice(0, 8),
+        new Date(t.created_at).toLocaleString('ar-MA'),
+        stName,
+        '',
+        t.creator_name || '',
+        '',
+        t.person_name || '',
+        t.person_phone || '',
+        `${t.type} — ${t.reason || t.note || ''}`,
+        t.amount || 0,
+        t.amount || 0,
+        0,
+        t.currency || 'MAD',
+        t.status || 'approved',
+      ]);
+    });
+
+    // 4. Trips Rows
+    filteredData.trips.forEach(tr => {
+      const totalExp =
+        (tr.fuel_expense || 0) +
+        (tr.toll_expense || 0) +
+        (tr.driver_commission || 0) +
+        (tr.other_expense || 0);
+      rows.push([
+        'رحلة شاحنة',
+        tr.trip_code,
+        new Date(tr.created_at).toLocaleString('ar-MA'),
+        tr.origin_station_name || '',
+        tr.destination_station_name || '',
+        tr.driver_name || '',
+        tr.driver_phone || '',
+        tr.vehicle_plate || '',
+        '',
+        `حمولة ${tr.loaded_parcel_ids.length} كولي — مصاريف الطريق والوقود`,
+        totalExp,
+        totalExp,
+        0,
+        'MAD',
+        tr.status,
+      ]);
+    });
+
+    downloadExcelCSV(`SaharaExpress_Monthly_Backup_${periodSlug}.csv`, headers, rows);
+    showToast(
+      `✅ تم تحميل النسخة الاحتياطية الشهرية لـ Excel (${label}) بنجاح!`,
+      'success'
+    );
   };
 
   const handleExportParcelsExcel = () => {
@@ -82,7 +302,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
       'الحالة',
     ];
 
-    const rows = parcels.map((p) => [
+    const rows = filteredData.parcels.map(p => [
       p.parcel_number,
       p.tracking_code,
       new Date(p.created_at).toLocaleDateString('ar-MA'),
@@ -102,8 +322,8 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
       p.status,
     ]);
 
-    downloadExcelCSV(`Parcels_${todayStr}.csv`, headers, rows);
-    showToast(`تم تصدير ${parcels.length} كولي إلى ملف Excel بنجاح`, 'success');
+    downloadExcelCSV(`Parcels_${periodSlug}.csv`, headers, rows);
+    showToast(`تم تصدير ${filteredData.parcels.length} كولي إلى ملف Excel بنجاح`, 'success');
   };
 
   const handleExportCashboxExcel = () => {
@@ -120,9 +340,9 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
       'المسؤول',
     ];
 
-    const rows = transactions.map((t) => [
+    const rows = filteredData.transactions.map(t => [
       new Date(t.created_at).toLocaleString('ar-MA'),
-      t.station_name || stations.find((s) => s.id === t.station_id)?.name || '',
+      t.station_name || stations.find(s => s.id === t.station_id)?.name || '',
       t.type,
       t.amount,
       t.currency,
@@ -133,8 +353,11 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
       t.creator_name || '',
     ]);
 
-    downloadExcelCSV(`Cashbox_Transactions_${todayStr}.csv`, headers, rows);
-    showToast(`تم تصدير ${transactions.length} عملية صندوق إلى ملف Excel بنجاح`, 'success');
+    downloadExcelCSV(`Cashbox_Transactions_${periodSlug}.csv`, headers, rows);
+    showToast(
+      `تم تصدير ${filteredData.transactions.length} عملية صندوق إلى ملف Excel بنجاح`,
+      'success'
+    );
   };
 
   const handleExportTripsExcel = () => {
@@ -153,7 +376,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
       'الحالة',
     ];
 
-    const rows = trips.map((tr) => [
+    const rows = filteredData.trips.map(tr => [
       tr.trip_code,
       new Date(tr.created_at).toLocaleDateString('ar-MA'),
       tr.origin_station_name || '',
@@ -168,18 +391,18 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
       tr.status,
     ]);
 
-    downloadExcelCSV(`Trips_Manifests_${todayStr}.csv`, headers, rows);
-    showToast(`تم تصدير ${trips.length} رحلة إلى ملف Excel بنجاح`, 'success');
+    downloadExcelCSV(`Trips_Manifests_${periodSlug}.csv`, headers, rows);
+    showToast(`تم تصدير ${filteredData.trips.length} رحلة إلى ملف Excel بنجاح`, 'success');
   };
 
   const handlePrintComprehensivePDF = () => {
     const stationRows = stations
-      .map((st) => {
+      .map(st => {
         const bals = stationBalances[st.id] || {};
         const mad = bals['MAD'] || 0;
         const mru = bals['MRU'] || 0;
-        const stParcels = parcels.filter(
-          (p) =>
+        const stParcels = filteredData.parcels.filter(
+          p =>
             (p.origin_station_id === st.id || p.destination_station_id === st.id) &&
             p.status !== 'cancelled'
         ).length;
@@ -194,8 +417,8 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
       })
       .join('');
 
-    const recentParcelsRows = parcels
-      .slice(0, 40)
+    const recentParcelsRows = filteredData.parcels
+      .slice(0, 60)
       .map((p, idx) => {
         const rem = Math.max(0, (p.amount_due || 0) - (p.amount_paid || 0));
         return `
@@ -224,7 +447,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <title>التقرير المحاسبي الشامل - ${wsName}</title>
+  <title>التقرير المحاسبي الشهري - ${wsName} (${formatMonthLabel(selectedMonth)})</title>
   <style>
     @page { size: A4 portrait; margin: 10mm; }
     * { box-sizing: border-box; font-family: 'Cairo', 'Tajawal', sans-serif; }
@@ -247,13 +470,13 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
     <div class="brand-wrap">
       <img src="${logoSrc}" alt="${wsName}" class="brand-logo" onerror="this.style.display='none'" />
       <div>
-        <h1 style="margin:0;font-size:18px;">${wsName} — التقرير الإداري والمحاسبي الشامل</h1>
+        <h1 style="margin:0;font-size:18px;">${wsName} — التقرير المحاسبي (${formatMonthLabel(selectedMonth)})</h1>
         <p style="margin:4px 0 0;">تاريخ استخراج التقرير: ${new Date().toLocaleString('ar-MA')} ${wsPhone ? `| Tel: ${wsPhone}` : ''}</p>
       </div>
     </div>
     <div style="text-align:left;font-family:monospace;">
-      <div>المحطات: <strong>${stations.length}</strong> | الكوليات: <strong>${parcels.length}</strong></div>
-      <div>الرحلات: <strong>${trips.length}</strong> | سندات الصندوق: <strong>${transactions.length}</strong></div>
+      <div>الكوليات: <strong>${filteredData.parcels.length}</strong> | الرحلات: <strong>${filteredData.trips.length}</strong></div>
+      <div>المداخيل: <strong>${filteredData.totalDueMAD} MAD</strong> (المدفوع: ${filteredData.totalPaidMAD} MAD)</div>
     </div>
   </div>
 
@@ -264,13 +487,13 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
         <th>المحطة</th>
         <th>رصيد الدرهم (MAD)</th>
         <th>رصيد الأوقية (MRU)</th>
-        <th>إجمالي الكوليات</th>
+        <th>الكوليات في الفترة</th>
       </tr>
     </thead>
     <tbody>${stationRows}</tbody>
   </table>
 
-  <h3>2. سجل الكوليات والإرساليات (${parcels.length})</h3>
+  <h3>2. سجل الكوليات والإرساليات (${filteredData.parcels.length})</h3>
   <table>
     <thead>
       <tr>
@@ -322,7 +545,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Backup_AlIttihadia_${todayStr}.json`;
+    a.download = `Backup_SaharaExpress_${todayStr}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -336,7 +559,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = ev => {
       try {
         const parsed = JSON.parse(String(ev.target?.result || '{}'));
         if (parsed && parsed.localStorage_snapshot) {
@@ -362,21 +585,21 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[420px] luxury-card rounded-[24px] p-4 shadow-2xl text-right overflow-hidden relative my-4 space-y-3.5"
-        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[480px] luxury-card rounded-[24px] p-4 sm:p-5 shadow-2xl text-right overflow-hidden relative my-4 space-y-3.5 max-h-[93vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/15 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] flex items-center justify-center shrink-0">
-              <Download className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 flex items-center justify-center shrink-0">
+              <FileSpreadsheet className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-black text-white">
-                التصدير الشامل لـ Excel / PDF والنسخ الاحتياطي
+              <h3 className="text-sm sm:text-base font-black text-white">
+                نسخة احتياطية Excel / CSV شهرية بنقرة واحدة
               </h3>
-              <p className="text-[10px] text-white/75">
-                جرد المحاسبة بضغطة زر وحفظ نسخة احتياطية كاملة للبيانات
+              <p className="text-[11px] text-white/75">
+                جرد المحاسبة الشهري الشامل (كوليات + صناديق + رحلات) وحفظ نسخة احتياطية
               </p>
             </div>
           </div>
@@ -389,44 +612,131 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
           </button>
         </div>
 
-        {/* 1. Excel Exports */}
-        <div className="bg-black/50 p-3.5 rounded-2xl border border-emerald-500/40 space-y-2.5">
-          <span className="font-black text-xs text-emerald-300 flex items-center gap-1.5">
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <span>1. تصدير الجداول المحاسبية إلى Excel (CSV UTF-8):</span>
+        {/* Month Selector & 1-Click Monthly Excel Backup */}
+        <div className="bg-gradient-to-br from-emerald-950/60 to-black/70 p-3.5 rounded-2xl border-2 border-emerald-500/50 space-y-3 shadow-lg">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="font-black text-xs text-emerald-300 flex items-center gap-1.5">
+              <Calendar className="w-4 h-4 text-emerald-400" />
+              <span>اختر الشهر لاستخراج النسخة الاحتياطية (Excel):</span>
+            </span>
+            <input
+              type="month"
+              value={selectedMonth === 'all' ? currentYearMonth : selectedMonth}
+              onChange={e => setSelectedMonth(e.target.value || currentYearMonth)}
+              className="bg-black/60 border border-emerald-500/40 rounded-xl px-2.5 py-1 text-xs font-mono font-bold text-white focus:outline-none focus:border-emerald-400"
+            />
+          </div>
+
+          {/* Quick Month Pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setSelectedMonth(currentYearMonth)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition ${
+                selectedMonth === currentYearMonth
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'bg-black/50 text-white/75 border border-white/15 hover:text-white'
+              }`}
+            >
+              📅 هذا الشهر ({formatMonthLabel(currentYearMonth)})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedMonth(prevYearMonth)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition ${
+                selectedMonth === prevYearMonth
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'bg-black/50 text-white/75 border border-white/15 hover:text-white'
+              }`}
+            >
+              ⏮️ الشهر الماضي ({formatMonthLabel(prevYearMonth)})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedMonth('all')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition ${
+                selectedMonth === 'all'
+                  ? 'bg-amber-500 text-slate-950'
+                  : 'bg-black/50 text-white/75 border border-white/15 hover:text-white'
+              }`}
+            >
+              🗂️ جميع الأشهر
+            </button>
+          </div>
+
+          {/* Live Summary Stats for Selected Month */}
+          <div className="grid grid-cols-3 gap-2 bg-black/50 p-2.5 rounded-xl border border-white/10 text-center">
+            <div>
+              <span className="text-[10px] text-white/60 block">الكوليات</span>
+              <span className="font-mono font-black text-sm text-white">
+                {filteredData.parcels.length}
+              </span>
+            </div>
+            <div className="border-x border-white/10">
+              <span className="text-[10px] text-emerald-300 block">المداخيل (MAD)</span>
+              <span className="font-mono font-black text-sm text-emerald-400">
+                {filteredData.totalDueMAD.toLocaleString('en-US')}
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] text-amber-300 block">الكريدي المتبقي</span>
+              <span className="font-mono font-black text-sm text-amber-400">
+                {filteredData.remMAD.toLocaleString('en-US')}
+              </span>
+            </div>
+          </div>
+
+          {/* Giant 1-Click Monthly Excel Download Button */}
+          <button
+            type="button"
+            onClick={handleOneClickMonthlyExcelBackup}
+            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition active:scale-[0.99]"
+          >
+            <FileSpreadsheet className="w-5 h-5 shrink-0" />
+            <span>
+              تحميل النسخة الاحتياطية الشهرية لـ Excel ({formatMonthLabel(selectedMonth)}) بنقرة واحدة
+            </span>
+          </button>
+        </div>
+
+        {/* 1. Separate Excel Tables */}
+        <div className="bg-black/50 p-3.5 rounded-2xl border border-white/15 space-y-2">
+          <span className="font-black text-xs text-white/90 flex items-center gap-1.5">
+            <FileSpreadsheet className="w-4 h-4 text-[#F5C84C]" />
+            <span>تصدير جداول منفصلة لـ Excel ({formatMonthLabel(selectedMonth)}):</span>
           </span>
 
           <div className="grid grid-cols-1 gap-2">
             <button
               type="button"
               onClick={handleExportParcelsExcel}
-              className="btn-gold w-full py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-between"
+              className="btn-gold w-full py-2 px-3 rounded-xl font-black text-xs flex items-center justify-between"
             >
-              <span>📦 تصدير جرد الكوليات الشامل لـ Excel</span>
+              <span>📦 جدول الكوليات فقط (Excel / CSV)</span>
               <span className="font-mono text-[10px] bg-black/25 px-2 py-0.5 rounded-lg">
-                {parcels.length} كولي
+                {filteredData.parcels.length} كولي
               </span>
             </button>
 
             <button
               type="button"
               onClick={handleExportCashboxExcel}
-              className="btn-cancel w-full py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-between border border-emerald-500/35 text-emerald-200 hover:text-white"
+              className="btn-cancel w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-between border border-emerald-500/35 text-emerald-200 hover:text-white"
             >
-              <span>💰 تصدير سجل الصندوق والمعاملات لـ Excel</span>
+              <span>💰 جدول الصندوق والمصاريف (Excel / CSV)</span>
               <span className="font-mono text-[10px] bg-black/40 px-2 py-0.5 rounded-lg">
-                {transactions.length} سند
+                {filteredData.transactions.length} سند
               </span>
             </button>
 
             <button
               type="button"
               onClick={handleExportTripsExcel}
-              className="btn-cancel w-full py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-between border border-emerald-500/35 text-emerald-200 hover:text-white"
+              className="btn-cancel w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-between border border-emerald-500/35 text-emerald-200 hover:text-white"
             >
-              <span>🚚 تصدير سجل الرحلات ومصاريف الطريق لـ Excel</span>
+              <span>🚚 جدول الرحلات ومصاريف الطريق (Excel / CSV)</span>
               <span className="font-mono text-[10px] bg-black/40 px-2 py-0.5 rounded-lg">
-                {trips.length} رحلة
+                {filteredData.trips.length} رحلة
               </span>
             </button>
           </div>
@@ -436,7 +746,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
         <div className="bg-black/50 p-3.5 rounded-2xl border border-[#F5C84C]/40 space-y-2">
           <span className="font-black text-xs text-[#F5C84C] flex items-center gap-1.5">
             <FileText className="w-4 h-4" />
-            <span>2. التقرير الإداري والمحاسبي الشامل (PDF / A4):</span>
+            <span>التقرير المحاسبي المطبوع (PDF / A4):</span>
           </span>
           <button
             type="button"
@@ -444,7 +754,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
             className="btn-gold w-full py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-2"
           >
             <Printer className="w-4 h-4" />
-            <span>طباعة / تحميل التقرير الشامل للنظام (PDF)</span>
+            <span>طباعة / حفظ تقرير ({formatMonthLabel(selectedMonth)}) كـ PDF</span>
           </button>
         </div>
 
@@ -452,7 +762,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
         <div className="bg-black/50 p-3.5 rounded-2xl border border-white/15 space-y-2.5">
           <span className="font-black text-xs text-white flex items-center gap-1.5">
             <Database className="w-4 h-4 text-[#F5C84C]" />
-            <span>3. النسخ الاحتياطي الكامل للنظام (Backup & Restore):</span>
+            <span>نسخة استرجاع النظام الكاملة (JSON Backup & Restore):</span>
           </span>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -461,7 +771,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
               className="btn-cancel py-2.5 px-3 rounded-xl font-black text-[11px] flex items-center justify-center gap-1.5 border border-[#F5C84C]/40 text-[#F5C84C]"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>حفظ نسخة احتياطية</span>
+              <span>حفظ نسخة النظام</span>
             </button>
 
             <button
@@ -482,7 +792,7 @@ export const BackupExportModal: React.FC<BackupExportModalProps> = ({
           </div>
           <p className="text-[10px] text-white/60 flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-            <span>تشمل النسخة الاحتياطية جميع المحطات، الكوليات، الرحلات، التجار، والحوالات.</span>
+            <span>تفتح ملفات Excel مباشرة على الهاتف أو الكمبيوتر باللغة العربية الواضحة.</span>
           </p>
         </div>
       </div>

@@ -530,8 +530,42 @@ export const tripService = {
       return { success: false, error: `تم شحن هذا الكولي #${parcel.parcel_number} مسبقاً على متن هذه الرحلة!`, updatedTrips: allTrips, updatedParcels: allParcels };
     }
 
-    // 2. التحقق من تواجد الكولي بمحطة الانطلاق
+    // 2. التحقق من حالة الكولي ومنع شحن كولي مسلّم أو ملغى أو وصل للمحطة أو محمل على شاحنة أخرى في الطريق
+    if (parcel.status === 'delivered' || parcel.status === 'returned') {
+      return { success: false, error: `هذا الكولي #${parcel.parcel_number} تم تسليمه مسبقاً ولا يمكن شحنه مجدداً`, updatedTrips: allTrips, updatedParcels: allParcels };
+    }
+    if (parcel.status === 'cancelled') {
+      return { success: false, error: `هذا الكولي #${parcel.parcel_number} ملغى ولا يمكن شحنه`, updatedTrips: allTrips, updatedParcels: allParcels };
+    }
+
     const isReturnParcel = Boolean(parcel.is_returning || parcel.status === 'return_in_transit');
+
+    if (!isReturnParcel && parcel.status === 'arrived') {
+      return {
+        success: false,
+        error: `الكولي #${parcel.parcel_number} وصل بالفعل إلى مستودع محطة الوجهة (${parcel.destination_station_name}) وبانتظار التسليم للزبون؛ لا يمكن شحنه في رحلة جديدة إلا في حالة الإرجاع.`,
+        updatedTrips: allTrips,
+        updatedParcels: allParcels
+      };
+    }
+
+    if (parcel.current_trip_id && parcel.current_trip_id !== trip.id) {
+      const otherTrip = allTrips.find(t => t.id === parcel.current_trip_id);
+      if (
+        otherTrip &&
+        (otherTrip.status === 'loading' || otherTrip.status === 'departed') &&
+        !otherTrip.received_parcel_ids.includes(parcel.id)
+      ) {
+        return {
+          success: false,
+          error: `لا يمكن شحن الكولي #${parcel.parcel_number} لأنه مشحون حالياً على الرحلة [${otherTrip.trip_code}] مع السائق (${otherTrip.driver_name})!`,
+          updatedTrips: allTrips,
+          updatedParcels: allParcels
+        };
+      }
+    }
+
+    // 3. التحقق من تواجد الكولي بمحطة الانطلاق
     let stationWarning: string | undefined = undefined;
     if (isReturnParcel) {
       if (parcel.destination_station_id !== trip.origin_station_id) {
@@ -539,10 +573,6 @@ export const tripService = {
       }
     } else if (parcel.origin_station_id !== trip.origin_station_id) {
       stationWarning = `تنبيه: محطة انطلاق هذا الكولي المسجلة هي [${parcel.origin_station_name}] وليست [${trip.origin_station_name}].`;
-    }
-
-    if (parcel.status === 'delivered' || parcel.status === 'returned') {
-      return { success: false, error: 'هذا الكولي تم تسليمه مسبقاً ولا يمكن شحنه مجدداً', updatedTrips: allTrips, updatedParcels: allParcels };
     }
 
     const now = new Date().toISOString();
@@ -718,14 +748,43 @@ export const tripService = {
       updated_at: now
     };
 
+    const loadedSet = new Set(trip.loaded_parcel_ids);
+    const updatedParcels = allParcels.map(p => {
+      if (!loadedSet.has(p.id)) return p;
+      const isReturn = Boolean(p.is_returning || p.status === 'return_in_transit');
+      const targetSt: Parcel['status'] = isReturn ? 'return_in_transit' : 'in_transit';
+      if (p.status === targetSt && p.current_trip_id === trip.id) return p;
+      const entry: ParcelStatusHistoryEntry = {
+        status: targetSt,
+        timestamp: now,
+        changed_by_id: user.id,
+        changed_by_name: user.name,
+        trip_id: trip.id,
+        trip_code: trip.trip_code,
+        driver_name: trip.driver_name,
+        vehicle_plate: trip.vehicle_plate,
+        notes: `انطلقت الشاحنة بالرحلة ${trip.trip_code} نحو ${trip.destination_station_name}`,
+      };
+      return {
+        ...p,
+        status: targetSt,
+        current_trip_id: trip.id,
+        driver_name: trip.driver_name,
+        vehicle_plate: trip.vehicle_plate,
+        status_history: [...(p.status_history || []), entry],
+        updated_at: now,
+      };
+    });
+
     const updatedTrips = allTrips.map(t => t.id === trip.id ? updatedTrip : t);
     storageService.set('TRIPS', updatedTrips);
+    storageService.set('PARCELS', updatedParcels);
 
     if (isSupabaseConfigured()) {
       void this.syncTripToCloud(updatedTrip, onErrorToast);
     }
 
-    return { success: true, trip: updatedTrip, updatedTrips, updatedParcels: allParcels };
+    return { success: true, trip: updatedTrip, updatedTrips, updatedParcels };
   },
 
   // مسح واستقبال كولي عند وصول الرحلة لمحطة الوجهة (Intake at destination)
@@ -752,6 +811,24 @@ export const tripService = {
       return { success: false, error: 'الرحلة غير موجودة', updatedTrips: allTrips, updatedParcels: allParcels };
     }
 
+    if (trip.status === 'loading') {
+      return {
+        success: false,
+        error: 'لا يمكن استقبال الكوليات في محطة الوصول قبل تأكيد انطلاق الشاحنة من محطة الانطلاق!',
+        updatedTrips: allTrips,
+        updatedParcels: allParcels
+      };
+    }
+
+    if (trip.status === 'closed') {
+      return {
+        success: false,
+        error: 'هذه الرحلة مغلقة مسبقاً ولا يمكن تعديل تفريغها.',
+        updatedTrips: allTrips,
+        updatedParcels: allParcels
+      };
+    }
+
     const cleanId = parcelIdentifier.trim().toUpperCase().replace(/^#/, '');
     const numericId = parseInt(cleanId, 10);
     const parcel = allParcels.find(p => {
@@ -774,7 +851,7 @@ export const tripService = {
     }
 
     if (trip.received_parcel_ids.includes(parcel.id)) {
-      return { success: false, error: `تم مسح واستقبال هذا الكولي #${parcel.parcel_number} مسبقاً في هذه المحطة!`, updatedTrips: allTrips, updatedParcels: allParcels };
+      return { success: false, error: `تم مسح واستقبال هذا الكولي #${parcel.parcel_number} مسبقاً في ستوك المحطة!`, updatedTrips: allTrips, updatedParcels: allParcels };
     }
 
     const now = new Date().toISOString();
@@ -793,14 +870,15 @@ export const tripService = {
       condition,
       condition_notes: condition === 'abnormal' ? conditionNotes : undefined,
       notes: isReturnParcel
-        ? `إرجاع: وصل الطرد المرتجع إلى المحطة الأصلية (${trip.destination_station_name}) ودخل المستودع بانتظار تسليمه للمرسل`
-        : `وصل الكولي لمحطة الوجهة ودخل المستودع (الحالة: ${condition === 'normal' ? 'سليم/عادي' : 'غير عادي - ' + (conditionNotes || '')})`
+        ? `إرجاع: وصل الطرد المرتجع إلى المحطة الأصلية (${trip.destination_station_name}) ودخل الستوك بانتظار تسليمه للمرسل`
+        : `وصل الكولي لمحطة الوجهة ودخل الستوك (الحالة: ${condition === 'normal' ? 'سليم/عادي' : 'غير عادي - ' + (conditionNotes || '')})`
     };
 
     const updatedParcel: Parcel = {
       ...parcel,
       status: arrivalStatus,
       is_returning: isReturnParcel,
+      arrived_at: now,
       condition,
       condition_notes: condition === 'abnormal' ? conditionNotes : parcel.condition_notes,
       status_history: [...(parcel.status_history || []), historyEntry],

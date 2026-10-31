@@ -587,11 +587,21 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                       ((isOriginStage && parcel.origin_station_id !== workerStationId) ||
                         (isDestStage && parcel.destination_station_id !== workerStationId));
 
+                    const isDeliveryBlocked =
+                      st === 'delivered' &&
+                      parcel.status !== 'arrived' &&
+                      parcel.status !== 'delivered';
+
                     return (
                       <button
                         key={st}
                         type="button"
-                        disabled={isDisabledForWorker}
+                        disabled={isDisabledForWorker || isDeliveryBlocked}
+                        title={
+                          isDeliveryBlocked
+                            ? 'لا يمكن تسليم الكولي للزبون إلا بعد وصوله وتأكيد دخوله لستوك المحطة (وصلت إلى محطة الوجهة)'
+                            : undefined
+                        }
                         onClick={() => {
                           setSelectedStatus(st);
                           setShowUnpaidWarning(false);
@@ -605,6 +615,17 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                     );
                   })}
                 </div>
+
+                {parcel.status !== 'arrived' && parcel.status !== 'delivered' && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-200 text-[10px] font-bold leading-relaxed flex items-start gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <span>
+                      {parcel.status === 'in_transit'
+                        ? `هذا الكولي لا يزال في الطريق على متن الشاحنة (${parcel.driver_name || 'الرحلة'}). لتسليمه للزبون، يجب أولاً تأكيد "وصلت إلى محطة الوجهة" لإدخاله للستوك.`
+                        : `هذا الكولي لا يزال في محطة الانطلاق (${parcel.origin_station_name}). لا يمكن تسليمه للزبون قبل وصوله ودخوله لستوك محطة الوجهة.`}
+                    </span>
+                  </div>
+                )}
 
                 {selectedStatus === 'delivered' && (
                   <div>

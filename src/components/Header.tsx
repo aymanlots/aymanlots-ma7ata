@@ -13,7 +13,8 @@ import {
   Search,
   Users,
   Radio,
-  Languages
+  Languages,
+  FileSpreadsheet
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -22,6 +23,8 @@ interface HeaderProps {
   onOpenPublicTracking?: () => void;
   onOpenCollabRoom?: () => void;
   onOpenCustomerAccounts?: () => void;
+  onOpenBackupModal?: () => void;
+  onOpenPlatformOwner?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -29,7 +32,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPaywall,
   onOpenPublicTracking,
   onOpenCollabRoom,
-  onOpenCustomerAccounts
+  onOpenCustomerAccounts,
+  onOpenBackupModal,
+  onOpenPlatformOwner
 }) => {
   const { 
     currentUser, 
@@ -63,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
                 ? 'Sahara📦 Express'
                 : currentWorkspace.name}
             </h1>
-            <div className="flex items-center gap-1.5 mt-1">
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -73,6 +78,18 @@ export const Header: React.FC<HeaderProps> = ({
                 <Menu className="w-3.5 h-3.5 text-[#F5C84C]" />
                 <span>القائمة</span>
               </button>
+
+              {onOpenBackupModal && userRole !== 'worker' && (
+                <button
+                  type="button"
+                  onClick={onOpenBackupModal}
+                  className="nav-tab-btn flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/45 text-[10px] font-black text-emerald-300 hover:border-emerald-400 transition active:scale-95 cursor-pointer"
+                  title="نسخة احتياطية Excel / CSV شهرية بنقرة واحدة"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Excel شهري</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -150,12 +167,43 @@ export const Header: React.FC<HeaderProps> = ({
                     : currentWorkspace.name}
                 </p>
                 <p className="text-[10px] text-[#E6C37A] font-bold mt-1">
-                  {userRole === 'owner' ? '👑 مالك المحطة (المشرف العام)' : '💼 عامل مكتب المحطة'}
+                  {userRole === 'owner' || userRole === 'platform_owner' ? '👑 مالك المحطة (المشرف العام)' : '💼 عامل مكتب المحطة'}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center shrink-0">
-                {userRole === 'owner' ? <Crown className="w-5 h-5 text-[#D4AF37]" /> : <User className="w-5 h-5 text-[#E6C37A]" />}
+                {userRole === 'owner' || userRole === 'platform_owner' ? <Crown className="w-5 h-5 text-[#D4AF37]" /> : <User className="w-5 h-5 text-[#E6C37A]" />}
               </div>
+            </div>
+
+            {/* Core Commercial Launch Features in Menu Drawer */}
+            <div className="space-y-2">
+              {onOpenBackupModal && userRole !== 'worker' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onOpenBackupModal();
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 font-black text-xs flex items-center justify-center gap-2 hover:bg-emerald-900/60 transition"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                  <span>نسخة احتياطية Excel / CSV شهرية بنقرة واحدة</span>
+                </button>
+              )}
+
+              {onOpenPlatformOwner && userRole !== 'worker' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onOpenPlatformOwner();
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 font-black text-xs flex items-center justify-center gap-2 hover:bg-amber-500/30 transition"
+                >
+                  <Crown className="w-4 h-4 text-amber-400" />
+                  <span>إدارة الاشتراكات (تفعيل / توقيف حسابات الشركات)</span>
+                </button>
+              )}
             </div>
 
             {/* Quick Feature Launchers (Collaboration Room, Customer Accounts, Public Tracking, Hide Amounts) */}

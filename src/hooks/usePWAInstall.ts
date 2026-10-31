@@ -17,6 +17,7 @@ export function usePWAInstall() {
   );
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
 
   useEffect(() => {
     const isStandalone =
@@ -26,7 +27,9 @@ export function usePWAInstall() {
 
     const userAgent = window.navigator.userAgent.toLowerCase();
     const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
+    const isAndroidDevice = /android/.test(userAgent);
     setIsIOS(isIOSDevice);
+    setIsAndroid(isAndroidDevice);
 
     if (window.__deferredPwaPrompt) {
       setDeferredPrompt(window.__deferredPwaPrompt);
@@ -53,23 +56,27 @@ export function usePWAInstall() {
     };
   }, []);
 
-  const install = async (): Promise<boolean> => {
+  const promptNativeInstall = async (): Promise<'accepted' | 'dismissed' | 'unavailable'> => {
     const promptEvent = deferredPrompt || (typeof window !== 'undefined' ? window.__deferredPwaPrompt : null);
-    if (promptEvent) {
-      try {
-        await promptEvent.prompt();
-        const { outcome } = await promptEvent.userChoice;
-        if (outcome === 'accepted') {
-          setIsInstalled(true);
-          window.__deferredPwaPrompt = null;
-          setDeferredPrompt(null);
-          return true;
-        }
-        return false;
-      } catch {}
+    if (!promptEvent) {
+      return 'unavailable';
     }
+    try {
+      await promptEvent.prompt();
+      const { outcome } = await promptEvent.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+        window.__deferredPwaPrompt = null;
+        setDeferredPrompt(null);
+        return 'accepted';
+      }
+      return 'dismissed';
+    } catch {
+      return 'unavailable';
+    }
+  };
 
-    // Direct immediate download of standalone launcher file (no instructional popup modal)
+  const downloadShortcutLauncher = (): boolean => {
     const appOrigin = window.location.origin;
     const launcherHtml = `<!doctype html>
 <html lang="ar" dir="rtl">
@@ -81,14 +88,16 @@ export function usePWAInstall() {
   <meta name="theme-color" content="#0B1220" />
   <title>Sahara Express</title>
   <link rel="icon" href="${appOrigin}/icon-512.png" />
-  <link rel="apple-touch-icon" href="${appOrigin}/icon-192.png" />
+  <link rel="apple-touch-icon" href="${appOrigin}/apple-touch-icon.png" />
   <script>window.location.replace("${appOrigin}/");</script>
   <style>
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0B1220; color: #F5C84C; font-family: sans-serif; display: flex; align-items: center; justify-content: center; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0B1220; color: #F5C84C; font-family: 'Cairo', sans-serif; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; text-align: center; }
+    .btn { padding: 12px 24px; border-radius: 14px; background: #F5C84C; color: #111; text-decoration: none; font-weight: 900; font-size: 16px; }
   </style>
 </head>
 <body>
-  <a href="${appOrigin}/" style="color:#F5C84C;text-decoration:none;font-weight:bold;font-size:18px;">فتح تطبيق Sahara Express</a>
+  <div>جاري فتح تطبيق Sahara📦 Express...</div>
+  <a class="btn" href="${appOrigin}/">فتح تطبيق Sahara Express الآن</a>
 </body>
 </html>`;
 
@@ -96,7 +105,7 @@ export function usePWAInstall() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'Sahara-Express.html';
+    link.download = 'Sahara-Express-App.html';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -104,10 +113,19 @@ export function usePWAInstall() {
     return true;
   };
 
+  const install = async (): Promise<boolean> => {
+    const res = await promptNativeInstall();
+    if (res === 'accepted') return true;
+    return false;
+  };
+
   return {
     isInstallable: Boolean(deferredPrompt || (typeof window !== 'undefined' && window.__deferredPwaPrompt)),
     isInstalled,
     isIOS,
+    isAndroid,
     install,
+    promptNativeInstall,
+    downloadShortcutLauncher,
   };
 }

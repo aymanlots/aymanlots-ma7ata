@@ -1,16 +1,12 @@
-const CACHE_NAME = 'sahara-express-shell-v6';
+const CACHE_NAME = 'sahara-express-shell-v7';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
-  '/logo.svg',
-  '/logo.png',
-  '/assets/guerguerat-border.webp',
-  '/assets/guerguerat-border-sm.webp',
-  '/assets/desert-road.webp',
-  '/assets/desert-road-sm.webp'
+  '/apple-touch-icon.png',
+  '/logo.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -48,8 +44,15 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  // Do not cache Supabase API calls
-  if (url.hostname.includes('supabase.co')) return;
+  // Do not cache API calls, Supabase, or Firebase Firestore streams
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.hostname.includes('supabase.co') ||
+    url.hostname.includes('googleapis.com') ||
+    url.hostname.includes('firebaseio.com')
+  ) {
+    return;
+  }
 
   // Navigation requests and manifest.json: Network first, fallback to cache
   if (req.mode === 'navigate' || url.pathname.endsWith('manifest.json')) {
