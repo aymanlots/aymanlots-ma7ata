@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
 // ============================================================================
 // OTP SECURITY & RATE-LIMIT CONSTANTS
@@ -78,10 +79,10 @@ function stripEmojis(text: string): string {
 }
 
 export const DEFAULT_MAIL_FROM = 'Sahara Express <noreply@sahara-express.com>';
+export const RESEND_SANDBOX_FROM = 'Sahara Express <onboarding@resend.dev>';
 
 /**
  * Parses and validates MAIL_FROM from environment variables.
- * Defaults to 'Sahara Express <noreply@sahara-express.com>' (or 'Sahara Express <contact@sahara-express.com>').
  */
 export function resolveValidatedSender(): {
   valid: boolean;
@@ -100,24 +101,13 @@ export function resolveValidatedSender(): {
     const parsedName = stripEmojis(angleMatch[1].replace(/^["']|["']$/g, '').trim());
     senderName = parsedName || 'Sahara Express';
     senderEmail = angleMatch[2].trim().toLowerCase();
-  } else {
+  } else if (rawFrom.includes('@')) {
     senderEmail = rawFrom.replace(/^["']|["']$/g, '').trim().toLowerCase();
   }
 
   const emailRegex = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/;
   const domainMatch = senderEmail.match(emailRegex);
   if (!domainMatch) {
-    return {
-      valid: true,
-      senderName: 'Sahara Express',
-      senderEmail: 'noreply@sahara-express.com',
-      fromHeader: DEFAULT_MAIL_FROM,
-    };
-  }
-
-  const domain = domainMatch[1].toLowerCase();
-  // Automatically fallback to verified domain if old gmail.com or resend.dev env var is still set
-  if (domain === 'gmail.com' || domain === 'googlemail.com' || domain === 'resend.dev') {
     return {
       valid: true,
       senderName: 'Sahara Express',
@@ -136,19 +126,17 @@ export function resolveValidatedSender(): {
 
 export interface SendOtpEmailResult {
   delivered: boolean;
-  provider?: 'resend';
+  provider?: 'resend' | 'gmail-smtp' | 'brevo';
   messageId?: string;
   error?: string;
 }
 
 /**
- * Sends a 6-digit OTP email exclusively via Resend API using RESEND_API_KEY and verified sahara-express.com domain.
- * - from: 'Sahara Express <noreply@sahara-express.com>' (or 'Sahara Express <contact@sahara-express.com>')
- * - Plain text + minimal HTML (white background, short sentence, bold code, "الرمز صالح 10 دقائق").
- * - No images, no buttons, no links, no emojis, no tracking.
- * - Subject: "رمز التحقق: 123456"
- * - No X-Mailer or List-Unsubscribe headers.
- * - Never logs the OTP code.
+ * Sends a 6-digit OTP email with automatic multi-provider fallback:
+ * 1. Tries Resend API (with MAIL_FROM, then onboarding@resend.dev if domain is unverified).
+ * 2. If Resend fails (e.g., domain not verified in Resend DNS or sandbox restriction for external emails),
+ *    automatically falls back to Gmail SMTP (nodemailer) or Brevo API so emails deliver to ANY recipient
+ *    (like bojidaanas458@gmail.com) without requiring a paid domain.
  */
 export async function sendVerificationOtpEmail(
   toEmail: string,
@@ -156,16 +144,7 @@ export async function sendVerificationOtpEmail(
 ): Promise<SendOtpEmailResult> {
   const cleanRecipient = toEmail.trim().toLowerCase();
   const senderConfig = resolveValidatedSender();
-  const fromAddress = senderConfig.fromHeader || 'Sahara Express <noreply@sahara-express.com>';
-
-  const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
-  if (!resendApiKey) {
-    return {
-      delivered: false,
-      provider: 'resend',
-      error: 'مفتاح RESEND_API_KEY غير مضبوط في متغيرات البيئة.',
-    };
-  }
+  const primaryFrom = senderConfig.fromHeader || DEFAULT_MAIL_FROM;
 
   const subject = `رمز التحقق: ${otpCode}`;
   const textBody = `رمز التحقق الخاص بك هو: ${otpCode}\nالرمز صالح 10 دقائق.`;
@@ -181,52 +160,159 @@ export async function sendVerificationOtpEmail(
     '</html>',
   ].join('');
 
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: fromAddress,
-        to: [cleanRecipient],
+  let lastResendError = '';
+  const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
+
+  // 1. Try Resend API if RESEND_API_KEY is present
+  if (resendApiKey) {
+    const candidateFroms =
+      primaryFrom.toLowerCase().includes('@resend.dev') ||
+      primaryFrom.toLowerCase().includes('@gmail.com')
+        ? [RESEND_SANDBOX_FROM]
+        : [primaryFrom, RESEND_SANDBOX_FROM];
+
+    for (const candidateFrom of candidateFroms) {
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: candidateFrom,
+            to: [cleanRecipient],
+            subject,
+            text: textBody,
+            html: htmlBody,
+          }),
+        });
+
+        const data: any = await response.json().catch(() => ({}));
+        if (response.ok) {
+          console.log('[Resend Mail Sent]:', {
+            from: candidateFrom,
+            messageId: data?.id || 'ok',
+          });
+          return {
+            delivered: true,
+            provider: 'resend',
+            messageId: data?.id,
+          };
+        }
+
+        lastResendError = data?.message || `Resend API HTTP ${response.status}`;
+        console.warn('[Resend Attempt Failed]:', {
+          from: candidateFrom,
+          status: response.status,
+          message: lastResendError,
+        });
+      } catch (err: any) {
+        lastResendError = err?.message || 'Resend network error';
+      }
+    }
+  }
+
+  // 2. Fallback to Brevo HTTP API if BREVO_API_KEY is configured
+  const brevoApiKey = (process.env.BREVO_API_KEY || '').trim();
+  const brevoSenderEmail = (
+    process.env.BREVO_SENDER_EMAIL ||
+    process.env.GMAIL_USER ||
+    'aissaaimanekhlifi@gmail.com'
+  ).trim();
+
+  if (brevoApiKey) {
+    try {
+      const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey,
+          'Content-Type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'Sahara Express', email: brevoSenderEmail },
+          to: [{ email: cleanRecipient }],
+          subject,
+          textContent: textBody,
+          htmlContent: htmlBody,
+        }),
+      });
+      const brevoData: any = await brevoRes.json().catch(() => ({}));
+      if (brevoRes.ok) {
+        return {
+          delivered: true,
+          provider: 'brevo',
+          messageId: brevoData?.messageId || 'brevo-ok',
+        };
+      }
+    } catch (err: any) {
+      console.warn('[Brevo Fallback Failed]:', err?.message);
+    }
+  }
+
+  // 3. Fallback to Gmail SMTP (nodemailer) — works for ANY recipient email without needing a verified domain!
+  const gmailUser = (
+    process.env.GMAIL_USER ||
+    process.env.SMTP_USER ||
+    'aissaaimanekhlifi@gmail.com'
+  ).trim();
+  const gmailPass = (
+    process.env.GMAIL_APP_PASSWORD ||
+    process.env.SMTP_PASS ||
+    'fntivyfldifqgxwl'
+  )
+    .replace(/\s+/g, '')
+    .trim();
+
+  if (gmailUser && gmailPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: {
+          user: gmailUser,
+          pass: gmailPass,
+        },
+      });
+
+      const info = await transporter.sendMail({
+        from: `Sahara Express <${gmailUser}>`,
+        to: cleanRecipient,
         subject,
         text: textBody,
         html: htmlBody,
-      }),
-    });
-
-    const data: any = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      console.error('[Resend API Error]:', {
-        status: response.status,
-        name: data?.name,
-        message: data?.message,
       });
+
+      console.log('[Gmail SMTP Fallback Sent]:', {
+        from: gmailUser,
+        messageId: info.messageId,
+      });
+
+      return {
+        delivered: true,
+        provider: 'gmail-smtp',
+        messageId: info.messageId,
+      };
+    } catch (smtpErr: any) {
+      console.error('[Gmail SMTP Fallback Error]:', { message: smtpErr?.message });
       return {
         delivered: false,
-        provider: 'resend',
-        error: data?.message || `Resend API HTTP ${response.status}`,
+        provider: 'gmail-smtp',
+        error:
+          lastResendError ||
+          smtpErr?.message ||
+          'تعذر إرسال رمز التحقق عبر Resend أو Gmail SMTP',
       };
     }
-
-    console.log('[Resend Mail Sent]:', {
-      from: senderConfig.fromHeader,
-      messageId: data?.id || 'ok',
-    });
-
-    return {
-      delivered: true,
-      provider: 'resend',
-      messageId: data?.id,
-    };
-  } catch (err: any) {
-    console.error('[Resend Network Error]:', { message: err?.message });
-    return {
-      delivered: false,
-      provider: 'resend',
-      error: err?.message || 'تعذر الاتصال بخدمة Resend API',
-    };
   }
+
+  return {
+    delivered: false,
+    provider: 'resend',
+    error:
+      lastResendError ||
+      'تعذر إرسال البريد: دومين sahara-express.com غير مفعل في Resend بعد، ولم يتم إعداد GMAIL_USER و GMAIL_APP_PASSWORD.',
+  };
 }

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const OTP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
@@ -7,6 +8,7 @@ const OTP_MAX_VERIFY_ATTEMPTS = 5; // 5 attempts max
 const OTP_COOLDOWN_MS = 60 * 1000; // 60 seconds cooldown
 const OTP_HMAC_SECRET = process.env.OTP_HASH_SECRET || 'sahara-express-otp-hmac-secret-v1';
 const DEFAULT_MAIL_FROM = 'Sahara Express <noreply@sahara-express.com>';
+const RESEND_SANDBOX_FROM = 'Sahara Express <onboarding@resend.dev>';
 
 function generateSixDigitOtp(): string {
   return String(crypto.randomInt(100000, 1000000));
@@ -46,12 +48,7 @@ function resolveSenderFrom(): string {
     senderEmail = rawFrom.replace(/^["']|["']$/g, '').trim().toLowerCase();
   }
 
-  if (
-    !senderEmail.includes('@') ||
-    senderEmail.endsWith('@gmail.com') ||
-    senderEmail.endsWith('@googlemail.com') ||
-    senderEmail.endsWith('@resend.dev')
-  ) {
+  if (!senderEmail.includes('@')) {
     return DEFAULT_MAIL_FROM;
   }
   return `${senderName} <${senderEmail}>`;
@@ -60,17 +57,9 @@ function resolveSenderFrom(): string {
 async function sendVerificationOtpEmail(
   toEmail: string,
   otpCode: string
-): Promise<{ delivered: boolean; messageId?: string; error?: string }> {
+): Promise<{ delivered: boolean; provider?: string; messageId?: string; error?: string }> {
   const cleanRecipient = toEmail.trim().toLowerCase();
-  const fromAddress = resolveSenderFrom();
-  const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
-
-  if (!resendApiKey) {
-    return {
-      delivered: false,
-      error: 'مفتاح RESEND_API_KEY غير مضاف في Vercel Environment Variables. أضفه ثم اعمل Redeploy.',
-    };
-  }
+  const primaryFrom = resolveSenderFrom();
 
   const subject = `رمز التحقق: ${otpCode}`;
   const textBody = `رمز التحقق الخاص بك هو: ${otpCode}\nالرمز صالح 10 دقائق.`;
@@ -86,46 +75,145 @@ async function sendVerificationOtpEmail(
     '</html>',
   ].join('');
 
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: fromAddress,
-        to: [cleanRecipient],
+  let lastResendError = '';
+  const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
+
+  if (resendApiKey) {
+    const candidateFroms =
+      primaryFrom.toLowerCase().includes('@resend.dev') ||
+      primaryFrom.toLowerCase().includes('@gmail.com')
+        ? [RESEND_SANDBOX_FROM]
+        : [primaryFrom, RESEND_SANDBOX_FROM];
+
+    for (const candidateFrom of candidateFroms) {
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: candidateFrom,
+            to: [cleanRecipient],
+            subject,
+            text: textBody,
+            html: htmlBody,
+          }),
+        });
+
+        const data: any = await response.json().catch(() => ({}));
+        if (response.ok) {
+          return {
+            delivered: true,
+            provider: 'resend',
+            messageId: data?.id,
+          };
+        }
+
+        lastResendError = data?.message || `Resend API HTTP ${response.status}`;
+        console.warn('[Resend Attempt Failed]:', {
+          from: candidateFrom,
+          status: response.status,
+          message: lastResendError,
+        });
+      } catch (err: any) {
+        lastResendError = err?.message || 'Resend network error';
+      }
+    }
+  }
+
+  const brevoApiKey = (process.env.BREVO_API_KEY || '').trim();
+  const brevoSenderEmail = (
+    process.env.BREVO_SENDER_EMAIL ||
+    process.env.GMAIL_USER ||
+    'aissaaimanekhlifi@gmail.com'
+  ).trim();
+
+  if (brevoApiKey) {
+    try {
+      const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey,
+          'Content-Type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'Sahara Express', email: brevoSenderEmail },
+          to: [{ email: cleanRecipient }],
+          subject,
+          textContent: textBody,
+          htmlContent: htmlBody,
+        }),
+      });
+      const brevoData: any = await brevoRes.json().catch(() => ({}));
+      if (brevoRes.ok) {
+        return {
+          delivered: true,
+          provider: 'brevo',
+          messageId: brevoData?.messageId || 'brevo-ok',
+        };
+      }
+    } catch (err: any) {
+      console.warn('[Brevo Fallback Failed]:', err?.message);
+    }
+  }
+
+  const gmailUser = (
+    process.env.GMAIL_USER ||
+    process.env.SMTP_USER ||
+    'aissaaimanekhlifi@gmail.com'
+  ).trim();
+  const gmailPass = (
+    process.env.GMAIL_APP_PASSWORD ||
+    process.env.SMTP_PASS ||
+    'fntivyfldifqgxwl'
+  )
+    .replace(/\s+/g, '')
+    .trim();
+
+  if (gmailUser && gmailPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: {
+          user: gmailUser,
+          pass: gmailPass,
+        },
+      });
+
+      const info = await transporter.sendMail({
+        from: `Sahara Express <${gmailUser}>`,
+        to: cleanRecipient,
         subject,
         text: textBody,
         html: htmlBody,
-      }),
-    });
-
-    const data: any = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      console.error('[Resend API Error]:', {
-        status: response.status,
-        name: data?.name,
-        message: data?.message,
       });
+
+      return {
+        delivered: true,
+        provider: 'gmail-smtp',
+        messageId: info.messageId,
+      };
+    } catch (smtpErr: any) {
+      console.error('[Gmail SMTP Fallback Error]:', { message: smtpErr?.message });
       return {
         delivered: false,
-        error: data?.message || `خطأ من Resend API (HTTP ${response.status})`,
+        error:
+          lastResendError ||
+          smtpErr?.message ||
+          'تعذر إرسال رمز التحقق عبر خدمة البريد',
       };
     }
-
-    return {
-      delivered: true,
-      messageId: data?.id,
-    };
-  } catch (err: any) {
-    console.error('[Resend Network Error]:', { message: err?.message });
-    return {
-      delivered: false,
-      error: err?.message || 'تعذر الاتصال بخدمة Resend API',
-    };
   }
+
+  return {
+    delivered: false,
+    error: lastResendError || 'تعذر إرسال رمز التحقق عبر خدمة البريد',
+  };
 }
 
 interface OtpEntry {
@@ -232,6 +320,7 @@ export default async function handler(req: any, res: any) {
         cooldownSeconds: Math.floor(OTP_COOLDOWN_MS / 1000),
         remainingSends: Math.max(0, OTP_MAX_SENDS_PER_WINDOW - nextSendCount),
         deliveredViaGmail: true,
+        provider: delivery.provider || 'resend',
         messageId: delivery.messageId || null,
         otpRecord: {
           email,
@@ -376,6 +465,7 @@ export default async function handler(req: any, res: any) {
         remainingSends: Math.max(0, OTP_MAX_SENDS_PER_WINDOW - nextSendCount),
         maxSendsPerWindow: OTP_MAX_SENDS_PER_WINDOW,
         deliveredViaGmail: true,
+        provider: delivery.provider || 'resend',
         targetEmail,
         messageId: delivery.messageId || null,
         otpRecord: {
