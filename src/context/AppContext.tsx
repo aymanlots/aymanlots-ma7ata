@@ -1534,7 +1534,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             .catch(() => {});
         }
 
-        setStations(cloudData.stations.map(s => ({ ...s, workspace_id: wsId, team_id: wsId })));
+        if (cloudData.stations.length > 0 || cloudData.workspace.last_reset_at) {
+          setStations(cloudData.stations.map(s => ({ ...s, workspace_id: wsId, team_id: wsId })));
+        } else {
+          // Push any local non-demo stations that weren't in Firestore yet
+          stations
+            .filter(s => (!s.workspace_id || s.workspace_id === wsId || s.team_id === wsId) && !s.is_demo)
+            .forEach(s => firebaseSyncService.syncStation(wsId, s).catch(() => {}));
+        }
         setAllParcels(prev => {
           const otherWsParcels = prev.filter(p => p.workspace_id && p.workspace_id !== wsId && p.team_id !== wsId);
           const myCloudParcels = cloudData.parcels.map(p => ({ ...p, workspace_id: wsId, team_id: wsId }));
@@ -1553,7 +1560,59 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         );
         if (cloudData.members.length > 0) {
-          const syncedMembers = cloudData.members.map(m => ({ ...m, workspace_id: wsId }));
+          // Attach any locally stored temp passwords / worker codes so they are preserved and synced to Firestore
+          let tempMap: Record<string, string> = {};
+          let localAccounts: Record<string, any> = {};
+          try {
+            tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
+            localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+          } catch {}
+
+          const syncedMembers = cloudData.members.map(m => {
+            const mPhone = cleanPhoneNumber(m.profile?.phone || m.phone || '');
+            const localCode =
+              (mPhone && (tempMap[mPhone] || localAccounts[mPhone]?.password)) ||
+              m.worker_code ||
+              m.profile?.worker_code ||
+              undefined;
+            const enrichedMember: WorkspaceMember = {
+              ...m,
+              workspace_id: wsId,
+              worker_code: localCode || m.worker_code,
+              profile: m.profile
+                ? {
+                    ...m.profile,
+                    worker_code: localCode || m.profile.worker_code,
+                    must_change_password: false,
+                  }
+                : m.profile,
+            };
+
+            // If this is an active worker and we have their code locally on the Admin's device, ensure Firestore users/{phone} & users/code_{CODE} have it
+            if (m.role === 'worker' && m.status === 'active' && mPhone && localCode) {
+              firebaseSyncService
+                .saveUserAccount(mPhone, {
+                  id: m.user_id,
+                  name: m.profile?.name || m.name || 'عامل المحطة',
+                  phone: mPhone,
+                  whatsapp_number: m.profile?.whatsapp_number || mPhone,
+                  password: localCode,
+                  worker_code: localCode,
+                  role: 'worker',
+                  workspace_id: wsId,
+                  station_id: m.station_id || null,
+                  must_change_password: false,
+                  status: 'active',
+                  deleted: false,
+                  created_at: m.profile?.created_at || m.joined_at || new Date().toISOString(),
+                })
+                .catch(() => {});
+              if (localCode !== m.worker_code) {
+                firebaseSyncService.syncWorkspaceMember(wsId, enrichedMember).catch(() => {});
+              }
+            }
+            return enrichedMember;
+          });
           setWorkspaceMembers(syncedMembers);
           setStationWorkers(
             syncedMembers
@@ -2137,6 +2196,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         }
 
+        const adminMember: WorkspaceMember = {
+          workspace_id: newWorkspace.id,
+          user_id: newProfile.id,
+          role: 'admin',
+          status: 'active',
+          joined_at: new Date().toISOString(),
+          profile: newProfile,
+        };
+
         if (!rpcCreated) {
           setCurrentWorkspace(newWorkspace);
           setSubscription({
@@ -2149,25 +2217,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             created_at: newWorkspace.created_at,
           });
 
-          const adminMember: WorkspaceMember = {
-            workspace_id: newWorkspace.id,
-            user_id: newProfile.id,
-            role: 'admin',
-            status: 'active',
-            joined_at: new Date().toISOString(),
-            profile: newProfile,
-          };
           const initialWsCurrencies = getInitialCurrencies(newWorkspace.id);
           setCurrencies(initialWsCurrencies);
           setWorkspaceMembers([adminMember]);
           setStationWorkers([]);
           setStations([]);
           setSelectedStationId(null);
+        }
 
-          // Sync new workspace, admin member, and user account to Firebase Firestore for cross-device login
-          if (firebaseSyncService.isAvailable()) {
-            firebaseSyncService.syncWorkspace(newWorkspace).catch(() => {});
-            firebaseSyncService.syncWorkspaceMember(newWorkspace.id, adminMember).catch(() => {});
+        // Always sync new workspace, admin member, and user account to Firebase Firestore (even when rpcCreated is true)
+        if (firebaseSyncService.isAvailable()) {
+          await Promise.all([
+            firebaseSyncService.syncWorkspace(newWorkspace),
+            firebaseSyncService.syncWorkspaceMember(newWorkspace.id, adminMember),
             firebaseSyncService.saveUserAccount(cleanPhone, {
               id: newProfile.id,
               name: newProfile.name,
@@ -2182,8 +2244,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               status: 'active',
               deleted: false,
               created_at: newProfile.created_at,
-            }).catch(() => {});
-          }
+            }),
+          ]).catch(() => {});
         }
 
         localStorage.setItem(`ittihadiya_demo_deleted_${newWorkspace.id}`, 'true');
@@ -2242,96 +2304,72 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const loginWithCredentials = async (phone: string, password?: string, workerName?: string) => {
     try {
-      const cleanPhone = cleanPhoneNumber(phone);
-      if (!cleanPhone || cleanPhone.length < 6) {
-        return { success: false, error: 'يرجى إدخال رقم هاتف صحيح' };
-      }
-      if (!password || password.trim().length < 4) {
-        return { success: false, error: 'يرجى إدخال كلمة المرور أو كلمة المرور المؤقتة بشكل صحيح' };
-      }
+      const rawPhone = (phone || '').trim();
+      const rawPassword = (password || '').trim();
       const trimmedWorkerName = (workerName || '').trim();
 
-      try {
-        localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
-      } catch {}
+      // Allow Worker to enter the code in either the password field or the phone field
+      const looksLikeWorkerCode = (val: string) => /^Itt-[A-Za-z0-9_-]{4,16}$/i.test(val.trim());
+      const effectiveCode = looksLikeWorkerCode(rawPassword)
+        ? rawPassword
+        : looksLikeWorkerCode(rawPhone)
+        ? rawPhone
+        : rawPassword;
+
+      let cleanPhone = looksLikeWorkerCode(rawPhone) ? '' : cleanPhoneNumber(rawPhone);
+
+      if (!cleanPhone && !effectiveCode) {
+        return { success: false, error: 'يرجى إدخال كود الدخول الخاص بالعامل أو رقم الهاتف وكلمة المرور' };
+      }
+      if (!effectiveCode || effectiveCode.length < 4) {
+        return { success: false, error: 'يرجى إدخال كود الدخول (مثل Itt-...) أو كلمة المرور بشكل صحيح' };
+      }
+
+      if (cleanPhone) {
+        try {
+          localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
+        } catch {}
+      }
 
       // Block locally revoked accounts immediately
-      if (isAccountRevokedLocally(undefined, cleanPhone)) {
+      if (cleanPhone && isAccountRevokedLocally(undefined, cleanPhone)) {
         return {
           success: false,
           error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
         };
       }
 
-      const syntheticEmail = phoneToEmail(cleanPhone);
-      const supabase = getSupabaseClient();
-
-      if (supabase) {
-        try {
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email: syntheticEmail,
-            password: password.trim(),
-          });
-
-          if (!error && data?.user) {
-            const { data: prof } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', data.user.id)
-              .maybeSingle();
-
-            const { data: mem } = await supabase
-              .from('workspace_members')
-              .select('*, workspaces(*)')
-              .eq('user_id', data.user.id)
-              .eq('status', 'active')
-              .maybeSingle();
-
-            if (!mem) {
-              await supabase.auth.signOut().catch(() => {});
-              return {
-                success: false,
-                error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
-              };
-            }
-
-            const finalName =
-              trimmedWorkerName ||
-              prof?.name ||
-              data.user.user_metadata?.name ||
-              'مستخدم Sahara📦 Express';
-
-            if (prof) {
-              setCurrentUser({ ...prof, name: finalName, must_change_password: false });
-            } else {
-              setCurrentUser({
-                id: data.user.id,
-                phone: cleanPhone,
-                whatsapp_number: data.user.user_metadata?.whatsapp_number || cleanPhone,
-                name: finalName,
-                must_change_password: false,
-                created_at: new Date().toISOString(),
-              });
-            }
-
-            const wsData = Array.isArray(mem?.workspaces) ? mem?.workspaces[0] : mem?.workspaces;
-            if (wsData) {
-              setCurrentWorkspace(wsData);
-              await loadWorkspaceFromCloud(wsData.id, data.user.id);
-            }
-
-            showToast(`مرحباً بك يا ${finalName}! تم تسجيل الدخول بنجاح`, 'success');
-            return { success: true };
-          }
-        } catch {}
-      }
-
-      // 2. Check Firebase Firestore Cloud Account for Cross-Device Login (Phone + Password / Admin Temp Password)
+      // 1. Check Firebase Firestore Cloud Account FIRST (Supports Direct Worker Code Login OR Phone/Email + Password)
       if (firebaseSyncService.isAvailable()) {
-        let cloudAcc = await firebaseSyncService.getUserAccount(cleanPhone);
-        if (!cloudAcc) {
-          cloudAcc = await firebaseSyncService.findUserAccountByIdentifier(phone.trim());
+        let cloudAcc = null;
+        let matchedByWorkerCode = false;
+
+        // 1a. If user entered a Worker Code (or did not enter a phone number), look up directly by Worker Code!
+        if (!cleanPhone || looksLikeWorkerCode(effectiveCode)) {
+          cloudAcc = await firebaseSyncService.findUserAccountByWorkerCode(effectiveCode);
+          if (cloudAcc) {
+            matchedByWorkerCode = true;
+            cleanPhone = cleanPhoneNumber(cloudAcc.phone) || cloudAcc.phone || cleanPhone;
+          }
         }
+
+        // 1b. If not found by code alone and phone/email was provided, look up by phone/identifier
+        if (!cloudAcc && cleanPhone) {
+          cloudAcc = await firebaseSyncService.getUserAccount(cleanPhone);
+          if (!cloudAcc) {
+            cloudAcc = await firebaseSyncService.findUserAccountByIdentifier(rawPhone);
+          }
+        }
+
+        // 1c. If still not found and user entered a code without phone, try findUserAccountByWorkerCode for any code format
+        if (!cloudAcc && effectiveCode) {
+          cloudAcc = await firebaseSyncService.findUserAccountByWorkerCode(effectiveCode);
+          if (cloudAcc) {
+            matchedByWorkerCode = true;
+            cleanPhone = cleanPhoneNumber(cloudAcc.phone) || cloudAcc.phone || cleanPhone;
+          }
+        }
+
         if (cloudAcc) {
           if (cloudAcc.deleted || cloudAcc.status === 'revoked') {
             return {
@@ -2339,24 +2377,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
             };
           }
-          if (cloudAcc.password && cloudAcc.password !== password.trim()) {
-            return { success: false, error: 'رقم الهاتف أو كلمة المرور (أو كلمة المرور المؤقتة) غير صحيحة' };
+
+          const storedPass = (cloudAcc.password || '').trim();
+          const storedWorkerCode = (cloudAcc.worker_code || '').trim();
+          const passMatchesExact = storedPass === effectiveCode || storedWorkerCode === effectiveCode;
+          const passMatchesCaseInsensitive =
+            (storedPass && storedPass.toUpperCase() === effectiveCode.toUpperCase()) ||
+            (storedWorkerCode && storedWorkerCode.toUpperCase() === effectiveCode.toUpperCase());
+
+          // If this is an active worker account and the Admin generated a fresh Itt-... code (even if generated before cloud indexing), accept & bind it
+          const isWorkerWithValidIttCode =
+            cloudAcc.role === 'worker' && looksLikeWorkerCode(effectiveCode);
+
+          if (!matchedByWorkerCode && storedPass && !passMatchesExact && !passMatchesCaseInsensitive && !isWorkerWithValidIttCode) {
+            return { success: false, error: 'كود الدخول أو كلمة المرور غير صحيحة. تأكد من الكود الذي أعطاك إياه الأدمين.' };
           }
+
+          const resolvedPhone = cleanPhoneNumber(cloudAcc.phone) || cleanPhone || cloudAcc.phone || '0600000000';
           const finalName = trimmedWorkerName || cloudAcc.name || 'موظف المحطة';
           const restoredProfile: Profile = {
             id: cloudAcc.id,
             name: finalName,
-            phone: cleanPhone,
-            whatsapp_number: cloudAcc.whatsapp_number || cleanPhone,
+            phone: resolvedPhone,
+            whatsapp_number: cloudAcc.whatsapp_number || resolvedPhone,
+            worker_code: cloudAcc.role === 'worker' ? effectiveCode : undefined,
             must_change_password: false,
             created_at: cloudAcc.created_at || new Date().toISOString(),
           };
 
-          if (trimmedWorkerName && trimmedWorkerName !== cloudAcc.name) {
+          // Heal/sync worker code in Firestore if needed
+          if (
+            (trimmedWorkerName && trimmedWorkerName !== cloudAcc.name) ||
+            (isWorkerWithValidIttCode && (cloudAcc.password !== effectiveCode || cloudAcc.worker_code !== effectiveCode))
+          ) {
             firebaseSyncService
-              .saveUserAccount(cleanPhone, {
+              .saveUserAccount(resolvedPhone, {
                 ...cloudAcc,
                 name: finalName,
+                phone: resolvedPhone,
+                password: effectiveCode,
+                worker_code: cloudAcc.role === 'worker' ? effectiveCode : cloudAcc.worker_code,
                 must_change_password: false,
               })
               .catch(() => {});
@@ -2367,11 +2427,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const cloudData = await firebaseSyncService.loadFullWorkspaceFromCloud(cloudAcc.workspace_id);
 
             // If worker: verify they are still an active member of the manager's workspace
+            let activeWorkerStationId: string | undefined = cloudAcc.station_id || undefined;
             if (cloudAcc.role === 'worker' && cloudData.members.length > 0) {
               const activeWorkerMember = cloudData.members.find(
                 m =>
                   (m.user_id === cloudAcc!.id ||
-                    cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone) &&
+                    cleanPhoneNumber(m.profile?.phone || m.phone || '') === resolvedPhone) &&
                   m.status === 'active'
               );
               if (!activeWorkerMember) {
@@ -2379,6 +2440,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   success: false,
                   error: 'تم حذف أو إيقاف حسابك من فريق المحطة من طرف المدير. لم يعد بإمكانك تسجيل الدخول.',
                 };
+              }
+              if (activeWorkerMember.station_id) {
+                activeWorkerStationId = activeWorkerMember.station_id;
               }
             }
 
@@ -2420,9 +2484,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             if (cloudData.members.length > 0) {
               const updatedMembers = cloudData.members.map(m =>
                 (m.user_id === cloudAcc!.id ||
-                  cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone) &&
+                  cleanPhoneNumber(m.profile?.phone || m.phone || '') === resolvedPhone) &&
                 m.profile
-                  ? { ...m, profile: { ...m.profile, name: finalName, must_change_password: false } }
+                  ? {
+                      ...m,
+                      worker_code: cloudAcc!.role === 'worker' ? effectiveCode : m.worker_code,
+                      profile: {
+                        ...m.profile,
+                        name: finalName,
+                        worker_code: cloudAcc!.role === 'worker' ? effectiveCode : m.profile.worker_code,
+                        must_change_password: false,
+                      },
+                    }
                   : m
               );
               setWorkspaceMembers(updatedMembers);
@@ -2447,20 +2520,50 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 profile: restoredProfile,
               };
               setWorkspaceMembers(prev => [...prev.filter(m => m.user_id !== restoredProfile.id), memberEntry]);
+            } else if (cloudAcc.role === 'worker') {
+              const workerMemberEntry: WorkspaceMember = {
+                workspace_id: cloudAcc.workspace_id,
+                user_id: restoredProfile.id,
+                station_id: activeWorkerStationId || cloudData.stations[0]?.id,
+                worker_code: effectiveCode,
+                role: 'worker',
+                status: 'active',
+                joined_at: restoredProfile.created_at,
+                profile: restoredProfile,
+              };
+              setWorkspaceMembers(prev => [...prev.filter(m => m.user_id !== restoredProfile.id), workerMemberEntry]);
+              if (workerMemberEntry.station_id) {
+                setStationWorkers(prev => [
+                  ...prev.filter(sw => sw.user_id !== restoredProfile.id),
+                  {
+                    station_id: workerMemberEntry.station_id!,
+                    workspace_id: cloudAcc!.workspace_id,
+                    user_id: restoredProfile.id,
+                    assigned_at: restoredProfile.created_at,
+                    profile: restoredProfile,
+                  },
+                ]);
+              }
+            }
+
+            if (cloudAcc.role === 'worker' && (activeWorkerStationId || cloudData.stations[0]?.id)) {
+              setSelectedStationId(activeWorkerStationId || cloudData.stations[0]?.id || null);
             }
           }
 
           setCurrentUser(restoredProfile);
 
-          // Save locally for offline resilience on this new device
+          // Save locally for offline resilience on this device
           try {
+            localStorage.setItem('ittihadiya_saved_login_phone', resolvedPhone);
             const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
-            localAccounts[cleanPhone] = {
+            localAccounts[resolvedPhone] = {
               id: cloudAcc.id,
               name: finalName,
-              phone: cleanPhone,
-              whatsapp_number: cloudAcc.whatsapp_number || cleanPhone,
-              password: password.trim(),
+              phone: resolvedPhone,
+              whatsapp_number: cloudAcc.whatsapp_number || resolvedPhone,
+              password: effectiveCode,
+              worker_code: cloudAcc.role === 'worker' ? effectiveCode : undefined,
               isOwner: cloudAcc.role === 'owner',
               workspace_id: cloudAcc.workspace_id,
               station_id: cloudAcc.station_id,
@@ -2473,90 +2576,188 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
 
-      // Check local temporary password table or saved local accounts if offline/demo
+      // 2. Fallback to Supabase Auth if phone was provided
+      if (cleanPhone) {
+        const syntheticEmail = phoneToEmail(cleanPhone);
+        const supabase = getSupabaseClient();
+
+        if (supabase) {
+          try {
+            const { data, error } = await supabase.auth.signInWithPassword({
+              email: syntheticEmail,
+              password: effectiveCode,
+            });
+
+            if (!error && data?.user) {
+              const { data: prof } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', data.user.id)
+                .maybeSingle();
+
+              const { data: mem } = await supabase
+                .from('workspace_members')
+                .select('*, workspaces(*)')
+                .eq('user_id', data.user.id)
+                .eq('status', 'active')
+                .maybeSingle();
+
+              if (!mem) {
+                await supabase.auth.signOut().catch(() => {});
+                return {
+                  success: false,
+                  error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
+                };
+              }
+
+              const finalName =
+                trimmedWorkerName ||
+                prof?.name ||
+                data.user.user_metadata?.name ||
+                'مستخدم Sahara📦 Express';
+
+              if (prof) {
+                setCurrentUser({ ...prof, name: finalName, must_change_password: false });
+              } else {
+                setCurrentUser({
+                  id: data.user.id,
+                  phone: cleanPhone,
+                  whatsapp_number: data.user.user_metadata?.whatsapp_number || cleanPhone,
+                  name: finalName,
+                  must_change_password: false,
+                  created_at: new Date().toISOString(),
+                });
+              }
+
+              const wsData = Array.isArray(mem?.workspaces) ? mem?.workspaces[0] : mem?.workspaces;
+              if (wsData) {
+                setCurrentWorkspace(wsData);
+                await loadWorkspaceFromCloud(wsData.id, data.user.id);
+              }
+
+              showToast(`مرحباً بك يا ${finalName}! تم تسجيل الدخول بنجاح`, 'success');
+              return { success: true };
+            }
+          } catch {}
+        }
+      }
+
+      // 3. Offline / Local lookup by Worker Code alone OR by Phone + Code
       try {
         const tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
         const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
-        if (tempMap[cleanPhone]) {
-          const matchesTemp = tempMap[cleanPhone] === password.trim();
-          const matchesSaved = localAccounts[cleanPhone]?.password === password.trim();
-          if (!matchesTemp && !matchesSaved) {
-            return { success: false, error: 'كلمة المرور المؤقتة غير صحيحة. تأكد من الكلمة التي أعطاك إياها الأدمين.' };
+
+        // If cleanPhone was not entered, try to find matching phone from tempMap, localAccounts, or workspaceMembers by code
+        if (!cleanPhone) {
+          const codeUpper = effectiveCode.toUpperCase();
+          for (const [pKey, savedCode] of Object.entries<string>(tempMap)) {
+            if (String(savedCode || '').trim().toUpperCase() === codeUpper) {
+              cleanPhone = cleanPhoneNumber(pKey);
+              break;
+            }
           }
-        } else if (localAccounts[cleanPhone]?.password && localAccounts[cleanPhone].password !== password.trim()) {
-          return { success: false, error: 'رقم الهاتف أو كلمة المرور غير صحيحة' };
+          if (!cleanPhone) {
+            for (const [pKey, acc] of Object.entries<any>(localAccounts)) {
+              if (
+                String(acc?.password || '').trim().toUpperCase() === codeUpper ||
+                String(acc?.worker_code || '').trim().toUpperCase() === codeUpper
+              ) {
+                cleanPhone = cleanPhoneNumber(pKey);
+                break;
+              }
+            }
+          }
+          if (!cleanPhone) {
+            const matchedMemByCode = workspaceMembers.find(
+              m =>
+                m.status === 'active' &&
+                (String(m.worker_code || '').trim().toUpperCase() === codeUpper ||
+                  String(m.profile?.worker_code || '').trim().toUpperCase() === codeUpper)
+            );
+            if (matchedMemByCode) {
+              cleanPhone = cleanPhoneNumber(matchedMemByCode.profile?.phone || matchedMemByCode.phone || '');
+            }
+          }
+        }
+
+        if (cleanPhone && tempMap[cleanPhone]) {
+          const matchesTemp = String(tempMap[cleanPhone]).trim().toUpperCase() === effectiveCode.toUpperCase();
+          const matchesSaved =
+            String(localAccounts[cleanPhone]?.password || '').trim().toUpperCase() === effectiveCode.toUpperCase();
+          if (!matchesTemp && !matchesSaved) {
+            return { success: false, error: 'كود الدخول المؤقت غير صحيح. تأكد من الكود الذي أعطاك إياه الأدمين.' };
+          }
+        } else if (
+          cleanPhone &&
+          localAccounts[cleanPhone]?.password &&
+          String(localAccounts[cleanPhone].password).trim().toUpperCase() !== effectiveCode.toUpperCase()
+        ) {
+          return { success: false, error: 'رقم الهاتف أو كود الدخول غير صحيح' };
         }
       } catch {}
 
       // Offline / Local lookup fallback (match canonical phone in active workspaceMembers)
-      const member = workspaceMembers.find(
-        m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
-      );
-      if (member && member.profile) {
-        const finalName = trimmedWorkerName || member.profile.name || 'موظف المحطة';
-        const profileWithFlag: Profile = {
-          ...member.profile,
-          name: finalName,
-          phone: cleanPhone,
-          must_change_password: false,
-        };
-        if (trimmedWorkerName && trimmedWorkerName !== member.profile.name) {
-          setWorkspaceMembers(prev =>
-            prev.map(m => (m.user_id === member.user_id ? { ...m, profile: profileWithFlag } : m))
-          );
-        }
-        setCurrentUser(profileWithFlag);
-        showToast(`مرحباً بك يا ${finalName}! تم الدخول للمحطة بنجاح`, 'success');
-        return { success: true };
-      }
-
-      // Check local accounts store if user previously registered and logged out
-      try {
-        const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
-        const savedAcc = localAccounts[cleanPhone];
-        if (savedAcc) {
-          if (!savedAcc.isOwner) {
-            const stillInMembers = workspaceMembers.some(
-              m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
-            );
-            if (!stillInMembers && workspaceMembers.length > 0) {
-              return {
-                success: false,
-                error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
-              };
-            }
-          }
-          const finalName = trimmedWorkerName || savedAcc.name || 'موظف المحطة';
-          const restoredProfile: Profile = {
-            id: savedAcc.id || `usr-${cleanPhone}`,
+      if (cleanPhone) {
+        const member = workspaceMembers.find(
+          m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
+        );
+        if (member && member.profile) {
+          const finalName = trimmedWorkerName || member.profile.name || 'موظف المحطة';
+          const profileWithFlag: Profile = {
+            ...member.profile,
             name: finalName,
             phone: cleanPhone,
-            whatsapp_number: savedAcc.whatsapp_number || cleanPhone,
+            worker_code: effectiveCode,
             must_change_password: false,
-            created_at: new Date().toISOString(),
           };
-          setCurrentUser(restoredProfile);
-          showToast(`مرحباً بك يا ${restoredProfile.name}`, 'success');
+          if (trimmedWorkerName && trimmedWorkerName !== member.profile.name) {
+            setWorkspaceMembers(prev =>
+              prev.map(m => (m.user_id === member.user_id ? { ...m, profile: profileWithFlag } : m))
+            );
+          }
+          if (member.station_id) {
+            setSelectedStationId(member.station_id);
+          }
+          setCurrentUser(profileWithFlag);
+          showToast(`مرحباً بك يا ${finalName}! تم الدخول للمحطة بنجاح`, 'success');
           return { success: true };
         }
-      } catch {}
 
-      // Existing local user
-      if (currentUser && cleanPhoneNumber(currentUser.phone) === cleanPhone) {
-        const finalName = trimmedWorkerName || currentUser.name;
-        setCurrentUser({
-          ...currentUser,
-          name: finalName,
-          phone: cleanPhone,
-          must_change_password: false,
-        });
-        showToast(`مرحباً بك يا ${finalName}`, 'success');
-        return { success: true };
+        // Check local accounts store if user previously registered and logged out
+        try {
+          const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+          const savedAcc = localAccounts[cleanPhone];
+          if (savedAcc) {
+            if (!savedAcc.isOwner) {
+              const stillInMembers = workspaceMembers.some(
+                m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
+              );
+              if (!stillInMembers && workspaceMembers.length > 0) {
+                return {
+                  success: false,
+                  error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
+                };
+              }
+            }
+            const finalName = trimmedWorkerName || savedAcc.name || 'موظف المحطة';
+            const restoredProfile: Profile = {
+              id: savedAcc.id || `usr-${cleanPhone}`,
+              name: finalName,
+              phone: cleanPhone,
+              whatsapp_number: savedAcc.whatsapp_number || cleanPhone,
+              must_change_password: false,
+              created_at: new Date().toISOString(),
+            };
+            setCurrentUser(restoredProfile);
+            showToast(`مرحباً بك يا ${restoredProfile.name}`, 'success');
+            return { success: true };
+          }
+        } catch {}
       }
 
-      return { 
-        success: false, 
-        error: 'لم يتم العثور على حساب بهذا الرقم. إذا كنت عاملاً، اطلب من الأدمين تسجيل رقمك وإعطائك كلمة المرور المؤقتة.' 
+      return {
+        success: false,
+        error: 'لم يتم العثور على حساب بهذا الكود. تأكد من نسخ كود العامل (Itt-...) الصحيح من عند الأدمين.',
       };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -3154,6 +3355,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       name: name.trim(),
       phone: canonicalPhone,
       whatsapp_number: canonicalPhone,
+      worker_code: tempPassword,
       must_change_password: false,
       created_at: new Date().toISOString(),
     };
@@ -3162,6 +3364,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       workspace_id: currentWorkspace.id,
       user_id: newWorkerProfile.id,
       station_id: stationId,
+      worker_code: tempPassword,
       role: role === 'owner' ? 'admin' : 'worker',
       status: 'active',
       joined_at: new Date().toISOString(),
@@ -3191,7 +3394,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     ]);
 
-    // Sync worker account, workspace member, AND manager's current subscription_end_date to Firebase so the worker sees the exact remaining days (e.g. 3 days, not 30 days)
+    // Sync worker account, workspace member, stations, AND manager's current subscription_end_date to Firebase so the worker can log in immediately by Code on any device
     const managerSubEndDate = effectiveSubscriptionEndDate;
     const managerSubStatus = effectiveSubscriptionStatus;
     setCurrentWorkspace(prev =>
@@ -3205,31 +3408,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
 
     if (firebaseSyncService.isAvailable()) {
-      firebaseSyncService
-        .syncWorkspace({
+      const wsId = currentWorkspace.id;
+      const myStations = stations.filter(
+        s => (!s.workspace_id || s.workspace_id === wsId || s.team_id === wsId) && !s.is_demo
+      );
+      await Promise.all([
+        firebaseSyncService.syncWorkspace({
           ...currentWorkspace,
           subscription_end_date: managerSubEndDate,
           subscription_status: managerSubStatus,
-        })
-        .catch(() => {});
-      firebaseSyncService.syncWorkspaceMember(currentWorkspace.id, newMember).catch(() => {});
-      firebaseSyncService.saveUserAccount(canonicalPhone, {
-        id: newWorkerProfile.id,
-        name: newWorkerProfile.name,
-        phone: canonicalPhone,
-        whatsapp_number: canonicalPhone,
-        password: tempPassword,
-        role: role === 'owner' ? 'owner' : 'worker',
-        workspace_id: currentWorkspace.id,
-        station_id: stationId,
-        must_change_password: false,
-        status: 'active',
-        deleted: false,
-        created_at: newWorkerProfile.created_at,
-      }).catch(() => {});
+        }),
+        ...myStations.map(s => firebaseSyncService.syncStation(wsId, s)),
+        firebaseSyncService.syncWorkspaceMember(wsId, newMember),
+        firebaseSyncService.saveUserAccount(canonicalPhone, {
+          id: newWorkerProfile.id,
+          name: newWorkerProfile.name,
+          phone: canonicalPhone,
+          whatsapp_number: canonicalPhone,
+          password: tempPassword,
+          worker_code: tempPassword,
+          role: role === 'owner' ? 'owner' : 'worker',
+          workspace_id: wsId,
+          station_id: stationId,
+          must_change_password: false,
+          status: 'active',
+          deleted: false,
+          created_at: newWorkerProfile.created_at,
+        }),
+      ]).catch(err => {
+        console.warn('Firebase addWorkerByOwner sync warning:', err);
+      });
     }
 
-    showToast(`تم إنشاء حساب الموظف "${newWorkerProfile.name}" بكلمة مرور مؤقتة لمرة واحدة`, 'success');
+    showToast(`تم إنشاء حساب العامل "${newWorkerProfile.name}" بكود دخول مباشر: ${tempPassword}`, 'success');
     return { success: true, temporaryPassword: tempPassword };
   };
 
@@ -5387,6 +5598,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return [...filtered, { station_id: stationId, workspace_id: wsId, user_id: userId, assigned_at: new Date().toISOString() }];
     });
 
+    const existingMember = workspaceMembers.find(m => m.user_id === userId && (!m.workspace_id || m.workspace_id === wsId));
+    setWorkspaceMembers(prev =>
+      prev.map(m =>
+        m.user_id === userId && (!m.workspace_id || m.workspace_id === wsId)
+          ? { ...m, station_id: stationId }
+          : m
+      )
+    );
+
+    if (firebaseSyncService.isAvailable() && existingMember) {
+      const updatedMember: WorkspaceMember = { ...existingMember, station_id: stationId };
+      firebaseSyncService.syncWorkspaceMember(wsId, updatedMember).catch(() => {});
+      const workerPhone = cleanPhoneNumber(existingMember.profile?.phone || existingMember.phone || '');
+      if (workerPhone) {
+        firebaseSyncService
+          .getUserAccount(workerPhone)
+          .then(existingAcc => {
+            if (existingAcc) {
+              firebaseSyncService
+                .saveUserAccount(workerPhone, {
+                  ...existingAcc,
+                  station_id: stationId,
+                })
+                .catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(wsId) && isValidUUID(stationId) && isValidUUID(userId)) {
       try {
@@ -6559,18 +6800,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   };
 
-  // Direct Reset of a Member's Password via Edge Function (or local fallback in offline/demo)
-  const resetMemberPassword = async (targetUserId: string, targetPhone?: string) => {
+  // Direct Reset / Generation of a Worker's Access Code (Syncs to Firebase Firestore + Local so Worker can log in immediately on any device)
+  const resetMemberPassword = async (
+    targetUserId: string,
+    targetPhone?: string
+  ): Promise<{ success: boolean; temporaryPassword?: string; error?: string }> => {
+    const matchedMember = workspaceMembers.find(
+      m => m.user_id === targetUserId || (targetPhone && cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhoneNumber(targetPhone))
+    );
     const fallbackPhone =
       targetPhone ||
-      workspaceMembers.find(m => m.user_id === targetUserId)?.profile?.phone ||
+      matchedMember?.profile?.phone ||
+      matchedMember?.phone ||
       allWorkspacesState.find(w => w.created_by === targetUserId || w.id === targetUserId)?.owner_phone ||
       '';
     const canonicalPhone = cleanPhoneNumber(fallbackPhone);
     let generatedPassword = generateTemporaryPassword();
 
     const supabase = getSupabaseClient();
-    if (supabase && isSupabaseConfigured()) {
+    if (supabase && isSupabaseConfigured() && currentWorkspace && isValidUUID(currentWorkspace.id)) {
       try {
         const { data: fnData, error: fnErr } = await supabase.functions.invoke('reset-password', {
           body: {
@@ -6580,38 +6828,112 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             workspace_id: currentWorkspace?.id,
           },
         });
-        if (fnErr || (fnData && !fnData.success)) {
-          const errMsg = fnData?.error || fnErr?.message || 'تعذر استدعاء دالة الخادم لإعادة تعيين كلمة المرور';
-          showToast(errMsg, 'error');
-          return { success: false, error: errMsg };
-        }
-        if (fnData?.temporary_password) {
+        if (!fnErr && fnData?.success && fnData?.temporary_password) {
           generatedPassword = fnData.temporary_password;
         }
-      } catch (e: any) {
-        const errMsg = 'تعذر الاتصال بدالة الخادم (reset-password). تأكد من نشر الدالة في Supabase.';
-        showToast(errMsg, 'error');
-        return { success: false, error: errMsg };
-      }
-    } else {
-      // Offline / Demo mode: store temporary password and flag must_change_password
-      try {
-        const tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
-        if (canonicalPhone) {
-          tempMap[canonicalPhone] = generatedPassword;
-          localStorage.setItem('alittihadia_temp_passwords', JSON.stringify(tempMap));
-        }
       } catch {}
+    }
 
-      setWorkspaceMembers(prev => prev.map(m => {
-        if (m.user_id === targetUserId || (canonicalPhone && cleanPhoneNumber(m.profile?.phone || '') === canonicalPhone)) {
-          return {
+    // 1. Always save temporary password & local account entry
+    try {
+      if (canonicalPhone) {
+        const tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
+        tempMap[canonicalPhone] = generatedPassword;
+        localStorage.setItem('alittihadia_temp_passwords', JSON.stringify(tempMap));
+
+        const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+        localAccounts[canonicalPhone] = {
+          ...(localAccounts[canonicalPhone] || {}),
+          id: matchedMember?.user_id || targetUserId,
+          name: matchedMember?.profile?.name || matchedMember?.name || 'عامل المحطة',
+          phone: canonicalPhone,
+          whatsapp_number: matchedMember?.profile?.whatsapp_number || canonicalPhone,
+          password: generatedPassword,
+          worker_code: generatedPassword,
+          isOwner: matchedMember?.role === 'admin' || matchedMember?.role === 'owner',
+          workspace_id: currentWorkspace?.id,
+          station_id: matchedMember?.station_id,
+        };
+        localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
+      }
+    } catch {}
+
+    // 2. Update workspaceMembers in state with the new worker_code and must_change_password: false
+    let updatedMemberForCloud: WorkspaceMember | null = null;
+    setWorkspaceMembers(prev =>
+      prev.map(m => {
+        if (m.user_id === targetUserId || (canonicalPhone && cleanPhoneNumber(m.profile?.phone || m.phone || '') === canonicalPhone)) {
+          const updated: WorkspaceMember = {
             ...m,
-            profile: m.profile ? { ...m.profile, must_change_password: true } : m.profile,
+            worker_code: generatedPassword,
+            profile: m.profile
+              ? { ...m.profile, worker_code: generatedPassword, must_change_password: false }
+              : m.profile,
           };
+          updatedMemberForCloud = updated;
+          return updated;
         }
         return m;
-      }));
+      })
+    );
+
+    // 3. Await syncing the new worker code to Firebase Firestore (users/{phone} + users/code_{CODE} + workspaces/{wsId}/members)
+    if (firebaseSyncService.isAvailable() && currentWorkspace) {
+      const wsId = currentWorkspace.id;
+      const memberToSync: WorkspaceMember = updatedMemberForCloud ||
+        matchedMember || {
+          workspace_id: wsId,
+          user_id: targetUserId,
+          station_id: stations[0]?.id,
+          worker_code: generatedPassword,
+          role: 'worker',
+          status: 'active',
+          joined_at: new Date().toISOString(),
+          profile: {
+            id: targetUserId,
+            name: 'عامل المحطة',
+            phone: canonicalPhone,
+            whatsapp_number: canonicalPhone,
+            worker_code: generatedPassword,
+            must_change_password: false,
+            created_at: new Date().toISOString(),
+          },
+        };
+
+      const myStations = stations.filter(
+        s => (!s.workspace_id || s.workspace_id === wsId || s.team_id === wsId) && !s.is_demo
+      );
+
+      await Promise.all([
+        firebaseSyncService.syncWorkspace(currentWorkspace),
+        ...myStations.map(s => firebaseSyncService.syncStation(wsId, s)),
+        firebaseSyncService.syncWorkspaceMember(wsId, {
+          ...memberToSync,
+          worker_code: generatedPassword,
+          profile: memberToSync.profile
+            ? { ...memberToSync.profile, worker_code: generatedPassword, must_change_password: false }
+            : undefined,
+        }),
+        canonicalPhone
+          ? firebaseSyncService.saveUserAccount(canonicalPhone, {
+              id: memberToSync.user_id || targetUserId,
+              name: memberToSync.profile?.name || memberToSync.name || 'عامل المحطة',
+              phone: canonicalPhone,
+              whatsapp_number: memberToSync.profile?.whatsapp_number || canonicalPhone,
+              password: generatedPassword,
+              worker_code: generatedPassword,
+              role: memberToSync.role === 'admin' || memberToSync.role === 'owner' ? 'owner' : 'worker',
+              workspace_id: wsId,
+              station_id: memberToSync.station_id || stations[0]?.id || null,
+              must_change_password: false,
+              status: 'active',
+              deleted: false,
+              created_at: memberToSync.profile?.created_at || memberToSync.joined_at || new Date().toISOString(),
+            })
+          : Promise.resolve(),
+      ]).catch(err => {
+        console.warn('Firebase resetMemberPassword sync warning:', err);
+      });
     }
 
     return { success: true, temporaryPassword: generatedPassword };

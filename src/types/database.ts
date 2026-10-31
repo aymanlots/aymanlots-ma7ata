@@ -48,6 +48,7 @@ export interface Profile {
   avatar_url?: string;
   role?: UserRole;
   must_change_password?: boolean;
+  worker_code?: string;
   created_at: string;
   updated_at?: string;
   is_demo?: boolean;
@@ -95,6 +96,7 @@ export interface WorkspaceMember {
   station_id?: string;
   name?: string;
   phone?: string;
+  worker_code?: string;
   role: UserRole;
   status: MemberStatus;
   joined_at?: string;

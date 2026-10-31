@@ -1275,12 +1275,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             )}
 
-            {/* One-time Temporary Password Display Box */}
+            {/* Worker Direct Login Code Display Box */}
             {oneTimeCredential && (
               <div className="p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-500/50 space-y-2 text-xs animate-fadeIn">
                 <div className="flex items-center justify-between">
                   <span className="font-black text-emerald-300">
-                    كلمة المرور المؤقتة لـ {oneTimeCredential.name} (تُعرض لمرة واحدة فقط):
+                    🔑 كود الدخول المباشر للعامل {oneTimeCredential.name}:
                   </span>
                   <button
                     type="button"
@@ -1291,7 +1291,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </button>
                 </div>
                 <div className="flex items-center justify-between bg-black/60 p-2.5 rounded-xl border border-emerald-500/40">
-                  <span className="font-mono text-sm font-black text-white tracking-wider" dir="ltr">
+                  <span className="font-mono text-base font-black text-[#F5C84C] tracking-wider" dir="ltr">
                     {oneTimeCredential.temporaryPassword}
                   </span>
                   <div className="flex items-center gap-1.5">
@@ -1300,17 +1300,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       onClick={() => {
                         navigator.clipboard.writeText(oneTimeCredential.temporaryPassword);
                         setCopiedTempPass(true);
-                        showToast('تم نسخ كلمة المرور المؤقتة', 'success');
+                        showToast('تم نسخ كود دخول العامل', 'success');
                         setTimeout(() => setCopiedTempPass(false), 2000);
                       }}
                       className="px-2.5 py-1 rounded-lg font-black text-[11px] flex items-center gap-1"
                     >
                       {copiedTempPass ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedTempPass ? 'تم النسخ' : 'نسخ'}</span>
+                      <span>{copiedTempPass ? 'تم النسخ' : 'نسخ الكود'}</span>
                     </button>
                     <a
                       href={`https://wa.me/${oneTimeCredential.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                        `مرحباً ${oneTimeCredential.name}، بيانات الدخول المؤقتة الخاصة بك في Sahara📦 Express:\nرقم الهاتف: ${oneTimeCredential.phone}\nكلمة المرور المؤقتة (لمرة واحدة): ${oneTimeCredential.temporaryPassword}\nسيُطلب منك تغييرها فور أول تسجيل دخول.`
+                        `مرحباً ${oneTimeCredential.name}، هذا هو كود الدخول المباشر الخاص بك كعامل في Sahara📦 Express:\n\n🔑 كود الدخول: ${oneTimeCredential.temporaryPassword}\n\nطريقة الدخول: افتح التطبيق ← اختر "💼 عامل (موظف محطة)" ← الصق هذا الكود فقط واضغط دخول مباشر (بدون Gmail).`
                       )}`}
                       target="_blank"
                       rel="noreferrer"
@@ -1322,7 +1322,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
                 <p className="text-[10px] text-emerald-200">
-                  * هذه الكلمة صالحة لأول تسجيل دخول فقط، وسيُلزم العامل بتعيين كلمة مرور جديدة من 8 خانات على الأقل.
+                  * أرسل هذا الكود للعامل. يكفيه اختيار "💼 عامل (موظف محطة)" وإدخال هذا الكود فقط للدخول مباشرة لمحطته بدون Gmail.
                 </p>
               </div>
             )}
@@ -1358,7 +1358,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="p-3 rounded-xl bg-black/50 border border-white/15 space-y-2.5 text-xs"
               >
                 <span className="font-bold text-white block">
-                  إضافة حساب عامل جديد وتوليد كلمة مرور مؤقتة لمرة واحدة:
+                  إضافة حساب عامل جديد وتوليد كود دخول مباشر له:
                 </span>
                 {isPlan2TwoStations && (
                   <p className="text-[10px] text-[#E6C37A] bg-black/50 p-2 rounded-lg border border-[#F5C84C]/30">
@@ -1406,7 +1406,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   disabled={isAddingWorker}
                   className="w-full py-2 rounded-xl font-black text-xs disabled:opacity-50 shadow-md"
                 >
-                  {isAddingWorker ? 'جاري الإنشاء...' : 'إنشاء الحساب وتوليد كلمة المرور المؤقتة'}
+                  {isAddingWorker ? 'جاري الإنشاء...' : 'إنشاء الحساب وتوليد كود دخول العامل'}
                 </button>
               </form>
             )}
@@ -1419,6 +1419,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="space-y-2">
                 {workspaceMembers.map(member => {
                   const assignedSt = stations.find(s => s.id === member.station_id) || stations[0];
+                  const activeWorkerCode = member.worker_code || member.profile?.worker_code || '';
                   return (
                     <div 
                       key={member.user_id}
@@ -1440,8 +1441,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-[11px] text-white/80 font-mono mt-0.5">
+                          <div className="flex items-center gap-2 text-[11px] text-white/80 font-mono mt-0.5 flex-wrap">
                             <span dir="ltr">{member.profile?.phone}</span>
+                            {userRole === 'owner' && member.role === 'worker' && activeWorkerCode && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(activeWorkerCode);
+                                  showToast(`تم نسخ كود العامل: ${activeWorkerCode}`, 'success');
+                                }}
+                                className="px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-[#F5C84C] font-mono text-[10px] font-black flex items-center gap-1 hover:bg-emerald-900/70 transition cursor-pointer"
+                                title="اضغط لنسخ كود الدخول المباشر للعامل"
+                                dir="ltr"
+                              >
+                                <Key className="w-2.5 h-2.5 text-emerald-400" />
+                                <span>{activeWorkerCode}</span>
+                                <Copy className="w-2.5 h-2.5 text-white/70" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1483,13 +1500,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                     phone: member.profile?.phone || '',
                                     temporaryPassword: res.temporaryPassword,
                                   });
-                                  showToast('تم توليد كلمة مرور مؤقتة جديدة للعامل', 'success');
+                                  showToast('تم توليد وحفظ كود دخول جديد للعامل في السحابة', 'success');
                                 } else if (res.error) {
                                   showToast(res.error, 'error');
                                 }
                               }}
                               className="p-1.5 rounded-lg transition cursor-pointer"
-                              title="إعادة تعيين كلمة مرور مؤقتة لمرة واحدة"
+                              title="توليد كود دخول جديد للعامل"
                             >
                               <Key className="w-3.5 h-3.5" />
                             </button>

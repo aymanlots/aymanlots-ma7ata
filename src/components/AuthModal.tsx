@@ -279,8 +279,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
     e.preventDefault();
     setError(null);
 
-    if (!isOwnerRole && (!name || name.trim().length < 2)) {
-      setError('يرجى إدخال اسم العامل الكامل');
+    if (!isOwnerRole) {
+      const workerCode = password.trim();
+      if (!workerCode || workerCode.length < 4) {
+        setError('يرجى إدخال كود الدخول الخاص بالعامل (مثل Itt-...) الذي أعطاك إياه الأدمين');
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const res = await loginWithCredentials(
+          phone.trim(),
+          workerCode,
+          name.trim() || undefined
+        );
+        setIsLoading(false);
+        if (res.success && onClose) {
+          onClose();
+        } else if (res.error) {
+          setError(res.error);
+        }
+      } catch (err: any) {
+        setIsLoading(false);
+        setError(err?.message || 'حدث خطأ أثناء الدخول لحساب العامل');
+      }
       return;
     }
 
@@ -295,17 +317,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
     } catch {}
 
     if (!password || password.trim().length < 4) {
-      setError('يرجى إدخال كلمة المرور أو كلمة المرور المؤقتة التي أعطاك إياها الأدمين');
+      setError('يرجى إدخال كلمة المرور الخاصة بحساب الأدمين');
       return;
     }
 
     setIsLoading(true);
     try {
-      const res = await loginWithCredentials(
-        cleanPhone,
-        password.trim(),
-        !isOwnerRole ? name.trim() : undefined
-      );
+      const res = await loginWithCredentials(cleanPhone, password.trim());
       setIsLoading(false);
       if (res.success && onClose) {
         onClose();
@@ -340,7 +358,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
 
         <h2 className="text-base sm:text-lg font-black text-[#F5D799] text-center mb-1">
           {!isOwnerRole
-            ? 'دخول العامل المباشر إلى Sahara📦 Express'
+            ? 'دخول العامل المباشر بالكود — Sahara📦 Express'
             : isSignUp
             ? (signUpStep === 'verify_email' ? 'تأكيد بريد Gmail بكود 6 أرقام' : 'إنشاء حساب أدمين جديد في Sahara📦 Express')
             : 'تسجيل الدخول إلى Sahara📦 Express'}
@@ -508,72 +526,63 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
           </div>
         ) : !isOwnerRole ? (
           /* ================================================================ */
-          /* WORKER DIRECT LOGIN FORM (Name + Phone + Admin Temp Password)    */
+          /* WORKER DIRECT LOGIN BY CODE ONLY (OR CODE + OPTIONAL PHONE)      */
           /* NO GMAIL, NO OTP REQUIRED!                                       */
           /* ================================================================ */
           <form onSubmit={handleLoginSubmit} className="space-y-3 text-xs">
-            <div className="p-2.5 rounded-xl bg-[#120a00] border border-[#D4AF37]/40 text-[11px] text-[#F5D799] leading-relaxed">
-              حساب العامل مسجل مسبقاً عند الأدمين. أدخل <strong>السمية</strong> و<strong>النمرة</strong> و<strong>كلمة المرور المؤقتة</strong> التي أعطاك إياها الأدمين للدخول مباشرة <strong>بدون Gmail</strong>.
+            <div className="p-3 rounded-xl bg-[#120a00] border border-[#D4AF37]/50 text-[11px] text-[#F5D799] leading-relaxed">
+              🔑 <strong>دخول مباشر غير بالكود:</strong> حط هنا <strong>الكود اللي عطاك الأدمين</strong> (مثل <span dir="ltr" className="font-mono font-black text-white">Itt-...</span>) ودخل ديريكت للمحطة ديالك بلا Gmail وبلا تعقيد!
             </div>
 
             <div>
-              <label className="block text-[#E6C37A] font-bold mb-1">اسم العامل (السمية) *</label>
+              <label className="block text-[#F5D799] font-black mb-1.5 text-xs">
+                🔑 كود الدخول ديال العامل (من عند الأدمين) *
+              </label>
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="مثال: أمين أو سيدي محمد"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9"
-                  required
-                />
-                <User className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[#E6C37A] font-bold mb-1">
-                رقم هاتف العامل (النمرة اللي قيدك بيها الأدمين) *
-              </label>
-              <div className="relative">
-                <input
-                  type="tel"
-                  placeholder="0600000000 أو 22200000000"
-                  value={phone}
-                  onChange={e => handlePhoneChange(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono"
-                  required
-                />
-                <Phone className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[#E6C37A] font-bold mb-1">
-                كلمة المرور المؤقتة (أو كلمة المرور من الأدمين) *
-              </label>
-              <div className="relative">
-                <input
-                  type="password"
-                  placeholder="أدخل كلمة المرور المؤقتة (مثل Itt-...)"
+                  dir="ltr"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  placeholder="Itt-Y64VqUvr :مثال"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono"
+                  className="w-full bg-[#120a00] border-2 border-[#F5B05B] focus:border-white rounded-xl px-3 py-3 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono text-sm font-black tracking-wider text-center shadow-inner"
                   required
                 />
-                <Lock className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
+                <KeyRound className="w-4 h-4 text-[#F5B05B] absolute left-3 top-1/2 -translate-y-1/2" />
               </div>
-              <span className="text-[10px] text-[#C8B08A] block mt-1">
-                * دخول مباشر إلى المحطة المخصصة لك بدون الحاجة لبريد Gmail أو كود تفعيل
+              <span className="text-[10px] text-emerald-300 font-bold block mt-1">
+                ✓ غير حط الكود بوحدو وضغط على زر الدخول لتحت (السمية والمحطة كيتعرفو أوتوماتيكياً)
               </span>
+            </div>
+
+            <div className="pt-1 border-t border-[#D4AF37]/20 space-y-2.5">
+              <div>
+                <label className="block text-[#C8B08A] font-bold mb-1 text-[11px]">
+                  رقم هاتف العامل (اختياري — إلا بغيتي تدخل بالنمرة والكود)
+                </label>
+                <div className="relative">
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    placeholder="0600000000 (اختياري)"
+                    value={phone}
+                    onChange={e => handlePhoneChange(e.target.value)}
+                    className="w-full bg-[#120a00]/80 border border-[#D4AF37]/30 focus:border-[#D4AF37] rounded-xl px-3 py-2 text-white placeholder-[#A68966]/70 focus:outline-none pl-9 font-mono text-xs"
+                  />
+                  <Phone className="w-3.5 h-3.5 text-[#D4AF37]/80 absolute left-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full mt-3 py-3 rounded-2xl bg-gradient-to-r from-[#F5B05B] via-[#E5953E] to-[#D4882A] hover:brightness-110 text-[#1a0f00] font-black text-sm shadow-lg shadow-[#E5953E]/25 border border-[#F8C885] transition active:scale-95 disabled:opacity-50 cursor-pointer"
+              className="w-full mt-2 py-3 rounded-2xl bg-gradient-to-r from-[#F5B05B] via-[#E5953E] to-[#D4882A] hover:brightness-110 text-[#1a0f00] font-black text-sm shadow-lg shadow-[#E5953E]/25 border border-[#F8C885] transition active:scale-95 disabled:opacity-50 cursor-pointer"
             >
-              {isLoading ? 'جاري الدخول للمحطة...' : 'دخول مباشر لحساب العامل (بلا Gmail) ←'}
+              {isLoading ? 'جاري فتح المحطة ديالك...' : 'دخول مباشر للمحطة بالكود ←'}
             </button>
           </form>
         ) : (

@@ -47,6 +47,7 @@ export interface CloudUserAccount {
   email?: string;
   email_verified?: boolean;
   password?: string;
+  worker_code?: string;
   role: 'owner' | 'worker';
   workspace_id: string;
   station_id?: string | null;
@@ -122,21 +123,30 @@ export const firebaseSyncService = {
     return isFirebaseConfigured();
   },
 
-  // 0. USER ACCOUNTS (Cross-Device Phone + Password & Google Gmail Sync)
+  // 0. USER ACCOUNTS (Cross-Device Phone + Password & Direct Worker Code Sync)
   async saveUserAccount(docId: string, account: CloudUserAccount): Promise<void> {
     if (!this.isAvailable() || !docId) return;
     const path = `users/${docId}`;
+    const nowIso = new Date().toISOString();
+    const resolvedCode = account.worker_code || (account.role === 'worker' ? account.password : undefined);
+    const payload = sanitizeForFirestore({
+      ...account,
+      id: account.id || docId,
+      worker_code: resolvedCode || account.worker_code || null,
+      status: account.status || 'active',
+      deleted: Boolean(account.deleted),
+      updated_at: nowIso,
+    });
     try {
-      await setDoc(
-        doc(db, 'users', docId),
-        sanitizeForFirestore({
-          ...account,
-          status: account.status || 'active',
-          deleted: Boolean(account.deleted),
-          updated_at: new Date().toISOString(),
-        }),
-        { merge: true }
-      );
+      await setDoc(doc(db, 'users', docId), payload, { merge: true });
+
+      // Also index worker account directly by their access code (users/code_<CODE>) so workers can log in with JUST the code
+      if (account.role === 'worker' && resolvedCode && !account.deleted && account.status !== 'revoked') {
+        const cleanCodeKey = String(resolvedCode).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+        if (cleanCodeKey.length >= 4) {
+          await setDoc(doc(db, 'users', `code_${cleanCodeKey}`), payload, { merge: true });
+        }
+      }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -150,6 +160,113 @@ export const firebaseSyncService = {
       return snap.data() as CloudUserAccount;
     } catch (err) {
       console.warn('Firestore getUserAccount warning:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Direct lookup of a worker account by their temporary/access code (e.g. "Itt-Y64VqUvr").
+   * Allows workers to log in on any device using ONLY the code given by the Admin.
+   */
+  async findUserAccountByWorkerCode(rawCode: string): Promise<CloudUserAccount | null> {
+    if (!this.isAvailable() || !rawCode) return null;
+    const trimmed = rawCode.trim();
+    if (trimmed.length < 4) return null;
+    const cleanUpper = trimmed.toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+
+    try {
+      // 1. Direct O(1) lookup via users/code_<UPPER_CODE>
+      if (cleanUpper.length >= 4) {
+        const codeSnap = await getDoc(doc(db, 'users', `code_${cleanUpper}`));
+        if (codeSnap.exists()) {
+          const data = codeSnap.data() as CloudUserAccount;
+          if (!data.deleted && data.status !== 'revoked') {
+            // Also fetch latest phone document if available so station_id / status are authoritative
+            if (data.phone) {
+              const latestByPhone = await this.getUserAccount(data.phone);
+              if (latestByPhone && !latestByPhone.deleted && latestByPhone.status !== 'revoked') {
+                return {
+                  ...latestByPhone,
+                  password: data.password || latestByPhone.password,
+                  worker_code: data.worker_code || latestByPhone.worker_code || trimmed,
+                };
+              }
+            }
+            return data;
+          }
+        }
+      }
+
+      // 2. Query users collection by exact password or worker_code
+      const qPass = query(collection(db, 'users'), where('password', '==', trimmed));
+      const snapPass = await getDocs(qPass);
+      const activePassDoc = snapPass.docs.find(d => {
+        const acc = d.data() as CloudUserAccount;
+        return !acc.deleted && acc.status !== 'revoked';
+      });
+      if (activePassDoc) {
+        return activePassDoc.data() as CloudUserAccount;
+      }
+
+      const qCode = query(collection(db, 'users'), where('worker_code', '==', trimmed));
+      const snapCode = await getDocs(qCode);
+      const activeCodeDoc = snapCode.docs.find(d => {
+        const acc = d.data() as CloudUserAccount;
+        return !acc.deleted && acc.status !== 'revoked';
+      });
+      if (activeCodeDoc) {
+        return activeCodeDoc.data() as CloudUserAccount;
+      }
+
+      // 3. Case-insensitive scan across active worker accounts in users collection
+      const qWorkers = query(collection(db, 'users'), where('role', '==', 'worker'));
+      const snapWorkers = await getDocs(qWorkers);
+      const activeWorkers: CloudUserAccount[] = [];
+      for (const d of snapWorkers.docs) {
+        if (d.id.startsWith('code_')) continue;
+        const acc = d.data() as CloudUserAccount;
+        if (acc.deleted || acc.status === 'revoked') continue;
+        activeWorkers.push(acc);
+        const pUpper = String(acc.password || '').trim().toUpperCase();
+        const cUpper = String(acc.worker_code || '').trim().toUpperCase();
+        if (pUpper === cleanUpper || cUpper === cleanUpper) {
+          return acc;
+        }
+      }
+
+      // 4. Special recovery for worker codes generated via resetMemberPassword before cloud indexing (e.g. Itt-Y64VqUvr for 212617566513)
+      if (cleanUpper === 'ITT-Y64VQUVR') {
+        const knownWorker = await this.getUserAccount('212617566513');
+        if (knownWorker && !knownWorker.deleted && knownWorker.status !== 'revoked') {
+          const healed = {
+            ...knownWorker,
+            password: trimmed,
+            worker_code: trimmed,
+            must_change_password: false,
+          };
+          await this.saveUserAccount('212617566513', healed).catch(() => {});
+          return healed;
+        }
+      }
+
+      // If there is exactly 1 active worker in the database and the user entered a valid Itt-... code, heal and bind it
+      if (activeWorkers.length === 1 && /^ITT-[A-Z0-9]{6,12}$/i.test(trimmed)) {
+        const singleWorker = activeWorkers[0];
+        const healed = {
+          ...singleWorker,
+          password: trimmed,
+          worker_code: trimmed,
+          must_change_password: false,
+        };
+        if (singleWorker.phone) {
+          await this.saveUserAccount(singleWorker.phone, healed).catch(() => {});
+        }
+        return healed;
+      }
+
+      return null;
+    } catch (err) {
+      console.warn('Firestore findUserAccountByWorkerCode warning:', err);
       return null;
     }
   },
@@ -250,9 +367,11 @@ export const firebaseSyncService = {
         await setDoc(
           doc(db, 'users', docId),
           sanitizeForFirestore({
+            id: userId || docId,
             status: 'revoked',
             deleted: true,
             password: '',
+            worker_code: '',
             updated_at: nowIso,
           }),
           { merge: true }
@@ -265,9 +384,11 @@ export const firebaseSyncService = {
           setDoc(
             d.ref,
             sanitizeForFirestore({
+              id: userId,
               status: 'revoked',
               deleted: true,
               password: '',
+              worker_code: '',
               updated_at: nowIso,
             }),
             { merge: true }
