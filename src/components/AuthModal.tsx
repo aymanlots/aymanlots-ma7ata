@@ -359,8 +359,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
               <p className="text-sm font-mono font-bold text-white bg-black/60 py-1 px-2.5 rounded-xl border border-[#D4AF37]/30 inline-block" dir="ltr">
                 {email}
               </p>
-              <p className="text-[11px] text-[#C8B08A]">
-                تم إرسال الرمز من <strong>Sahara Express</strong> (<span className="font-mono">noreply@sahara-express.com</span>) عبر خدمة <strong>Resend</strong>. الرمز صالح لمدة 10 دقائق.
+              <p className="text-[11px] text-[#C8B08A] leading-relaxed">
+                تم إرسال الرمز من <strong>صحارى إكسبريس</strong>. الرمز صالح لمدة 10 دقائق (تفقد صندوق الوارد <strong>Inbox</strong> أو <strong>Spam</strong>).
               </p>
             </div>
 

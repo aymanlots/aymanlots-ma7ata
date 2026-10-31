@@ -146,16 +146,32 @@ export async function sendVerificationOtpEmail(
   const senderConfig = resolveValidatedSender();
   const primaryFrom = senderConfig.fromHeader || DEFAULT_MAIL_FROM;
 
-  const subject = `رمز التحقق: ${otpCode}`;
-  const textBody = `رمز التحقق الخاص بك هو: ${otpCode}\nالرمز صالح 10 دقائق.`;
+  const recipientName = cleanRecipient.split('@')[0] || 'عميلنا الكريم';
+  const subject = `تأكيد حسابك في صحارى إكسبريس`;
+  const textBody = [
+    `السلام عليكم ورحمة الله (${recipientName})،`,
+    '',
+    'شكراً لتسجيلك في منصة صحارى إكسبريس لنقل المسافرين والبضائع.',
+    'لإتمام تأكيد بريدك الإلكتروني، يرجى إدخال رمز التفعيل التالي في التطبيق:',
+    '',
+    otpCode,
+    '',
+    'هذا الرمز صالح لمدة 10 دقائق فقط.',
+    'إذا لم تطلب هذا الرمز، يمكنك تجاهل هذه الرسالة بأمان.',
+    '',
+    'مع تحيات فريق صحارى إكسبريس - الداخلة / الكركرات',
+  ].join('\n');
+
   const htmlBody = [
     '<!DOCTYPE html>',
     '<html dir="rtl" lang="ar">',
     '<head><meta charset="utf-8"></head>',
-    '<body style="background-color:#ffffff;color:#000000;font-family:sans-serif;padding:20px;margin:0;direction:rtl;text-align:right;">',
-    '<p style="margin:0 0 12px 0;font-size:16px;">رمز التحقق الخاص بك هو:</p>',
-    `<p style="margin:0 0 12px 0;font-size:24px;font-weight:bold;letter-spacing:4px;">${otpCode}</p>`,
-    '<p style="margin:0;font-size:14px;">الرمز صالح 10 دقائق.</p>',
+    '<body style="background-color:#ffffff;color:#111111;font-family:Tahoma,Arial,sans-serif;padding:20px;margin:0;direction:rtl;text-align:right;line-height:1.7;">',
+    `<p style="margin:0 0 12px 0;font-size:15px;">السلام عليكم ورحمة الله (${recipientName})،</p>`,
+    '<p style="margin:0 0 12px 0;font-size:15px;">شكراً لتسجيلك في منصة <strong>صحارى إكسبريس</strong>. لإتمام تأكيد بريدك الإلكتروني، يرجى إدخال رمز التفعيل التالي في التطبيق:</p>',
+    `<p style="margin:16px 0;font-size:22px;font-weight:bold;color:#111111;">${otpCode}</p>`,
+    '<p style="margin:0 0 12px 0;font-size:14px;color:#333333;">هذا الرمز صالح لمدة 10 دقائق فقط. إذا لم تطلب هذا الرمز، يرجى تجاهل هذه الرسالة.</p>',
+    '<p style="margin:16px 0 0 0;font-size:13px;color:#555555;">مع تحيات فريق صحارى إكسبريس</p>',
     '</body>',
     '</html>',
   ].join('');
@@ -231,7 +247,7 @@ export async function sendVerificationOtpEmail(
           accept: 'application/json',
         },
         body: JSON.stringify({
-          sender: { name: 'Sahara Express', email: brevoSenderEmail },
+          sender: { name: 'صحارى إكسبريس', email: brevoSenderEmail },
           to: [{ email: cleanRecipient }],
           subject,
           textContent: textBody,
@@ -251,7 +267,7 @@ export async function sendVerificationOtpEmail(
     }
   }
 
-  // 3. Fallback to Gmail SMTP (nodemailer) — works for ANY recipient email without needing a verified domain!
+  // 3. Fallback to Gmail SMTP (nodemailer) — sends pure conversational plain-text to avoid Gmail bulk HTML spam filters
   const gmailUser = (
     process.env.GMAIL_USER ||
     process.env.SMTP_USER ||
@@ -278,11 +294,11 @@ export async function sendVerificationOtpEmail(
       });
 
       const info = await transporter.sendMail({
-        from: `Sahara Express <${gmailUser}>`,
+        from: `"صحارى إكسبريس" <${gmailUser}>`,
+        replyTo: gmailUser,
         to: cleanRecipient,
         subject,
         text: textBody,
-        html: htmlBody,
       });
 
       console.log('[Gmail SMTP Fallback Sent]:', {
