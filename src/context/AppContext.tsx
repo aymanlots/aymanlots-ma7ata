@@ -5873,63 +5873,76 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // ============================================================================
-  // REGISTRATION EMAIL OTP (6 Digits + 5-Min Expiry + Nodemailer)
+  // REGISTRATION EMAIL OTP (6 Digits + 10-Min Expiry + Resend API)
   // ============================================================================
+  const getLocalRegOtpRecord = (emailKey: string) => {
+    try {
+      const map = JSON.parse(localStorage.getItem('alittihadia_reg_otps_v1') || '{}');
+      return map[emailKey] || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const saveLocalRegOtpRecord = (emailKey: string, record: any) => {
+    try {
+      const map = JSON.parse(localStorage.getItem('alittihadia_reg_otps_v1') || '{}');
+      map[emailKey] = record;
+      localStorage.setItem('alittihadia_reg_otps_v1', JSON.stringify(map));
+    } catch {}
+  };
+
   const sendRegistrationEmailOtp = async (email: string, userName?: string) => {
     const cleanEmail = String(email || '').trim().toLowerCase();
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return { success: false, error: 'يرجى إدخال عنوان بريد إلكتروني صحيح' };
     }
     try {
-      let res = await fetch('/api/auth/register/send-email-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, userName }),
-      });
-
-      let rawText = await res.text();
+      const endpoints = ['/api/register', '/api/send-otp', '/api/auth/register/send-email-otp'];
+      let res: Response | null = null;
+      let rawText = '';
       let data: any = null;
-      try {
-        data = rawText ? JSON.parse(rawText) : null;
-      } catch {
-        data = null;
-      }
 
-      // If /api/auth/register/send-email-otp returned 404 or non-JSON, fallback to /api/register
-      if ((!res.ok && res.status === 404) || !data) {
+      for (const endpoint of endpoints) {
         try {
-          const fallbackRes = await fetch('/api/register', {
+          const candidateRes = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: cleanEmail, userName }),
           });
-          const fallbackText = await fallbackRes.text();
+          const candidateText = await candidateRes.text();
+          res = candidateRes;
+          rawText = candidateText;
           try {
-            const fallbackData = fallbackText ? JSON.parse(fallbackText) : null;
-            if (fallbackData) {
-              res = fallbackRes;
-              rawText = fallbackText;
-              data = fallbackData;
+            const parsed = candidateText ? JSON.parse(candidateText) : null;
+            if (parsed && typeof parsed === 'object') {
+              data = parsed;
+              break;
             }
           } catch {}
         } catch {}
       }
 
       if (!data) {
-        console.error('[Registration OTP Non-JSON Response]:', rawText);
+        console.error('[Registration OTP Non-JSON Response]:', res?.status, rawText);
         return {
           success: false,
-          error: 'تعذر الاتصال بخادم البريد (استجابة غير صالحة من السيرفر). تأكد من إعدادات Vercel Environment Variables.',
+          error: `تعذر الاتصال بخادم البريد (HTTP ${res?.status || 500} - استجابة غير صالحة). تأكد من عمل git push / Redeploy لآخر تحديث في Vercel وإضافة RESEND_API_KEY.`,
         };
       }
 
-      if (!res.ok || !data.success) {
+      if (!res?.ok || !data.success) {
         return {
           success: false,
           error: data?.error || 'تعذر إرسال كود التحقق إلى البريد الإلكتروني',
           cooldownSeconds: data?.cooldownSeconds,
         };
       }
+
+      if (data.otpRecord) {
+        saveLocalRegOtpRecord(cleanEmail, data.otpRecord);
+      }
+
       return {
         success: true,
         expiresAtMs: data.expiresAtMs,
@@ -5950,46 +5963,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: 'يرجى إدخال كود التحقق المكون من 6 أرقام كاملاً' };
     }
     try {
-      let res = await fetch('/api/auth/register/verify-email-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, otpCode: cleanCode }),
-      });
-
-      let rawText = await res.text();
+      const savedOtpRecord = getLocalRegOtpRecord(cleanEmail);
+      const endpoints = ['/api/register', '/api/auth/register/verify-email-otp', '/api/index'];
+      let res: Response | null = null;
+      let rawText = '';
       let data: any = null;
-      try {
-        data = rawText ? JSON.parse(rawText) : null;
-      } catch {
-        data = null;
-      }
 
-      // Fallback to /api/register
-      if ((!res.ok && res.status === 404) || !data) {
+      for (const endpoint of endpoints) {
         try {
-          const fallbackRes = await fetch('/api/register', {
+          const candidateRes = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: cleanEmail, otpCode: cleanCode }),
+            body: JSON.stringify({
+              email: cleanEmail,
+              otpCode: cleanCode,
+              otpRecord: savedOtpRecord || undefined,
+            }),
           });
-          const fallbackText = await fallbackRes.text();
+          const candidateText = await candidateRes.text();
+          res = candidateRes;
+          rawText = candidateText;
           try {
-            const fallbackData = fallbackText ? JSON.parse(fallbackText) : null;
-            if (fallbackData) {
-              res = fallbackRes;
-              rawText = fallbackText;
-              data = fallbackData;
+            const parsed = candidateText ? JSON.parse(candidateText) : null;
+            if (parsed && typeof parsed === 'object') {
+              data = parsed;
+              break;
             }
           } catch {}
         } catch {}
       }
 
       if (!data) {
-        console.error('[Registration Verify Non-JSON Response]:', rawText);
+        console.error('[Registration Verify Non-JSON Response]:', res?.status, rawText);
         return { success: false, error: 'تعذر التحقق من الكود حالياً (استجابة غير صالحة من السيرفر)' };
       }
 
-      if (!res.ok || !data.success) {
+      if (!res?.ok || !data.success) {
+        if (savedOtpRecord && typeof data?.attempts === 'number') {
+          saveLocalRegOtpRecord(cleanEmail, {
+            ...savedOtpRecord,
+            attempts: data.attempts,
+          });
+        }
         return {
           success: false,
           error: data?.error || 'كود التحقق غير صحيح أو منتهي الصلاحية',

@@ -161,6 +161,15 @@ async function startServer() {
         remainingSends: Math.max(0, OTP_MAX_SENDS_PER_WINDOW - newRecord.sendCount),
         deliveredViaGmail: true,
         messageId: emailDelivery.messageId || null,
+        otpRecord: {
+          email: rawEmail,
+          otp_hash: otpHash,
+          expires_at_ms: expiresAtMs,
+          attempts: 0,
+          send_count: newRecord.sendCount,
+          window_start_ms: newRecord.windowStartMs,
+          last_sent_ms: nowMs,
+        },
       });
     } catch (err: any) {
       console.error('[Registration Send Email OTP Error]:', { message: err?.message });
@@ -171,15 +180,12 @@ async function startServer() {
     }
   };
 
-  app.post('/api/auth/register/send-email-otp', handleSendEmailOtp);
-  app.post('/api/register/send-otp', handleSendEmailOtp);
-  app.post('/api/register', handleSendEmailOtp);
-  app.post('/api/send-otp', handleSendEmailOtp);
-
-  app.post('/api/auth/register/verify-email-otp', async (req, res) => {
+  const handleVerifyEmailOtp = async (req: express.Request, res: express.Response) => {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     try {
       const rawEmail = String(req.body?.email || '').trim().toLowerCase();
       const codeInput = String(req.body?.otpCode || '').trim().replace(/\s+/g, '');
+      const clientRecord = req.body?.otpRecord;
 
       if (!rawEmail || !/^\d{6}$/.test(codeInput)) {
         return res.status(400).json({
@@ -188,7 +194,22 @@ async function startServer() {
         });
       }
 
-      const record = registrationEmailOtpStore.get(rawEmail);
+      const nowMs = Date.now();
+      let record = registrationEmailOtpStore.get(rawEmail);
+      if (!record && clientRecord?.otp_hash && clientRecord?.expires_at_ms) {
+        record = {
+          email: rawEmail,
+          otpHash: String(clientRecord.otp_hash),
+          expiresAtMs: Number(clientRecord.expires_at_ms),
+          attempts: Number(clientRecord.attempts || 0),
+          sendCount: Number(clientRecord.send_count || 1),
+          windowStartMs: Number(clientRecord.window_start_ms || nowMs),
+          lastSentMs: Number(clientRecord.last_sent_ms || nowMs),
+          verified: false,
+          createdAt: new Date(nowMs).toISOString(),
+        };
+      }
+
       if (!record) {
         return res.status(400).json({
           success: false,
@@ -196,7 +217,6 @@ async function startServer() {
         });
       }
 
-      const nowMs = Date.now();
       if (nowMs > record.expiresAtMs) {
         return res.status(400).json({
           success: false,
@@ -243,7 +263,18 @@ async function startServer() {
         error: 'حدث خطأ أثناء التحقق من رمز البريد الإلكتروني',
       });
     }
+  };
+
+  app.post('/api/auth/register/send-email-otp', handleSendEmailOtp);
+  app.post('/api/register/send-otp', handleSendEmailOtp);
+  app.post('/api/send-otp', handleSendEmailOtp);
+  app.post('/api/register', (req, res) => {
+    if (req.body?.otpCode) {
+      return handleVerifyEmailOtp(req, res);
+    }
+    return handleSendEmailOtp(req, res);
   });
+  app.post('/api/auth/register/verify-email-otp', handleVerifyEmailOtp);
 
   // ============================================================================
   // FORGOT PASSWORD EMAIL OTP ENDPOINT (6-Digit Hashed OTP + 10-Min Expiry)

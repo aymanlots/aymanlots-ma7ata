@@ -5,19 +5,15 @@
   "rewrites": [
     {
       "source": "/api/auth/register/send-email-otp",
-      "destination": "/api/send-otp"
+      "destination": "/api/register"
     },
     {
       "source": "/api/auth/register/verify-email-otp",
       "destination": "/api/register"
     },
     {
-      "source": "/api/auth/forgot-password/send-otp",
-      "destination": "/api/send-otp"
-    },
-    {
-      "source": "/api/auth/forgot-password/verify-otp",
-      "destination": "/api/register"
+      "source": "/api/auth/forgot-password/(.*)",
+      "destination": "/api/index"
     },
     {
       "source": "/api/send-otp",
