@@ -168,7 +168,9 @@ const MainApp: React.FC = () => {
           onOpenCollabRoom={() => setShowCollabRoom(true)}
           onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
           onOpenBackupModal={() => setShowBackupModal(true)}
-          onOpenPlatformOwner={() => setShowPlatformOwnerDashboard(true)}
+          onOpenPlatformOwner={
+            userRole === 'platform_owner' ? () => setShowPlatformOwnerDashboard(true) : undefined
+          }
         />
 
         {/* 3-Day Pre-Expiry Reminder Banner */}
@@ -246,7 +248,9 @@ const MainApp: React.FC = () => {
                 onOpenPublicTracking={() => setShowPublicTracking(true)}
                 onOpenGuidedTour={() => setShowGuidedTour(true)}
                 onOpenBackupModal={() => setShowBackupModal(true)}
-                onOpenPlatformOwner={() => setShowPlatformOwnerDashboard(true)}
+                onOpenPlatformOwner={
+                  userRole === 'platform_owner' ? () => setShowPlatformOwnerDashboard(true) : undefined
+                }
               />
             ) : (
               <WorkerStationView
@@ -307,7 +311,9 @@ const MainApp: React.FC = () => {
               onOpenSQLModal={() => setShowSQLModal(true)}
               onOpenPaywall={() => setShowPaywall(true)}
               onOpenPrivacyModal={() => setShowPrivacyModal(true)}
-              onOpenPlatformOwner={() => setShowPlatformOwnerDashboard(true)}
+              onOpenPlatformOwner={
+                userRole === 'platform_owner' ? () => setShowPlatformOwnerDashboard(true) : undefined
+              }
               onOpenCollabRoom={() => setShowCollabRoom(true)}
               onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
               onOpenGuidedTour={() => setShowGuidedTour(true)}
@@ -424,11 +430,13 @@ const MainApp: React.FC = () => {
           onClose={() => setShowSQLModal(false)}
         />
 
-        {/* Platform Owner Dashboard Modal */}
-        <PlatformOwnerDashboard
-          isOpen={showPlatformOwnerDashboard}
-          onClose={() => setShowPlatformOwnerDashboard(false)}
-        />
+        {/* Platform Owner Dashboard Modal (Strictly Platform Owner Only) */}
+        {userRole === 'platform_owner' && (
+          <PlatformOwnerDashboard
+            isOpen={showPlatformOwnerDashboard}
+            onClose={() => setShowPlatformOwnerDashboard(false)}
+          />
+        )}
 
         {/* One-Click Monthly Excel / CSV & Full Backup Modal */}
         <BackupExportModal

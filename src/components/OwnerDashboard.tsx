@@ -1029,7 +1029,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </button>
           )}
 
-          {onOpenPlatformOwner && (
+          {onOpenPlatformOwner && userRole === 'platform_owner' && (
             <button
               type="button"
               onClick={onOpenPlatformOwner}

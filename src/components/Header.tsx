@@ -191,7 +191,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
-              {onOpenPlatformOwner && userRole !== 'worker' && (
+              {onOpenPlatformOwner && userRole === 'platform_owner' && (
                 <button
                   type="button"
                   onClick={() => {

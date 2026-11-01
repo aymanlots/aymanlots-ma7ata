@@ -64,6 +64,8 @@ export interface Workspace {
   updated_at?: string;
   parcels_module_enabled?: boolean; // تشغيل/إيقاف موديول الكوليات (افتراضياً مفعل)
   printer_width?: '58mm' | '80mm';  // حجم الطابعة الحرارية الافتراضي (58 أو 80 مم)
+  owner_name?: string;
+  owner_email?: string;
   owner_phone?: string;
   owner_whatsapp?: string;
   admin_notes?: string; // ملاحظات خاصة بمالك المنصة
@@ -80,8 +82,15 @@ export interface Workspace {
   custom_brand_logo_url?: string;    // رابط أو صورة شعار مخصص على الملصق الحراري
   workers_count?: number;
   stations_count?: number;
+  parcels_count?: number;
+  trips_count?: number;
+  transactions_count?: number;
   collaborations_count?: number;
   last_reset_at?: string;
+  last_active_at?: string;
+  last_actor_name?: string;
+  last_actor_role?: UserRole;
+  last_action_summary?: string;
   subscription_end_date?: string;
   subscription_status?: SubscriptionStatus;
 }
@@ -567,5 +576,40 @@ export interface MoneyTransfer {
   paid_out_by_name?: string | null;
   notes?: string;
 }
+
+// سجل النشاط المباشر في المنصة (مربوط مع Firebase Firestore لمالك التطبيق)
+export type PlatformActivityType =
+  | 'LOGIN'
+  | 'REGISTER'
+  | 'LOGOUT'
+  | 'PARCEL_CREATE'
+  | 'PARCEL_STATUS'
+  | 'TRIP_CREATE'
+  | 'TRIP_DEPART'
+  | 'TRIP_ARRIVE'
+  | 'CASH_IN'
+  | 'CASH_OUT'
+  | 'STATION_CREATE'
+  | 'WORKER_ADD'
+  | 'WORKER_REMOVE'
+  | 'PLAN_CHANGE'
+  | 'SUBSCRIPTION_UPDATE';
+
+export interface PlatformActivityLog {
+  id: string;
+  workspace_id: string;
+  workspace_name: string;
+  workspace_short_id?: string;
+  actor_id: string;
+  actor_name: string;
+  actor_phone?: string;
+  actor_email?: string;
+  actor_role: UserRole;
+  action_type: PlatformActivityType;
+  action_title: string;
+  details?: string;
+  created_at: string;
+}
+
 
 

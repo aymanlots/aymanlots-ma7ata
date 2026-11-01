@@ -565,7 +565,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="grid grid-cols-1 gap-2.5">
             {/* الباك الأول: 99 درهم */}
             <div
-              onClick={() => switchWorkspacePlan('plan_2_two_stations')}
+              onClick={() => {
+                if (userRole === 'platform_owner') {
+                  switchWorkspacePlan('plan_2_two_stations');
+                } else {
+                  onOpenPaywall();
+                }
+              }}
               className={`rounded-2xl p-3.5 border-2 transition cursor-pointer space-y-2 ${
                 isPlan2TwoStations
                   ? 'bg-gradient-to-b from-[#2b1d05]/90 to-black/90 border-[#F5C84C] shadow-lg'
@@ -604,14 +610,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                     : 'bg-white/10 text-white/80'
                 }`}>
-                  {isPlan2TwoStations ? '✓ الباك المفعل حالياً' : 'اضغط لتجربة نظام الباك الأول (99 درهم)'}
+                  {isPlan2TwoStations
+                    ? '✓ الباك المفعل حالياً'
+                    : userRole === 'platform_owner'
+                    ? 'اضغط لتجربة نظام الباك الأول (99 درهم)'
+                    : 'طلب تفعيل الباك الأول (99 درهم)'}
                 </span>
               </div>
             </div>
 
             {/* الباك الثاني: 199 درهم */}
             <div
-              onClick={() => switchWorkspacePlan('plan_1_full')}
+              onClick={() => {
+                if (userRole === 'platform_owner') {
+                  switchWorkspacePlan('plan_1_full');
+                } else {
+                  onOpenPaywall();
+                }
+              }}
               className={`rounded-2xl p-3.5 border-2 transition cursor-pointer space-y-2 ${
                 !isPlan2TwoStations
                   ? 'bg-gradient-to-b from-[#2b1d05]/90 to-black/90 border-[#F5C84C] shadow-lg'
@@ -650,7 +666,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                     : 'bg-[#F5C84C]/20 text-[#F5C84C]'
                 }`}>
-                  {!isPlan2TwoStations ? '✓ الباك المفعل حالياً' : 'اضغط لتفعيل نظام الباك الثاني (199 درهم)'}
+                  {!isPlan2TwoStations
+                    ? '✓ الباك المفعل حالياً'
+                    : userRole === 'platform_owner'
+                    ? 'اضغط لتفعيل نظام الباك الثاني (199 درهم)'
+                    : 'طلب تفعيل الباك الثاني (199 درهم)'}
                 </span>
               </div>
             </div>
@@ -666,14 +686,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span>فتح نافذة الاشتراك وطلب التفعيل عبر واتساب</span>
             </button>
 
-            {onOpenPlatformOwner && (
+            {userRole === 'platform_owner' && onOpenPlatformOwner && (
               <button
                 type="button"
                 onClick={onOpenPlatformOwner}
                 className="w-full py-2.5 px-3 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 hover:bg-amber-500/30 font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition"
               >
                 <Crown className="w-4 h-4 text-amber-400" />
-                <span>إدارة اشتراكات الشركات (تفعيل / توقيف حسابات الشركات اللي كتشري منك)</span>
+                <span>🔒 إدارة اشتراكات الشركات (خاصة بحسابك كمالك التطبيق فقط)</span>
               </button>
             )}
           </div>
@@ -725,10 +745,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                     <button
                       type="button"
-                      onClick={() => switchWorkspacePlan('plan_1_full')}
+                      onClick={() => {
+                        if (userRole === 'platform_owner') {
+                          switchWorkspacePlan('plan_1_full');
+                        } else {
+                          onOpenPaywall();
+                        }
+                      }}
                       className="px-2.5 py-1 rounded-lg bg-[#F5C84C] text-[#111111] text-[10px] font-black shrink-0 cursor-pointer"
                     >
-                      تفعيل الباك الثاني (199 درهم)
+                      {userRole === 'platform_owner' ? 'تفعيل الباك الثاني (199 درهم)' : 'طلب الباك الثاني (199 درهم)'}
                     </button>
                   </div>
                 ) : (
@@ -1231,7 +1257,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
 
-              {(userRole === 'owner' || userRole === 'platform_owner') && (
+              {userRole === 'platform_owner' && (
                 <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                   <button
                     type="button"
@@ -1270,7 +1296,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </span>
                   )}
                 </button>
-                {userRole === 'owner' && (
+                {(userRole === 'owner' || userRole === 'platform_owner') && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1343,7 +1369,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
 
             {/* Add Worker Form */}
-            {showAddWorkerForm && userRole === 'owner' && (
+            {showAddWorkerForm && (userRole === 'owner' || userRole === 'platform_owner') && (
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
@@ -1458,7 +1484,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           </div>
                           <div className="flex items-center gap-2 text-[11px] text-white/80 font-mono mt-0.5 flex-wrap">
                             <span dir="ltr">{member.profile?.phone}</span>
-                            {userRole === 'owner' && member.role === 'worker' && activeWorkerCode && (
+                            {(userRole === 'owner' || userRole === 'platform_owner') && member.role === 'worker' && activeWorkerCode && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1479,7 +1505,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                        {userRole === 'owner' && member.role === 'worker' && (
+                        {(userRole === 'owner' || userRole === 'platform_owner') && member.role === 'worker' && (
                           <select
                             value={member.station_id || stations[0]?.id || ''}
                             onChange={(e) => {
@@ -1503,7 +1529,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           </select>
                         )}
 
-                        {userRole === 'owner' && member.user_id !== currentUser?.id && (
+                        {(userRole === 'owner' || userRole === 'platform_owner') && member.user_id !== currentUser?.id && (
                           <>
                             <button
                               type="button"
@@ -1512,7 +1538,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 if (res.success && res.temporaryPassword) {
                                   setOneTimeCredential({
                                     name: member.profile?.name || 'العامل',
-                                    phone: member.profile?.phone || '',
+                                  phone: member.profile?.phone || '',
                                     temporaryPassword: res.temporaryPassword,
                                   });
                                   showToast('تم توليد وحفظ كود دخول جديد للعامل في السحابة', 'success');
@@ -1614,7 +1640,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                     <span>{copiedCode ? 'تم' : 'نسخ'}</span>
                   </button>
-                  {userRole === 'owner' && (
+                  {(userRole === 'owner' || userRole === 'platform_owner') && (
                     <button
                       onClick={handleRegenerateCode}
                       disabled={isRegenerating}
@@ -1697,10 +1723,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </p>
                 <button
                   type="button"
-                  onClick={() => switchWorkspacePlan('plan_1_full')}
+                  onClick={() => {
+                    if (userRole === 'platform_owner') {
+                      switchWorkspacePlan('plan_1_full');
+                    } else {
+                      onOpenPaywall();
+                    }
+                  }}
                   className="btn-gold w-full py-2.5 rounded-xl font-black text-xs cursor-pointer"
                 >
-                  👑 تفعيل الباك الثاني (199 درهم) لفتح تخصيص اللوغو والاسم
+                  {userRole === 'platform_owner'
+                    ? '👑 تفعيل الباك الثاني (199 درهم) لفتح تخصيص اللوغو والاسم'
+                    : '👑 طلب تفعيل الباك الثاني (199 درهم) لفتح تخصيص اللوغو والاسم'}
                 </button>
               </div>
             ) : (

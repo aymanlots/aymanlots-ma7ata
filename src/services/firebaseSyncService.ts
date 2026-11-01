@@ -11,7 +11,15 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured } from '../lib/firebase';
-import { Workspace, Station, Parcel, Transaction, Trip, WorkspaceMember } from '../types/database';
+import {
+  Workspace,
+  Station,
+  Parcel,
+  Transaction,
+  Trip,
+  WorkspaceMember,
+  PlatformActivityLog,
+} from '../types/database';
 
 export enum OperationType {
   CREATE = 'create',
@@ -431,6 +439,8 @@ export const firebaseSyncService = {
           name: ws.name,
           created_by: ws.created_by || null,
           owner_id: ws.created_by || null,
+          owner_name: ws.owner_name || null,
+          owner_email: ws.owner_email || null,
           owner_phone: ws.owner_phone || null,
           owner_whatsapp: ws.owner_whatsapp || null,
           admin_notes: ws.admin_notes || null,
@@ -445,6 +455,10 @@ export const firebaseSyncService = {
           max_workers_per_station: ws.max_workers_per_station ?? 99,
           max_collaborations: ws.max_collaborations ?? 999,
           last_reset_at: ws.last_reset_at || null,
+          last_active_at: ws.last_active_at || null,
+          last_actor_name: ws.last_actor_name || null,
+          last_actor_role: ws.last_actor_role || null,
+          last_action_summary: ws.last_action_summary || null,
           subscription_end_date: ws.subscription_end_date || null,
           subscription_status: ws.subscription_status || 'active',
           created_at: ws.created_at || new Date().toISOString(),
@@ -495,20 +509,52 @@ export const firebaseSyncService = {
         }
       });
 
-      const list: Workspace[] = [];
+      const rawWorkspaces: Workspace[] = [];
       wsSnap.forEach((d) => {
         const ws = d.data() as Workspace;
-        const ownerAcc = ownersByWs.get(ws.id);
-        list.push({
+        rawWorkspaces.push({
           ...ws,
           id: ws.id || d.id,
-          owner_phone: ws.owner_phone || ownerAcc?.phone || '',
-          owner_whatsapp: ws.owner_whatsapp || ownerAcc?.whatsapp_number || ownerAcc?.phone || '',
-          workers_count: ws.workers_count ?? (workersCountByWs.get(ws.id) || 0),
         });
       });
 
-      return list.sort(
+      // Fetch live subcollection counts in parallel for each workspace
+      const enriched = await Promise.all(
+        rawWorkspaces.map(async (ws) => {
+          const ownerAcc = ownersByWs.get(ws.id);
+          let stationsCount = ws.stations_count ?? 0;
+          let parcelsCount = ws.parcels_count ?? 0;
+          let tripsCount = ws.trips_count ?? 0;
+          let txCount = ws.transactions_count ?? 0;
+          try {
+            const [stSnap, pclSnap, trpSnap, txSnap] = await Promise.all([
+              getDocs(collection(db, 'workspaces', ws.id, 'stations')),
+              getDocs(collection(db, 'workspaces', ws.id, 'parcels')),
+              getDocs(collection(db, 'workspaces', ws.id, 'trips')),
+              getDocs(collection(db, 'workspaces', ws.id, 'transactions')),
+            ]);
+            stationsCount = stSnap.size;
+            parcelsCount = pclSnap.size;
+            tripsCount = trpSnap.size;
+            txCount = txSnap.size;
+          } catch {}
+
+          return {
+            ...ws,
+            owner_name: ws.owner_name || ownerAcc?.name || '',
+            owner_email: ws.owner_email || ownerAcc?.email || '',
+            owner_phone: ws.owner_phone || ownerAcc?.phone || '',
+            owner_whatsapp: ws.owner_whatsapp || ownerAcc?.whatsapp_number || ownerAcc?.phone || '',
+            workers_count: workersCountByWs.get(ws.id) ?? ws.workers_count ?? 0,
+            stations_count: stationsCount,
+            parcels_count: parcelsCount,
+            trips_count: tripsCount,
+            transactions_count: txCount,
+          };
+        })
+      );
+
+      return enriched.sort(
         (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
       );
     } catch (err) {
@@ -896,5 +942,213 @@ export const firebaseSyncService = {
     return () => {
       unsubs.forEach((u) => u());
     };
+  },
+
+  // 7. PLATFORM OWNER LIVE ACTIVITY MONITORING & WORKSPACE DELETION
+  async logPlatformActivity(
+    entry: Omit<PlatformActivityLog, 'id' | 'created_at'>
+  ): Promise<void> {
+    if (!this.isAvailable() || !entry.workspace_id) return;
+    const nowIso = new Date().toISOString();
+    const logId = `act_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const fullEntry: PlatformActivityLog = sanitizeForFirestore({
+      ...entry,
+      id: logId,
+      created_at: nowIso,
+    });
+
+    try {
+      const wsUpdate: Record<string, any> = {
+        last_active_at: nowIso,
+        last_actor_name: entry.actor_name,
+        last_actor_role: entry.actor_role,
+        last_action_summary: entry.action_title,
+        updated_at: nowIso,
+      };
+      if (entry.actor_role === 'owner' || entry.actor_role === 'admin' || entry.actor_role === 'platform_owner') {
+        if (entry.actor_name) wsUpdate.owner_name = entry.actor_name;
+        if (entry.actor_email) wsUpdate.owner_email = entry.actor_email;
+        if (entry.actor_phone) wsUpdate.owner_phone = entry.actor_phone;
+      }
+
+      await Promise.all([
+        setDoc(doc(db, 'platform_activity_logs', logId), fullEntry),
+        setDoc(doc(db, 'workspaces', entry.workspace_id, 'activity_logs', logId), fullEntry),
+        setDoc(doc(db, 'workspaces', entry.workspace_id), sanitizeForFirestore(wsUpdate), {
+          merge: true,
+        }),
+      ]);
+    } catch (err) {
+      console.warn('Firestore logPlatformActivity warning:', err);
+    }
+  },
+
+  async listPlatformActivityLogs(workspaceId?: string): Promise<PlatformActivityLog[]> {
+    if (!this.isAvailable()) return [];
+    try {
+      const colRef = workspaceId
+        ? collection(db, 'workspaces', workspaceId, 'activity_logs')
+        : collection(db, 'platform_activity_logs');
+      const snap = await getDocs(colRef);
+      const list: PlatformActivityLog[] = [];
+      snap.forEach((d) => {
+        list.push(d.data() as PlatformActivityLog);
+      });
+      return list
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+        .slice(0, 150);
+    } catch (err) {
+      console.warn('Firestore listPlatformActivityLogs warning:', err);
+      return [];
+    }
+  },
+
+  subscribeToPlatformActivityLogs(
+    onUpdate: (logs: PlatformActivityLog[]) => void
+  ): Unsubscribe {
+    if (!this.isAvailable()) return () => {};
+    return onSnapshot(
+      collection(db, 'platform_activity_logs'),
+      (snap) => {
+        const list: PlatformActivityLog[] = [];
+        snap.forEach((d) => {
+          list.push(d.data() as PlatformActivityLog);
+        });
+        list.sort(
+          (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        );
+        onUpdate(list.slice(0, 150));
+      },
+      (err) => {
+        console.warn('subscribeToPlatformActivityLogs warning:', err);
+      }
+    );
+  },
+
+  async inspectWorkspaceDetailsFromCloud(wsId: string): Promise<{
+    stations: Station[];
+    parcels: Parcel[];
+    transactions: Transaction[];
+    trips: Trip[];
+    users: CloudUserAccount[];
+    activityLogs: PlatformActivityLog[];
+  }> {
+    if (!this.isAvailable() || !wsId) {
+      return { stations: [], parcels: [], transactions: [], trips: [], users: [], activityLogs: [] };
+    }
+    try {
+      const [stSnap, pclSnap, txSnap, trpSnap, actSnap, usersSnap] = await Promise.all([
+        getDocs(collection(db, 'workspaces', wsId, 'stations')),
+        getDocs(collection(db, 'workspaces', wsId, 'parcels')),
+        getDocs(collection(db, 'workspaces', wsId, 'transactions')),
+        getDocs(collection(db, 'workspaces', wsId, 'trips')),
+        getDocs(collection(db, 'workspaces', wsId, 'activity_logs')),
+        getDocs(query(collection(db, 'users'), where('workspace_id', '==', wsId))),
+      ]);
+
+      const stations: Station[] = [];
+      stSnap.forEach((d) => stations.push(d.data() as Station));
+
+      const parcels: Parcel[] = [];
+      pclSnap.forEach((d) => parcels.push(d.data() as Parcel));
+      parcels.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      const transactions: Transaction[] = [];
+      txSnap.forEach((d) => transactions.push(d.data() as Transaction));
+      transactions.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      const trips: Trip[] = [];
+      trpSnap.forEach((d) => trips.push(d.data() as Trip));
+      trips.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      const activityLogs: PlatformActivityLog[] = [];
+      actSnap.forEach((d) => activityLogs.push(d.data() as PlatformActivityLog));
+      activityLogs.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      const users: CloudUserAccount[] = [];
+      usersSnap.forEach((d) => {
+        if (d.id.startsWith('code_')) return;
+        const u = d.data() as CloudUserAccount;
+        if (!u.deleted && u.status !== 'revoked') {
+          users.push(u);
+        }
+      });
+
+      return { stations, parcels, transactions, trips, users, activityLogs };
+    } catch (err) {
+      console.warn('Firestore inspectWorkspaceDetailsFromCloud warning:', err);
+      return { stations: [], parcels: [], transactions: [], trips: [], users: [], activityLogs: [] };
+    }
+  },
+
+  async deleteWorkspaceCompletelyFromCloud(wsId: string, ownerPhone?: string): Promise<void> {
+    if (!this.isAvailable() || !wsId) return;
+
+    // 1. Delete all subcollections of workspaces/{wsId}
+    const subcollections = [
+      'stations',
+      'parcels',
+      'transactions',
+      'trips',
+      'members',
+      'activity_logs',
+    ];
+    await Promise.all(
+      subcollections.map(async (sub) => {
+        try {
+          const snap = await getDocs(collection(db, 'workspaces', wsId, sub));
+          await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+        } catch (err) {
+          console.warn(`Warning deleting subcollection ${sub} for ${wsId}:`, err);
+        }
+      })
+    );
+
+    // 2. Delete all user accounts (owner + workers + code_* documents) linked to this workspace
+    try {
+      const usersQuery = query(collection(db, 'users'), where('workspace_id', '==', wsId));
+      const usersSnap = await getDocs(usersQuery);
+      const userDeletions: Promise<void>[] = [];
+      usersSnap.docs.forEach((d) => {
+        const acc = d.data() as CloudUserAccount;
+        userDeletions.push(deleteDoc(d.ref));
+        const rawCode = acc.worker_code || acc.password;
+        if (rawCode) {
+          const cleanCodeKey = String(rawCode).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+          if (cleanCodeKey.length >= 4) {
+            userDeletions.push(deleteDoc(doc(db, 'users', `code_${cleanCodeKey}`)).catch(() => {}));
+          }
+        }
+      });
+      if (ownerPhone) {
+        const cleanOwnerPhone = ownerPhone.replace(/[^0-9]/g, '');
+        if (cleanOwnerPhone) {
+          userDeletions.push(deleteDoc(doc(db, 'users', cleanOwnerPhone)).catch(() => {}));
+        }
+      }
+      await Promise.all(userDeletions);
+    } catch (err) {
+      console.warn('Warning deleting workspace users from Firestore:', err);
+    }
+
+    // 3. Delete platform_activity_logs entries for this workspace
+    try {
+      const actQuery = query(
+        collection(db, 'platform_activity_logs'),
+        where('workspace_id', '==', wsId)
+      );
+      const actSnap = await getDocs(actQuery);
+      await Promise.all(actSnap.docs.map((d) => deleteDoc(d.ref)));
+    } catch (err) {
+      console.warn('Warning deleting platform_activity_logs for workspace:', err);
+    }
+
+    // 4. Finally delete the workspace document itself
+    const path = `workspaces/${wsId}`;
+    try {
+      await deleteDoc(doc(db, 'workspaces', wsId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
   },
 };

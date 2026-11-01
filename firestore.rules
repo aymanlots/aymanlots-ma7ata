@@ -25,7 +25,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get, list: if true;
       allow create, update: if isValidId(userId) && incoming().id is string && incoming().id.size() <= 128;
-      allow delete: if false;
+      allow delete: if isValidId(userId);
     }
 
     // 6-digit WhatsApp OTP records for password recovery (5-minute expiry & rate limit tracking)
@@ -41,11 +41,18 @@ service cloud.firestore {
       allow delete: if isValidId(phone);
     }
 
+    // Platform-wide live activity logs (for Platform Owner monitoring)
+    match /platform_activity_logs/{logId} {
+      allow read: if true;
+      allow create, update: if isValidId(logId) && incoming().id is string && incoming().workspace_id is string;
+      allow delete: if isValidId(logId);
+    }
+
     // Workspaces and their subcollections
     match /workspaces/{workspaceId} {
       allow get, list: if true;
       allow create, update: if isValidId(workspaceId) && incoming().id is string && incoming().name is string && incoming().name.size() <= 200;
-      allow delete: if false;
+      allow delete: if isValidId(workspaceId);
 
       // Stations
       match /stations/{stationId} {
@@ -80,6 +87,13 @@ service cloud.firestore {
         allow read: if true;
         allow create, update: if isValidId(memberId);
         allow delete: if isValidId(memberId);
+      }
+
+      // Per-workspace activity logs
+      match /activity_logs/{logId} {
+        allow read: if true;
+        allow create, update: if isValidId(logId) && incoming().id is string;
+        allow delete: if isValidId(logId);
       }
     }
   }

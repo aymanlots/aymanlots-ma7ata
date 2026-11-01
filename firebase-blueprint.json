@@ -149,6 +149,27 @@
         "updated_at": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "phone", "whatsapp_number", "otp_code", "expires_at_ms"]
+    },
+    "PlatformActivityLog": {
+      "title": "PlatformActivityLog",
+      "description": "Live activity log entry for workspace managers and workers tracked in Firebase",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "workspace_id": { "type": "string", "maxLength": 128 },
+        "workspace_name": { "type": "string", "maxLength": 200 },
+        "workspace_short_id": { "type": "string", "maxLength": 32 },
+        "actor_id": { "type": "string", "maxLength": 128 },
+        "actor_name": { "type": "string", "maxLength": 128 },
+        "actor_phone": { "type": "string", "maxLength": 32 },
+        "actor_email": { "type": "string", "maxLength": 128 },
+        "actor_role": { "type": "string", "enum": ["owner", "admin", "worker", "platform_owner"] },
+        "action_type": { "type": "string", "maxLength": 64 },
+        "action_title": { "type": "string", "maxLength": 300 },
+        "details": { "type": "string", "maxLength": 500 },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "workspace_id", "actor_name", "action_type", "action_title", "created_at"]
     }
   },
   "firestore": {
@@ -159,6 +180,10 @@
     "/password_reset_otps/{phone}": {
       "schema": "PasswordResetOtp",
       "description": "6-digit OTP codes with 5-minute TTL and rate limit counters for WhatsApp password reset"
+    },
+    "/platform_activity_logs/{logId}": {
+      "schema": "PlatformActivityLog",
+      "description": "Global platform activity logs for Platform Owner monitoring"
     },
     "/workspaces/{workspaceId}": {
       "schema": "Workspace",
@@ -179,6 +204,10 @@
     "/workspaces/{workspaceId}/trips/{tripId}": {
       "schema": "Trip",
       "description": "Inter-station transport trips and vehicle dispatch"
+    },
+    "/workspaces/{workspaceId}/activity_logs/{logId}": {
+      "schema": "PlatformActivityLog",
+      "description": "Per-workspace live activity log entries"
     }
   }
 }

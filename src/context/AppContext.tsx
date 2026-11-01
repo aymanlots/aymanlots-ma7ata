@@ -405,6 +405,7 @@ interface AppContextType {
   updateWorkspaceNotes: (workspaceId: string, notes: string) => Promise<{ success: boolean; error?: string }>;
   updateWorkspaceQuotas: (workspaceId: string, quotas: { max_workers: number; max_stations: number; max_workers_per_station?: number; max_collaborations: number; plan_name?: string; plan_tier?: 'plan_1_full' | 'plan_2_two_stations' }) => Promise<{ success: boolean; error?: string }>;
   switchWorkspacePlan: (planTier: 'plan_1_full' | 'plan_2_two_stations', workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  deleteWorkspaceFromPlatform: (workspaceId: string) => Promise<{ success: boolean; error?: string }>;
 
   // Password Reset System (Worker to Admin, Automatic WhatsApp Recovery for Manager) & Contact Update
   passwordResetRequests: PasswordResetRequest[];
@@ -900,27 +901,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, []);
 
+  const checkIsMasterAccount = useCallback(
+    (user?: Profile | null, ws?: Workspace | null): boolean => {
+      if (!user) return false;
+      const emailNorm = (user.email || '').trim().toLowerCase();
+      const phoneNorm = cleanPhoneNumber(user.phone || '');
+      const whatsappNorm = cleanPhoneNumber(user.whatsapp_number || '');
+      const wsPhoneNorm = cleanPhoneNumber(ws?.owner_phone || '');
+      const wsWhatsappNorm = cleanPhoneNumber(ws?.owner_whatsapp || '');
+      const masterPhones = new Set([
+        '212618961387',
+        '0618961387',
+      ]);
+      return (
+        emailNorm === 'aissaaimanekhlifi@gmail.com' ||
+        masterPhones.has(phoneNorm) ||
+        masterPhones.has(whatsappNorm) ||
+        masterPhones.has(wsPhoneNorm) ||
+        masterPhones.has(wsWhatsappNorm)
+      );
+    },
+    []
+  );
+
   // Automatically detect Platform Owner account & keep workspaces list synced in real time
   useEffect(() => {
     if (!currentUser) {
       setIsPlatformOwner(false);
       return;
     }
-    const emailNorm = (currentUser.email || '').trim().toLowerCase();
-    const phoneNorm = cleanPhoneNumber(currentUser.phone || '');
-    const isMasterAccount =
-      emailNorm === 'aissaaimanekhlifi@gmail.com' ||
-      phoneNorm === '212618961387' ||
-      phoneNorm === '0618961387';
-
-    if (isMasterAccount) {
+    if (checkIsMasterAccount(currentUser, currentWorkspace)) {
       setIsPlatformOwner(true);
       refreshPlatformWorkspaces();
+    } else {
+      setIsPlatformOwner(false);
+      setAllWorkspacesState(currentWorkspace ? [currentWorkspace] : []);
+      setAllSubscriptionsState(subscription ? [subscription] : []);
+      localStorage.removeItem('alittihadia_all_workspaces');
+      localStorage.removeItem('alittihadia_all_subscriptions');
     }
-  }, [currentUser, refreshPlatformWorkspaces]);
+  }, [currentUser, currentWorkspace?.id, currentWorkspace?.owner_phone, checkIsMasterAccount, refreshPlatformWorkspaces]);
 
   useEffect(() => {
-    if (!firebaseSyncService.isAvailable() || !currentUser) return;
+    if (!isPlatformOwner || !firebaseSyncService.isAvailable() || !currentUser) return;
     const unsub = firebaseSyncService.subscribeToAllWorkspaces((cloudWorkspaces) => {
       if (!cloudWorkspaces || cloudWorkspaces.length === 0) return;
       const wsList: Workspace[] = [];
@@ -963,7 +986,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setAllSubscriptionsState(subList);
     });
     return () => unsub();
-  }, [currentUser?.id]);
+  }, [isPlatformOwner, currentUser?.id]);
 
   // Load workspace data from Supabase when configured and logged in
   const loadWorkspaceFromCloud = useCallback(async (wsId: string, userId?: string) => {
@@ -972,14 +995,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!supabase) return;
 
     try {
-      // 1. Check platform_owners exclusively via server-side RPC (never localStorage)
+      // 1. Check platform_owners exclusively via server-side RPC or master account check
       localStorage.removeItem('alittihadia_platform_owners');
       if (userId && isValidUUID(userId)) {
         const { data: isOwnerRpc, error: poErr } = await supabase.rpc('rpc_check_is_platform_owner');
         const ownerVerified = typeof isOwnerRpc === 'boolean'
           ? isOwnerRpc
           : Boolean(isOwnerRpc?.is_platform_owner);
-        if (!poErr && ownerVerified) {
+        if ((!poErr && ownerVerified) || checkIsMasterAccount(currentUser, currentWorkspace)) {
           setIsPlatformOwner(true);
           await refreshPlatformWorkspaces();
         } else {
@@ -2318,8 +2341,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         // Always sync new workspace, admin member, and user account to Firebase Firestore (even when rpcCreated is true)
         if (firebaseSyncService.isAvailable()) {
+          const enrichedNewWs: Workspace = {
+            ...newWorkspace,
+            owner_name: newProfile.name,
+            owner_email: cleanEmail,
+            owner_phone: cleanPhone,
+            owner_whatsapp: cleanWhatsapp,
+          };
           await Promise.all([
-            firebaseSyncService.syncWorkspace(newWorkspace),
+            firebaseSyncService.syncWorkspace(enrichedNewWs),
             firebaseSyncService.syncWorkspaceMember(newWorkspace.id, adminMember),
             firebaseSyncService.saveUserAccount(cleanPhone, {
               id: newProfile.id,
@@ -2335,6 +2365,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               status: 'active',
               deleted: false,
               created_at: newProfile.created_at,
+            }),
+            firebaseSyncService.logPlatformActivity({
+              workspace_id: newWorkspace.id,
+              workspace_name: newWorkspace.name,
+              workspace_short_id: newWorkspace.short_id,
+              actor_id: newProfile.id,
+              actor_name: newProfile.name,
+              actor_phone: cleanPhone,
+              actor_email: cleanEmail,
+              actor_role: 'owner',
+              action_type: 'REGISTER',
+              action_title: `فتح حساب شركة جديد في النظام (${newWorkspace.name})`,
+              details: `المدير: ${newProfile.name} | الهاتف: ${cleanPhone} | البريد: ${cleanEmail}`,
             }),
           ]).catch(() => {});
         }
@@ -2662,6 +2705,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
           } catch {}
 
+          if (cloudAcc.workspace_id) {
+            firebaseSyncService
+              .logPlatformActivity({
+                workspace_id: cloudAcc.workspace_id,
+                workspace_name: `Sahara📦 Express - ${finalName}`,
+                actor_id: restoredProfile.id,
+                actor_name: restoredProfile.name,
+                actor_phone: resolvedPhone,
+                actor_email: cloudAcc.email,
+                actor_role: cloudAcc.role === 'worker' ? 'worker' : 'owner',
+                action_type: 'LOGIN',
+                action_title:
+                  cloudAcc.role === 'worker'
+                    ? `دخول عامل للمحطة (${restoredProfile.name})`
+                    : `تسجيل دخول المدير (${restoredProfile.name})`,
+                details: `الهاتف: ${resolvedPhone}${cloudAcc.email ? ' | البريد: ' + cloudAcc.email : ''}`,
+              })
+              .catch(() => {});
+          }
+
           showToast(`مرحباً بك يا ${restoredProfile.name}! تم الدخول لحسابك مباشرة بنجاح`, 'success');
           return { success: true };
         }
@@ -2890,6 +2953,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setAllTransactions(cloudData.transactions);
           setAllTrips(cloudData.trips);
           if (cloudData.members.length > 0) setWorkspaceMembers(cloudData.members);
+          firebaseSyncService
+            .logPlatformActivity({
+              workspace_id: existingAcc.workspace_id,
+              workspace_name: cloudData.workspace?.name || `Sahara📦 Express - ${restoredProfile.name}`,
+              workspace_short_id: cloudData.workspace?.short_id,
+              actor_id: restoredProfile.id,
+              actor_name: restoredProfile.name,
+              actor_phone: restoredProfile.phone,
+              actor_email: gUser.email || existingAcc.email,
+              actor_role: 'owner',
+              action_type: 'LOGIN',
+              action_title: `تسجيل دخول عبر Gmail (${restoredProfile.name})`,
+              details: `البريد: ${gUser.email || existingAcc.email || '—'}`,
+            })
+            .catch(() => {});
         }
 
         showToast(`مرحباً بعودتك يا ${restoredProfile.name}! تم فتح حسابك ومزامنة بياناتك عبر Gmail`, 'success');
@@ -3526,6 +3604,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           deleted: false,
           created_at: newWorkerProfile.created_at,
         }),
+        firebaseSyncService.logPlatformActivity({
+          workspace_id: wsId,
+          workspace_name: currentWorkspace.name,
+          workspace_short_id: currentWorkspace.short_id,
+          actor_id: currentUser?.id || 'owner',
+          actor_name: currentUser?.name || 'المدير',
+          actor_phone: currentUser?.phone,
+          actor_email: currentUser?.email,
+          actor_role: userRole,
+          action_type: 'WORKER_ADD',
+          action_title: `إضافة عامل جديد: ${newWorkerProfile.name}`,
+          details: `هاتف العامل: ${canonicalPhone} | كود الدخول: ${tempPassword}`,
+        }),
       ]).catch(err => {
         console.warn('Firebase addWorkerByOwner sync warning:', err);
       });
@@ -3635,6 +3726,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.syncTransaction(newTx.workspace_id, newTx).catch(err => {
         console.warn('Firebase tx sync error:', err);
       });
+      firebaseSyncService
+        .logPlatformActivity({
+          workspace_id: newTx.workspace_id,
+          workspace_name: currentWorkspace?.name || 'الشركة',
+          workspace_short_id: currentWorkspace?.short_id,
+          actor_id: currentUser.id,
+          actor_name: currentUser.name,
+          actor_phone: currentUser.phone,
+          actor_email: currentUser.email,
+          actor_role: userRole,
+          action_type: newTx.type === 'cash_out' || newTx.type === 'parcel_cod_payout' ? 'CASH_OUT' : 'CASH_IN',
+          action_title: `عملية صندوق (${newTx.amount} ${newTx.currency}) — ${st?.name || 'المحطة'}`,
+          details: newTx.reason || newTx.note || newTx.type,
+        })
+        .catch(() => {});
     }
 
     showToast(`تم تسجيل السند بنجاح بمبلغ ${newTx.amount} ${newTx.currency}`, 'success');
@@ -4303,6 +4409,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.syncParcel(newParcel.workspace_id, newParcel).catch(err => {
         console.warn('Firebase parcel sync error:', err);
       });
+      firebaseSyncService
+        .logPlatformActivity({
+          workspace_id: newParcel.workspace_id,
+          workspace_name: currentWorkspace?.name || 'الشركة',
+          workspace_short_id: currentWorkspace?.short_id,
+          actor_id: currentUser.id,
+          actor_name: currentUser.name,
+          actor_phone: currentUser.phone,
+          actor_email: currentUser.email,
+          actor_role: userRole,
+          action_type: 'PARCEL_CREATE',
+          action_title: `تسجيل كولي جديد [${newParcel.tracking_code}] (${newParcel.origin_station_name} ➔ ${newParcel.destination_station_name})`,
+          details: `المرسل: ${newParcel.sender_name} | المستلم: ${newParcel.receiver_name} | المبلغ: ${newParcel.amount_due} ${newParcel.currency}`,
+        })
+        .catch(() => {});
     }
 
     if (amountPaid > 0) {
@@ -4465,6 +4586,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.syncParcel(updated.workspace_id, updated).catch(err => {
         console.warn('Firebase parcel sync error:', err);
       });
+      if (currentUser) {
+        firebaseSyncService
+          .logPlatformActivity({
+            workspace_id: parcel.workspace_id,
+            workspace_name: currentWorkspace?.name || 'الشركة',
+            workspace_short_id: currentWorkspace?.short_id,
+            actor_id: currentUser.id,
+            actor_name: currentUser.name,
+            actor_phone: currentUser.phone,
+            actor_email: currentUser.email,
+            actor_role: userRole,
+            action_type: 'PARCEL_STATUS',
+            action_title: `تحديث حالة كولي [${parcel.tracking_code}] إلى: ${
+              status === 'delivered'
+                ? 'تم التسليم للمستلم'
+                : status === 'arrived'
+                ? 'وصل للمحطة (فـ الستوك)'
+                : status === 'in_transit'
+                ? 'في الطريق'
+                : status
+            }`,
+            details: `المستلم: ${parcel.receiver_name}`,
+          })
+          .catch(() => {});
+      }
     }
 
     showToast(`تم تحديث حالة الكولي [${parcel.tracking_code}] بنجاح`, 'success');
@@ -5613,6 +5759,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.syncStation(wsId, newSt).catch(err => {
         console.warn('Firebase station sync error:', err);
       });
+      if (currentUser) {
+        firebaseSyncService
+          .logPlatformActivity({
+            workspace_id: wsId,
+            workspace_name: currentWorkspace?.name || 'الشركة',
+            workspace_short_id: currentWorkspace?.short_id,
+            actor_id: currentUser.id,
+            actor_name: currentUser.name,
+            actor_phone: currentUser.phone,
+            actor_email: currentUser.email,
+            actor_role: userRole,
+            action_type: 'STATION_CREATE',
+            action_title: `إنشاء محطة جديدة: ${newSt.name} (${newSt.city})`,
+            details: `العملة: ${chosenCurrency} | الدولة: ${finalCountry === 'MR' ? 'موريتانيا' : 'المغرب'}`,
+          })
+          .catch(() => {});
+      }
     }
 
     showToast(`تمت إضافة محطة "${newSt.name}" (${chosenCurrency}) بنجاح`, 'success');
@@ -5980,6 +6143,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     action: 'activate' | 'extend' | 'suspend', 
     months: number = 1
   ) => {
+    if (!isPlatformOwner && !checkIsMasterAccount(currentUser, currentWorkspace)) {
+      return { success: false, error: 'هذه الصلاحية خاصة بمالك التطبيق فقط' };
+    }
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(workspaceId)) {
       const { data: rpcRes, error } = await supabase.rpc('rpc_platform_update_subscription', {
@@ -6066,6 +6232,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Platform Owner Controls: Update Workspace Notes via Firestore & server-side RPC
   const updateWorkspaceNotes = async (workspaceId: string, notes: string) => {
+    if (!isPlatformOwner && !checkIsMasterAccount(currentUser, currentWorkspace)) {
+      return { success: false, error: 'هذه الصلاحية خاصة بمالك التطبيق فقط' };
+    }
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(workspaceId)) {
       await supabase.rpc('rpc_platform_update_subscription', {
@@ -6103,6 +6272,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       plan_tier?: 'plan_1_full' | 'plan_2_two_stations';
     }
   ) => {
+    if (!isPlatformOwner && !checkIsMasterAccount(currentUser, currentWorkspace)) {
+      return { success: false, error: 'هذه الصلاحية خاصة بمالك التطبيق فقط' };
+    }
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(workspaceId)) {
       await supabase.rpc('rpc_platform_update_subscription', {
@@ -6167,6 +6339,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     planTier: 'plan_1_full' | 'plan_2_two_stations',
     targetWorkspaceId?: string
   ) => {
+    if (!isPlatformOwner && !checkIsMasterAccount(currentUser, currentWorkspace)) {
+      showToast('لتغيير أو ترقية باقتك، يرجى التواصل مع إدارة التطبيق عبر واتساب لتفعيل الباقة.', 'info');
+      return { success: false, error: 'هذه الصلاحية خاصة بمالك التطبيق فقط' };
+    }
     const wsId = targetWorkspaceId || currentWorkspace?.id;
     if (!wsId) return { success: false, error: 'لا توجد مساحة عمل نشطة' };
 
@@ -6191,6 +6367,59 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
     return res;
+  };
+
+  // Permanently delete a workspace, its subcollections (stations, parcels, trips, transactions, members, activity_logs) and its users from Firebase Firestore
+  const deleteWorkspaceFromPlatform = async (
+    workspaceId: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!isPlatformOwner && !checkIsMasterAccount(currentUser, currentWorkspace)) {
+      return { success: false, error: 'هذه الصلاحية خاصة بمالك التطبيق فقط' };
+    }
+    if (!workspaceId) {
+      return { success: false, error: 'معرف الشركة غير صالح' };
+    }
+    if (currentWorkspace?.id === workspaceId) {
+      return {
+        success: false,
+        error: 'لا يمكنك حذف مساحة العمل الرئيسية الخاصة بك التي أنت مسجل الدخول إليها حالياً',
+      };
+    }
+
+    const targetWs = allWorkspacesState.find((w) => w.id === workspaceId);
+
+    try {
+      if (firebaseSyncService.isAvailable()) {
+        await firebaseSyncService.deleteWorkspaceCompletelyFromCloud(
+          workspaceId,
+          targetWs?.owner_phone
+        );
+      }
+
+      setAllWorkspacesState((prev) => {
+        const next = prev.filter((w) => w.id !== workspaceId);
+        localStorage.setItem('alittihadia_all_workspaces', JSON.stringify(next));
+        return next;
+      });
+
+      setAllSubscriptionsState((prev) => {
+        const next = prev.filter((s) => s.workspace_id !== workspaceId);
+        localStorage.setItem('alittihadia_all_subscriptions', JSON.stringify(next));
+        return next;
+      });
+
+      showToast(
+        `🗑️ تم حذف شركة "${targetWs?.name || workspaceId}" وحساب مديرها وجميع بياناتها من Firebase نهائياً`,
+        'info'
+      );
+      return { success: true };
+    } catch (err: any) {
+      console.error('deleteWorkspaceFromPlatform error:', err);
+      return {
+        success: false,
+        error: err?.message || 'تعذر حذف الشركة من Firebase Firestore',
+      };
+    }
   };
 
   // Password Reset Request (Worker to Workspace Admin, Automatic WhatsApp Recovery for Manager)
@@ -7441,6 +7670,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateWorkspaceNotes,
         updateWorkspaceQuotas,
         switchWorkspacePlan,
+        deleteWorkspaceFromPlatform,
         passwordResetRequests: passwordResetRequestsState,
         submitPasswordResetRequest,
         resolvePasswordResetRequest,
