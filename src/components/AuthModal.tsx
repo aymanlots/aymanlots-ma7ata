@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { LegalTermsModal } from './LegalTermsModal';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -26,7 +27,8 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPublicTracking }) => {
-  const { registerUser, loginWithCredentials, sendRegistrationEmailOtp, verifyRegistrationEmailOtp } = useApp();
+  const { registerUser, loginWithCredentials, sendRegistrationEmailOtp, verifyRegistrationEmailOtp, language, t } = useApp();
+  const dir = (language === 'ar' || language === 'hass') ? 'rtl' : 'ltr';
   const [isSignUp, setIsSignUp] = useState(false); // Default to Login directly
   const [signUpStep, setSignUpStep] = useState<'form' | 'verify_email'>('form');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -337,7 +339,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black animate-fadeIn overflow-y-auto" dir="rtl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black animate-fadeIn overflow-y-auto" dir={dir}>
       <div 
         className="w-full max-w-[390px] rounded-[24px] bg-[#1a0f00]/95 border border-[#D4AF37]/65 p-5 shadow-2xl text-right overflow-hidden relative z-10 my-4"
         onClick={e => e.stopPropagation()}
@@ -346,7 +348,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#D4882A] via-[#F5B05B] to-[#D4882A]" />
 
         <div 
-          className="relative w-20 h-20 rounded-full border-2 border-[#D4AF37] shadow-xl shadow-black/80 mx-auto mb-3 overflow-hidden flex items-center justify-center p-0"
+          className="relative w-20 h-20 rounded-full border-2 border-[#D4AF37] shadow-xl shadow-black/80 mx-auto mb-2 overflow-hidden flex items-center justify-center p-0"
           style={{ background: 'transparent', borderRadius: '50%', padding: 0, overflow: 'hidden' }}
         >
           <img 
@@ -356,22 +358,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
           />
         </div>
 
+        {/* 2-Letter + Flag Badge Language Switcher on First Entry Screen */}
+        <div className="flex justify-center mb-3">
+          <LanguageSwitcher />
+        </div>
+
         <h2 className="text-base sm:text-lg font-black text-[#F5D799] text-center mb-1">
           {!isOwnerRole
-            ? 'دخول العامل المباشر بالكود — Sahara📦 Express'
+            ? `${t('authWorkerDirectTitle', 'دخول العامل المباشر')} — Sahara📦 Express`
             : isSignUp
-            ? (signUpStep === 'verify_email' ? 'تأكيد بريد Gmail بكود 6 أرقام' : 'إنشاء حساب أدمين جديد في Sahara📦 Express')
-            : 'تسجيل الدخول إلى Sahara📦 Express'}
+            ? (signUpStep === 'verify_email' ? 'تأكيد بريد Gmail بكود 6 أرقام' : `${t('authCreateAccountTab', 'إنشاء حساب أدمين جديد')} — Sahara📦 Express`)
+            : t('authTitle', 'تسجيل الدخول إلى Sahara📦 Express')}
         </h2>
         <p className="text-[11px] font-bold text-[#E6C37A] text-center mb-3 tracking-wide">
-          للسفر ونقل البضائع والكوليات
+          {t('tagline', 'للسفر ونقل البضائع والطرود والتحويلات المالية')}
         </p>
 
         {/* TOP ROLE SELECTOR: ADMIN vs WORKER (Visible on first entry!) */}
         {signUpStep !== 'verify_email' && (
           <div className="mb-4">
             <label className="block text-[#E6C37A] text-xs font-bold mb-1.5 text-center">
-              اختر صفتك للدخول أو التسجيل:
+              {t('authChooseRole', 'اختر صفتك للدخول أو التسجيل:')}
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -386,7 +393,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                     : 'bg-[#120a00] border-[#D4AF37]/35 text-[#C8B08A] hover:border-[#D4AF37]/60'
                 }`}
               >
-                👑 أدمين (مدير المحطة)
+                👑 {t('authAdminTab', 'أدمين (مدير المحطة)')}
               </button>
               <button
                 type="button"
@@ -402,7 +409,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                     : 'bg-[#120a00] border-[#D4AF37]/35 text-[#C8B08A] hover:border-[#D4AF37]/60'
                 }`}
               >
-                💼 عامل (موظف محطة)
+                💼 {t('authWorkerTab', 'عامل (موظف محطة)')}
               </button>
             </div>
           </div>

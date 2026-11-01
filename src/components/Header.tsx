@@ -49,9 +49,12 @@ export const Header: React.FC<HeaderProps> = ({
     logout,
     hideAmounts,
     toggleHideAmounts,
-    setLanguage
+    setLanguage,
+    language,
+    t
   } = useApp();
 
+  const dir = (language === 'ar' || language === 'hass') ? 'rtl' : 'ltr';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const currentStation = stations.find(s => s.id === selectedStationId);
@@ -59,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <>
       <header className="sticky top-0 z-40 bg-[#080502]/90 backdrop-blur-xl border-b border-[#D4AF37]/25 px-3.5 py-2.5 pt-safe relative shadow-2xl">
-        <div className="w-full mx-auto flex items-center justify-between gap-2 relative z-10" dir="rtl">
+        <div className="w-full mx-auto flex items-center justify-between gap-2 relative z-10" dir={dir}>
           
           {/* Right Section (RTL): Large Golden Title + Quick Pills */}
           <div className="flex flex-col items-start text-right min-w-0 flex-1">

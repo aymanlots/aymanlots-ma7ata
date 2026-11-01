@@ -468,7 +468,7 @@ interface AppContextType {
   // Language & i18n
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: (key: keyof typeof translations.ar) => string;
+  t: (key: string, fallback?: string) => string;
 
   // Subscription / Paywall
   subscription: Subscription | null;
@@ -495,14 +495,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // عندما يكون اتصال Supabase مفعلاً، يُعامل DEMO_MODE كـ false تلقائياً
   const isEffectiveDemoMode = DEMO_MODE && !isSupabaseLive;
 
-  // Language State - Strictly Modern Standard Arabic (العربية الفصحى)
-  const language: Language = 'ar';
-  const setLanguage = (_lang: Language) => {
-    document.documentElement.dir = 'rtl';
-    document.documentElement.lang = 'ar';
+  // Language State - Persisted across reloads; Default: Modern Standard Arabic ('ar')
+  const [language, setLanguageState] = useState<Language>(() => {
+    try {
+      const saved = localStorage.getItem('sahara_app_lang') as Language | null;
+      if (saved && (saved === 'ar' || saved === 'hass' || saved === 'fr' || saved === 'es')) {
+        return saved;
+      }
+    } catch {}
+    return 'ar';
+  });
+
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    try {
+      localStorage.setItem('sahara_app_lang', lang);
+      const isRtl = lang === 'ar' || lang === 'hass';
+      document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
+      document.documentElement.lang = lang === 'hass' ? 'ar-MR' : lang;
+    } catch {}
   };
-  const t = (key: keyof typeof translations.ar) => {
-    return translations.ar[key] || (key as string);
+
+  useEffect(() => {
+    try {
+      const isRtl = language === 'ar' || language === 'hass';
+      document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
+      document.documentElement.lang = language === 'hass' ? 'ar-MR' : language;
+    } catch {}
+  }, [language]);
+
+  const t = (key: string, fallback?: string): string => {
+    const dict = (translations as any)[language] || translations.ar;
+    if (dict && dict[key]) return dict[key];
+    if (translations.ar && (translations.ar as any)[key]) return (translations.ar as any)[key];
+    return fallback !== undefined ? fallback : key;
   };
 
   // Official Exchange Rate: 1 MAD = 3.80 MRU (0.263 MAD per MRU)

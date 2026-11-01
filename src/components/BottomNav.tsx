@@ -27,7 +27,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onOpenNewParcel,
   onOpenQuickDeliver,
 }) => {
-  const { parcels, currentWorkspace } = useApp();
+  const { parcels, currentWorkspace, t, language } = useApp();
+  const dir = (language === 'ar' || language === 'hass') ? 'rtl' : 'ltr';
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   // Check if parcels module is enabled (defaults to true)
@@ -47,10 +48,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div 
             className="w-full max-w-[380px] luxury-card rounded-[24px] p-5 shadow-2xl space-y-3 text-right"
             onClick={(e) => e.stopPropagation()}
-            dir="rtl"
+            dir={dir}
           >
             <div className="flex items-center justify-between border-b border-white/15 pb-2.5">
-              <span className="text-xs font-black text-[#F5C84C]">تسجيل عملية جديدة سريعة</span>
+              <span className="text-xs font-black text-[#F5C84C]">{t('quickAddTitle', 'تسجيل عملية جديدة سريعة')}</span>
               <button 
                 type="button"
                 onClick={() => setShowAddMenu(false)}
@@ -76,8 +77,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                     <Package className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-black">تسجيل كولي جديد (إرسالية)</h4>
-                    <p className="text-[11px] font-bold opacity-80">شحن طرد وتوليد ملصق حراري</p>
+                    <h4 className="text-sm font-black">{t('quickAddParcelTitle', 'تسجيل كولي جديد (إرسالية)')}</h4>
+                    <p className="text-[11px] font-bold opacity-80">{t('quickAddParcelDesc', 'شحن طرد وتوليد ملصق حراري')}</p>
                   </div>
                 </div>
               </button>
@@ -97,8 +98,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                   <Coins className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-black">سند مالي (قبض / صرف)</h4>
-                  <p className="text-[11px] font-bold opacity-80">تسجيل حركة نقدية بصندوق المحطة</p>
+                  <h4 className="text-sm font-black">{t('quickAddCashInTitle', 'سند مالي (قبض / صرف)')}</h4>
+                  <p className="text-[11px] font-bold opacity-80">{t('quickAddCashInDesc', 'تسجيل حركة نقدية بصندوق المحطة')}</p>
                 </div>
               </div>
             </button>
@@ -118,8 +119,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                     <UserCheck className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-black text-[#F5C84C]">تسليم سريع (كولي أو دفعة كوليات)</h4>
-                    <p className="text-[11px] font-bold text-white/80">مسح وتأكيد استلام الزبون فورياً</p>
+                    <h4 className="text-sm font-black text-[#F5C84C]">{t('quickAddDeliverTitle', 'تسليم سريع (كولي أو دفعة كوليات)')}</h4>
+                    <p className="text-[11px] font-bold text-white/80">{t('quickAddDeliverDesc', 'مسح وتأكيد استلام الزبون فورياً')}</p>
                   </div>
                 </div>
               </button>
@@ -129,7 +130,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       )}
 
       {/* Floating Pill Bottom Nav (Matches Reference Photo) */}
-      <nav className="fixed bottom-2 left-0 right-0 z-40 w-full max-w-[430px] mx-auto px-3 pb-safe pointer-events-none" dir="rtl">
+      <nav className="fixed bottom-2 left-0 right-0 z-40 w-full max-w-[430px] mx-auto px-3 pb-safe pointer-events-none" dir={dir}>
         <div
           className="pointer-events-auto w-full rounded-[24px] px-2 h-15 flex items-center justify-around relative shadow-[0_10px_30px_rgba(0,0,0,0.75)] border border-[#F5C84C]/30"
           style={{
@@ -147,7 +148,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             }`}
           >
             <LayoutGrid className={`w-5 h-5 mb-0.5 ${currentTab === 'dashboard' ? 'text-[#F5C84C]' : 'text-white/90'}`} />
-            <span className="text-[10px] leading-tight font-extrabold">الرئيسية</span>
+            <span className="text-[10px] leading-tight font-extrabold">{t('navDashboard', 'الرئيسية')}</span>
           </button>
 
           {/* Tab 2: الكوليات */}
@@ -167,7 +168,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                   </span>
                 )}
               </div>
-              <span className="text-[10px] leading-tight font-extrabold">الكوليات</span>
+              <span className="text-[10px] leading-tight font-extrabold">{t('navParcels', 'الكوليات')}</span>
             </button>
           )}
 
@@ -177,12 +178,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               type="button"
               onClick={() => setShowAddMenu(true)}
               className="w-13 h-13 rounded-2xl bg-[#F5C84C] text-[#111111] flex items-center justify-center shadow-[0_6px_20px_rgba(245,200,76,0.45)] transition-transform active:scale-90 cursor-pointer"
-              title="تسجيل عملية جديدة"
+              title={t('quickAddTitle', 'تسجيل عملية جديدة')}
             >
               <Plus className="w-6 h-6 stroke-[3]" />
             </button>
             <span className="block text-center text-[10px] font-black text-[#F5C84C] mt-0.5">
-              جديد
+              {t('navNew', 'جديد')}
             </span>
           </div>
 
@@ -195,7 +196,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             }`}
           >
             <Coins className={`w-5 h-5 mb-0.5 ${currentTab === 'cash' ? 'text-[#F5C84C]' : 'text-white/90'}`} />
-            <span className="text-[10px] leading-tight font-extrabold">الصناديق</span>
+            <span className="text-[10px] leading-tight font-extrabold">{t('navCash', 'الصناديق')}</span>
           </button>
 
           {/* Tab 4: الإعدادات */}
@@ -207,7 +208,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             }`}
           >
             <Settings className={`w-5 h-5 mb-0.5 ${currentTab === 'settings' ? 'text-[#F5C84C]' : 'text-white/90'}`} />
-            <span className="text-[10px] leading-tight font-extrabold">الإعدادات</span>
+            <span className="text-[10px] leading-tight font-extrabold">{t('navSettings', 'الإعدادات')}</span>
           </button>
         </div>
       </nav>

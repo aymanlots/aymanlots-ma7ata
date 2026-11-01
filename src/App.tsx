@@ -44,8 +44,11 @@ const MainApp: React.FC = () => {
     daysUntilExpiry, 
     subscriptionRemainingLabel,
     isSubscriptionExpired,
-    showToast
+    showToast,
+    language
   } = useApp();
+
+  const dir = (language === 'ar' || language === 'hass') ? 'rtl' : 'ltr';
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [openSettingsTeam, setOpenSettingsTeam] = useState(false);
@@ -121,7 +124,7 @@ const MainApp: React.FC = () => {
   // If user is not logged in, prompt Auth modal (plus Public Tracking modal if open)
   if (!currentUser) {
     return (
-      <div className="min-h-screen w-full bg-[#080c14] flex justify-center relative" dir="rtl">
+      <div className="min-h-screen w-full bg-[#080c14] flex justify-center relative" dir={dir}>
         {renderDesertFrameBackground()}
         <div className="w-full max-w-[430px] min-h-screen relative z-10">
           <AuthModal
@@ -142,7 +145,7 @@ const MainApp: React.FC = () => {
   // If user has no workspace, prompt Onboarding modal
   if (!currentWorkspace) {
     return (
-      <div className="min-h-screen w-full bg-[#080c14] flex justify-center relative" dir="rtl">
+      <div className="min-h-screen w-full bg-[#080c14] flex justify-center relative" dir={dir}>
         {renderDesertFrameBackground()}
         <div className="w-full max-w-[430px] min-h-screen relative z-10">
           <OnboardingModal isOpen={true} />
@@ -153,7 +156,7 @@ const MainApp: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#080c14] flex justify-center selection:bg-[#D4AF37]/30 selection:text-[#FFF8EB] relative" dir="rtl">
+    <div className="min-h-screen w-full bg-[#080c14] flex justify-center selection:bg-[#D4AF37]/30 selection:text-[#FFF8EB] relative" dir={dir}>
       {renderDesertFrameBackground()}
 
       <div className="w-full max-w-[430px] min-h-screen text-[#FFF8EB] flex flex-col border-x border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)] relative z-10 overflow-x-hidden">

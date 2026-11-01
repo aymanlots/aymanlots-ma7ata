@@ -33,6 +33,7 @@ import { exportService } from '../services/exportService';
 import { PWAInstallButton } from './PWAInstallButton';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 interface SettingsViewProps {
   onOpenSQLModal: () => void;
@@ -88,7 +89,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     isSubscriptionExpired,
     extendSubscription,
     startFiveMinuteSubscriptionTest,
-    showToast
+    showToast,
+    language,
+    t
   } = useApp();
 
   const isInFree30Days = daysUntilExpiry > 0 && !isSubscriptionExpired;
@@ -521,6 +524,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Crown className="w-3.5 h-3.5" />
             <span>تفاصيل الباقات والتجديد</span>
           </button>
+        </div>
+      </div>
+
+      {/* 1.1 لغة التطبيق والواجهة (العربية الفصحى، الحسانية، الفرنسية، الإسبانية) */}
+      <div className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#F5C84C]/50 shadow-xl">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] flex items-center justify-center shrink-0">
+              <Languages className="w-5 h-5 text-[#F5C84C]" />
+            </div>
+            <div>
+              <h3 className="text-xs sm:text-sm font-black text-white">
+                {t('settingsLanguageSection', 'لغة التطبيق')}
+              </h3>
+              <p className="text-[10px] text-[#E6C37A] font-bold">
+                {t('settingsLanguageDesc', 'اختر لغة واجهة النظام (يتم الحفظ تلقائياً في جهازك):')}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 2-Letter Badge + Flag Switcher */}
+        <div className="pt-1 flex justify-center sm:justify-start">
+          <LanguageSwitcher />
         </div>
       </div>
 
