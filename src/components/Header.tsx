@@ -13,8 +13,7 @@ import {
   Search,
   Users,
   Radio,
-  Languages,
-  FileSpreadsheet
+  Languages
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -23,7 +22,6 @@ interface HeaderProps {
   onOpenPublicTracking?: () => void;
   onOpenCollabRoom?: () => void;
   onOpenCustomerAccounts?: () => void;
-  onOpenBackupModal?: () => void;
   onOpenPlatformOwner?: () => void;
 }
 
@@ -33,7 +31,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPublicTracking,
   onOpenCollabRoom,
   onOpenCustomerAccounts,
-  onOpenBackupModal,
   onOpenPlatformOwner
 }) => {
   const { 
@@ -82,17 +79,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>القائمة</span>
               </button>
 
-              {onOpenBackupModal && userRole !== 'worker' && (
-                <button
-                  type="button"
-                  onClick={onOpenBackupModal}
-                  className="nav-tab-btn flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/45 text-[10px] font-black text-emerald-300 hover:border-emerald-400 transition active:scale-95 cursor-pointer"
-                  title="نسخة احتياطية Excel / CSV شهرية بنقرة واحدة"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Excel شهري</span>
-                </button>
-              )}
 
               <button
                 type="button"
@@ -180,19 +166,6 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Core Commercial Launch Features in Menu Drawer */}
             <div className="space-y-2">
-              {onOpenBackupModal && userRole !== 'worker' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenBackupModal();
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 font-black text-xs flex items-center justify-center gap-2 hover:bg-emerald-900/60 transition"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                  <span>نسخة احتياطية Excel / CSV شهرية بنقرة واحدة</span>
-                </button>
-              )}
 
               {onOpenPlatformOwner && userRole === 'platform_owner' && (
                 <button

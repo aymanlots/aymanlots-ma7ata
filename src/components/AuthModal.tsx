@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { LegalTermsModal } from './LegalTermsModal';
-import { LanguageSwitcher } from './LanguageSwitcher';
+import { firebaseSyncService } from '../services/firebaseSyncService';
+import { cleanPhoneNumber } from '../lib/supabase';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -27,8 +28,8 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPublicTracking }) => {
-  const { registerUser, loginWithCredentials, sendRegistrationEmailOtp, verifyRegistrationEmailOtp, language, t } = useApp();
-  const dir = (language === 'ar' || language === 'hass') ? 'rtl' : 'ltr';
+  const { registerUser, loginWithCredentials, sendRegistrationEmailOtp, verifyRegistrationEmailOtp, t } = useApp();
+  const dir = 'rtl';
   const [isSignUp, setIsSignUp] = useState(false); // Default to Login directly
   const [signUpStep, setSignUpStep] = useState<'form' | 'verify_email'>('form');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -122,6 +123,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
     setIsLoading(true);
 
     try {
+      // Check if phone number or Gmail is already registered in Firestore before sending OTP
+      const normalizedPhone = cleanPhoneNumber(cleanPhone);
+      if (firebaseSyncService.isAvailable()) {
+        const existingByPhone =
+          (normalizedPhone ? await firebaseSyncService.getUserAccount(normalizedPhone) : null) ||
+          (await firebaseSyncService.findUserAccountByIdentifier(normalizedPhone || cleanPhone));
+        if (existingByPhone && !existingByPhone.deleted && existingByPhone.status !== 'revoked') {
+          setIsLoading(false);
+          setError('رقم الهاتف هذا مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.');
+          return;
+        }
+
+        const existingByEmail = await firebaseSyncService.findUserAccountByIdentifier(cleanEmail);
+        if (existingByEmail && !existingByEmail.deleted && existingByEmail.status !== 'revoked') {
+          setIsLoading(false);
+          setError('عنوان البريد الإلكتروني (Gmail) هذا مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.');
+          return;
+        }
+      }
+
       // Send 6-digit OTP code to user's Gmail using Nodemailer & Gmail App Password
       const otpRes = await sendRegistrationEmailOtp(cleanEmail, name.trim());
       setIsLoading(false);
@@ -308,14 +329,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
       return;
     }
 
-    const cleanPhone = phone.trim();
-    if (!cleanPhone || cleanPhone.length < 6) {
-      setError('يرجى إدخال رقم هاتف صحيح');
+    const cleanIdentifier = phone.trim();
+    if (!cleanIdentifier || cleanIdentifier.length < 5) {
+      setError('يرجى إدخال رقم الهاتف أو البريد الإلكتروني (Gmail) بشكل صحيح');
       return;
     }
 
     try {
-      localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
+      localStorage.setItem('ittihadiya_saved_login_phone', cleanIdentifier);
     } catch {}
 
     if (!password || password.trim().length < 4) {
@@ -325,7 +346,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
 
     setIsLoading(true);
     try {
-      const res = await loginWithCredentials(cleanPhone, password.trim());
+      const res = await loginWithCredentials(cleanIdentifier, password.trim());
       setIsLoading(false);
       if (res.success && onClose) {
         onClose();
@@ -358,10 +379,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
           />
         </div>
 
-        {/* 2-Letter + Flag Badge Language Switcher on First Entry Screen */}
-        <div className="flex justify-center mb-3">
-          <LanguageSwitcher />
-        </div>
 
         <h2 className="text-base sm:text-lg font-black text-[#F5D799] text-center mb-1">
           {!isOwnerRole
@@ -640,15 +657,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
 
             <div>
               <label className="block text-[#E6C37A] font-bold mb-1">
-                {isSignUp ? 'رقم الهاتف *' : 'رقم هاتف الأدمين *'}
+                {isSignUp ? 'رقم الهاتف المعتمد للحساب *' : 'رقم هاتف الأدمين أو بريد Gmail *'}
               </label>
               <div className="relative">
                 <input
-                  type="tel"
-                  placeholder="0600000000 أو 22200000000"
+                  type={isSignUp ? 'tel' : 'text'}
+                  dir="ltr"
+                  placeholder={isSignUp ? '0600000000 أو 22200000000' : '0618961387 أو example@gmail.com'}
                   value={phone}
                   onChange={e => handlePhoneChange(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono"
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono text-left"
                   required
                 />
                 <Phone className="w-4 h-4 text-[#D4AF37] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -670,7 +688,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
               </div>
               {!isSignUp && (
                 <span className="text-[10px] text-[#C8B08A] block mt-1">
-                  تسجيل الدخول برقم الهاتف وكلمة المرور مباشرة
+                  تسجيل الدخول برقم الهاتف أو بريد Gmail وكلمة المرور مباشرة
                 </span>
               )}
             </div>

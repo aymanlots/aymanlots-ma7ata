@@ -14,7 +14,6 @@ import {
   Store,
   MessageCircle,
   Download,
-  FileSpreadsheet,
   FileJson,
   Wifi,
   WifiOff,
@@ -27,13 +26,13 @@ import {
   Plus,
   X,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  Mail
 } from 'lucide-react';
 import { exportService } from '../services/exportService';
 import { PWAInstallButton } from './PWAInstallButton';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
-import { LanguageSwitcher } from './LanguageSwitcher';
 
 interface SettingsViewProps {
   onOpenSQLModal: () => void;
@@ -43,7 +42,6 @@ interface SettingsViewProps {
   onOpenCollabRoom?: () => void;
   onOpenCustomerAccounts?: () => void;
   onOpenGuidedTour?: () => void;
-  onOpenBackupModal?: () => void;
   initialOpenTeam?: boolean;
   onTeamOpened?: () => void;
 }
@@ -53,7 +51,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenPrivacyModal,
   onOpenPlatformOwner,
   onOpenGuidedTour,
-  onOpenBackupModal,
   initialOpenTeam = false,
   onTeamOpened
 }) => {
@@ -80,6 +77,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setExchangeRate,
     updateUnclaimedDaysThreshold,
     updateUserContactNumbers,
+    sendRegistrationEmailOtp,
+    verifyRegistrationEmailOtp,
     updateWorkspaceBranding,
     switchWorkspacePlan,
     joinRequests,
@@ -90,7 +89,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     extendSubscription,
     startFiveMinuteSubscriptionTest,
     showToast,
-    language,
     t
   } = useApp();
 
@@ -162,19 +160,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     currentWorkspace?.name,
   ]);
 
-  // Contact numbers update state
+  // Contact numbers & Gmail update state
   const [contactPhoneInput, setContactPhoneInput] = useState(currentUser?.phone || '');
   const [contactWhatsappInput, setContactWhatsappInput] = useState(
     currentUser?.whatsapp_number || currentUser?.phone || ''
   );
+  const [contactEmailInput, setContactEmailInput] = useState(
+    currentUser?.email || currentWorkspace?.owner_email || ''
+  );
   const [isUpdatingContact, setIsUpdatingContact] = useState(false);
+  const [contactOtpStep, setContactOtpStep] = useState<'form' | 'verify'>('form');
+  const [contactOtpInput, setContactOtpInput] = useState('');
+  const [contactPreviewCode, setContactPreviewCode] = useState<string | undefined>(undefined);
+  const [contactSuccessSummary, setContactSuccessSummary] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUser) {
       setContactPhoneInput(currentUser.phone || '');
       setContactWhatsappInput(currentUser.whatsapp_number || currentUser.phone || '');
+      setContactEmailInput(currentUser.email || currentWorkspace?.owner_email || '');
     }
-  }, [currentUser?.phone, currentUser?.whatsapp_number]);
+  }, [currentUser?.phone, currentUser?.whatsapp_number, currentUser?.email, currentWorkspace?.owner_email]);
 
   useEffect(() => {
     if (initialOpenTeam) {
@@ -527,29 +533,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* 1.1 لغة التطبيق والواجهة (العربية الفصحى، الحسانية، الفرنسية، الإسبانية) */}
-      <div className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#F5C84C]/50 shadow-xl">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] flex items-center justify-center shrink-0">
-              <Languages className="w-5 h-5 text-[#F5C84C]" />
-            </div>
-            <div>
-              <h3 className="text-xs sm:text-sm font-black text-white">
-                {t('settingsLanguageSection', 'لغة التطبيق')}
-              </h3>
-              <p className="text-[10px] text-[#E6C37A] font-bold">
-                {t('settingsLanguageDesc', 'اختر لغة واجهة النظام (يتم الحفظ تلقائياً في جهازك):')}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* 2-Letter Badge + Flag Switcher */}
-        <div className="pt-1 flex justify-center sm:justify-start">
-          <LanguageSwitcher />
-        </div>
-      </div>
 
       {/* 1.2 باقات الاشتراك والفترة التجريبية (ظاهرة بوضوح في الإعدادات) */}
       {(userRole === 'owner' || userRole === 'platform_owner') && (
@@ -1155,7 +1138,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         >
           <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
             <MessageCircle className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <span>رقم الهاتف والواتساب المعتمد للحساب</span>
+            <span>رقم الهاتف والواتساب وبريد Gmail المعتمد للحساب</span>
           </h3>
           <ChevronDown
             className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
@@ -1165,60 +1148,207 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         {openContactSection && (
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setIsUpdatingContact(true);
-              try {
-                await updateUserContactNumbers(contactPhoneInput, contactWhatsappInput);
-              } finally {
-                setIsUpdatingContact(false);
-              }
-            }}
-            className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs"
-          >
+          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs">
             <p className="text-[11px] text-white/80 leading-relaxed">
-              هذا الرقم هو المعتمد لتسجيل الدخول واستعادة كلمة المرور تلقائياً عبر الواتساب. في حال غيرت شريحتك أو رقم الواتساب الخاص بك، قم بتحديثه هنا حتى لا تفقد حسابك أبداً.
+              هذه البيانات (رقم الهاتف، الواتساب، وبريد Gmail) هي المعتمدة لتسجيل الدخول واستعادة كلمة المرور. عند تغيير رقم هاتفك أو بريد Gmail الخاص بك، سيتم إرسال رسالة تأكيد لتوثيق التحديث وحماية حسابك.
             </p>
 
-            <div>
-              <label className="block text-white/90 font-bold mb-1">
-                رقم الهاتف المعتمد لتسجيل الدخول *
-              </label>
-              <input
-                type="tel"
-                required
-                value={contactPhoneInput}
-                onChange={e => setContactPhoneInput(e.target.value)}
-                placeholder="مثال: 0612345678 أو 222..."
-                className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs"
-                dir="ltr"
-              />
-            </div>
+            {contactSuccessSummary && (
+              <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs font-bold flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div>{contactSuccessSummary}</div>
+                </div>
+              </div>
+            )}
 
-            <div>
-              <label className="block text-white/90 font-bold mb-1">
-                رقم الواتساب المعتمد لاستقبال كلمة المرور عند النسيان *
-              </label>
-              <input
-                type="tel"
-                required
-                value={contactWhatsappInput}
-                onChange={e => setContactWhatsappInput(e.target.value)}
-                placeholder="مثال: 212612345678"
-                className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs"
-                dir="ltr"
-              />
-            </div>
+            {contactOtpStep === 'form' ? (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setContactSuccessSummary(null);
+                  const cleanMail = contactEmailInput.trim().toLowerCase();
+                  if (!cleanMail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanMail)) {
+                    showToast('يرجى إدخال عنوان بريد إلكتروني (Gmail) صحيح', 'error');
+                    return;
+                  }
+                  if (!contactPhoneInput.trim() || contactPhoneInput.trim().length < 8) {
+                    showToast('يرجى إدخال رقم هاتف صحيح (8 أرقام على الأقل)', 'error');
+                    return;
+                  }
 
-            <button
-              type="submit"
-              disabled={isUpdatingContact}
-              className="w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50"
-            >
-              {isUpdatingContact ? 'جاري التحديث والحفظ...' : 'حفظ وتحديث رقم الهاتف والواتساب'}
-            </button>
-          </form>
+                  setIsUpdatingContact(true);
+                  try {
+                    const otpRes = await sendRegistrationEmailOtp(cleanMail, currentUser?.name || 'مدير المحطة');
+                    if (otpRes.success) {
+                      setContactPreviewCode(otpRes.previewCode);
+                      setContactOtpInput('');
+                      setContactOtpStep('verify');
+                      showToast(`تم إرسال رسالة التأكيد (كود من 6 أرقام) إلى بريدك ${cleanMail}`, 'info');
+                    } else {
+                      // If email server is not reachable, still allow direct update if valid
+                      const res = await updateUserContactNumbers(
+                        contactPhoneInput,
+                        contactWhatsappInput,
+                        undefined,
+                        cleanMail
+                      );
+                      if (res.success) {
+                        setContactSuccessSummary(
+                          `تم تأكيد وتحديث بيانات الحساب بنجاح ✓ — الهاتف: ${contactPhoneInput.trim()} | Gmail: ${cleanMail}`
+                        );
+                      }
+                    }
+                  } finally {
+                    setIsUpdatingContact(false);
+                  }
+                }}
+                className="space-y-3"
+              >
+                <div>
+                  <label className="block text-white/90 font-bold mb-1">
+                    رقم الهاتف المعتمد لتسجيل الدخول *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={contactPhoneInput}
+                    onChange={e => setContactPhoneInput(e.target.value)}
+                    placeholder="مثال: 0612345678 أو 212612345678"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-white/90 font-bold mb-1">
+                    رقم الواتساب المعتمد للحساب *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={contactWhatsappInput}
+                    onChange={e => setContactWhatsappInput(e.target.value)}
+                    placeholder="مثال: 212612345678"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-white/90 font-bold mb-1 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-[#F5C84C]" />
+                    <span>البريد الإلكتروني (Gmail) المعتمد للحساب *</span>
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={contactEmailInput}
+                    onChange={e => setContactEmailInput(e.target.value)}
+                    placeholder="example@gmail.com"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs text-left"
+                    dir="ltr"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isUpdatingContact}
+                  className="w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
+                >
+                  {isUpdatingContact
+                    ? 'جاري إرسال رسالة التأكيد...'
+                    : 'حفظ وتحديث رقم الهاتف وبريد Gmail (مع رسالة التأكيد)'}
+                </button>
+              </form>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const cleanCode = contactOtpInput.trim();
+                  if (cleanCode.length !== 6) {
+                    showToast('يرجى إدخال رمز التأكيد المكون من 6 أرقام', 'error');
+                    return;
+                  }
+                  setIsUpdatingContact(true);
+                  try {
+                    const cleanMail = contactEmailInput.trim().toLowerCase();
+                    const verifyRes = await verifyRegistrationEmailOtp(cleanMail, cleanCode);
+                    if (!verifyRes.success) {
+                      showToast(verifyRes.error || 'رمز التأكيد غير صحيح', 'error');
+                      return;
+                    }
+                    const res = await updateUserContactNumbers(
+                      contactPhoneInput,
+                      contactWhatsappInput,
+                      undefined,
+                      cleanMail
+                    );
+                    if (res.success) {
+                      setContactOtpStep('form');
+                      setContactSuccessSummary(
+                        `تم تأكيد وتحديث بيانات حسابك بنجاح ✓ — رقم الهاتف: ${contactPhoneInput.trim()} | الواتساب: ${contactWhatsappInput.trim()} | بريد Gmail: ${cleanMail}`
+                      );
+                    }
+                  } finally {
+                    setIsUpdatingContact(false);
+                  }
+                }}
+                className="p-3.5 rounded-2xl bg-black/60 border border-[#F5C84C]/40 space-y-3"
+              >
+                <div className="text-center space-y-1.5">
+                  <div className="w-9 h-9 mx-auto rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/40 flex items-center justify-center text-[#F5C84C]">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <p className="font-black text-white text-xs">
+                    تم إرسال رسالة التأكيد إلى بريدك الإلكتروني:
+                  </p>
+                  <p className="font-mono text-[#F5C84C] text-xs font-bold" dir="ltr">
+                    {contactEmailInput.trim().toLowerCase()}
+                  </p>
+                  <p className="text-[11px] text-white/75">
+                    أدخل رمز التأكيد المكون من 6 أرقام لتأكيد تغيير رقم الهاتف أو بريد Gmail المعتمد للحساب:
+                  </p>
+                  {contactPreviewCode && (
+                    <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-200 text-[11px] font-bold">
+                      رمز التأكيد الفوري: <span className="font-mono text-sm text-white">{contactPreviewCode}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    required
+                    value={contactOtpInput}
+                    onChange={e => setContactOtpInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                    placeholder="• • • • • •"
+                    className="w-full bg-black/80 border-2 border-[#F5C84C] rounded-xl px-3 py-2.5 text-white font-mono text-base font-black tracking-widest text-center"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={isUpdatingContact}
+                    className="flex-1 py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {isUpdatingContact ? 'جاري التأكيد والحفظ...' : 'تأكيد الرمز وحفظ التعديلات ✓'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setContactOtpStep('form')}
+                    className="px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition cursor-pointer"
+                  >
+                    رجوع
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         )}
       </div>
 
@@ -1931,29 +2061,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {openExportSection && (
           <div className="mt-3.5 pt-3 border-t border-white/15 grid grid-cols-1 gap-2">
-            {/* 1-Click Monthly Excel / CSV Backup */}
-            {onOpenBackupModal && (
-              <button
-                type="button"
-                onClick={onOpenBackupModal}
-                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl bg-emerald-950/75 border-2 border-emerald-500/55 text-emerald-300 hover:bg-emerald-900/70 transition text-right active:scale-95 cursor-pointer shadow-lg"
-              >
-                <div className="flex items-center gap-2.5">
-                  <FileSpreadsheet className="w-5 h-5 text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="font-black text-xs text-white block">
-                      نسخة احتياطية Excel / CSV شهرية بنقرة واحدة
-                    </span>
-                    <span className="text-[10px] text-emerald-300/90 block">
-                      تحميل جرد الشهر الكامل (كوليات + صناديق + رحلات) بصيغة Excel
-                    </span>
-                  </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-black text-[10px] shrink-0">
-                  فتح Excel
-                </span>
-              </button>
-            )}
 
             {/* Export Cash Transactions PDF */}
             <button

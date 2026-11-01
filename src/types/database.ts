@@ -36,7 +36,7 @@ export type PaymentStatus = 'paid' | 'unpaid' | 'partial' | 'cod';
 // من يدفع ثمن الشحن / الكولي
 export type ParcelPayer = 'sender' | 'receiver';
 
-export type Language = 'ar' | 'hass' | 'fr' | 'es';
+export type Language = 'ar';
 
 export interface Profile {
   id: string;

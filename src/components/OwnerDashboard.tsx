@@ -19,7 +19,6 @@ import {
   ArrowUpRight,
   ChevronDown,
   X,
-  FileSpreadsheet,
   Crown,
 } from 'lucide-react';
 import { NewVoucherModal } from './NewVoucherModal';
@@ -47,7 +46,6 @@ interface OwnerDashboardProps {
   onOpenCustomerAccounts?: () => void;
   onOpenPublicTracking?: () => void;
   onOpenGuidedTour?: () => void;
-  onOpenBackupModal?: () => void;
   onOpenPlatformOwner?: () => void;
 }
 
@@ -59,7 +57,6 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   onOpenNewParcel,
   onOpenLedger,
   onOpenParcels,
-  onOpenBackupModal,
   onOpenPlatformOwner,
 }) => {
   const {
@@ -68,6 +65,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     selectedStationId,
     setSelectedStationId,
     stationBalances,
+    currencies,
     transactions,
     deleteTransaction,
     executeCurrencyExchange,
@@ -268,22 +266,78 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     );
   }, [moneyTransfers, activeStation]);
 
-  // Cash totals for the current scope
-  const scopedBalances = useMemo(() => {
-    if (activeStation) {
-      return {
-        MAD: stationBalances[activeStation.id]?.MAD || 0,
-        MRU: stationBalances[activeStation.id]?.MRU || 0,
-      };
-    }
-    let mad = 0;
-    let mru = 0;
-    stations.forEach(s => {
-      mad += stationBalances[s.id]?.MAD || 0;
-      mru += stationBalances[s.id]?.MRU || 0;
+  // Dynamic Cash totals for the current scope (1, 2, 3+ currencies e.g. MAD, MRU, EUR)
+  const scopedCurrencies = useMemo(() => {
+    const currencyMeta: Record<string, { code: string; label: string; symbol: string; flag: string }> = {
+      MAD: { code: 'MAD', label: 'الدرهم المغربي', symbol: 'د.م.', flag: '🇲🇦' },
+      MRU: { code: 'MRU', label: 'الأوقية الموريتانية', symbol: 'أ.م.', flag: '🇲🇷' },
+      EUR: { code: 'EUR', label: 'اليورو الأوروبي', symbol: '€', flag: '🇪🇺' },
+      USD: { code: 'USD', label: 'الدولار الأمريكي', symbol: '$', flag: '🇺🇸' },
+    };
+
+    currencies.forEach(c => {
+      if (!currencyMeta[c.code]) {
+        currencyMeta[c.code] = {
+          code: c.code,
+          label: c.label_ar || c.code,
+          symbol: c.symbol || c.code,
+          flag: '🪙',
+        };
+      }
     });
-    return { MAD: mad, MRU: mru };
-  }, [activeStation, stations, stationBalances]);
+
+    const getBal = (code: string): number => {
+      if (activeStation) {
+        return Math.round((stationBalances[activeStation.id]?.[code] || 0) * 100) / 100;
+      }
+      let sum = 0;
+      stations.forEach(s => {
+        sum += stationBalances[s.id]?.[code] || 0;
+      });
+      return Math.round(sum * 100) / 100;
+    };
+
+    const candidateCodes = new Set<string>();
+    currencies.filter(c => c.is_active).forEach(c => candidateCodes.add(c.code));
+
+    Object.keys(currencyMeta).forEach(code => {
+      if (getBal(code) !== 0) {
+        candidateCodes.add(code);
+      }
+    });
+
+    if (activeStation) {
+      if (activeStation.currency) candidateCodes.add(activeStation.currency);
+      if (activeStation.default_currency) candidateCodes.add(activeStation.default_currency);
+    }
+
+    if (candidateCodes.size === 0) {
+      candidateCodes.add('MAD');
+      candidateCodes.add('MRU');
+    }
+
+    const items = Array.from(candidateCodes).map(code => ({
+      ...(currencyMeta[code] || {
+        code,
+        label: code,
+        symbol: code,
+        flag: '🪙',
+      }),
+      balance: getBal(code),
+    }));
+
+    const sortOrder = ['MAD', 'MRU', 'EUR', 'USD'];
+    items.sort((a, b) => {
+      const idxA = sortOrder.indexOf(a.code);
+      const idxB = sortOrder.indexOf(b.code);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.code.localeCompare(b.code);
+    });
+
+    return items;
+  }, [activeStation, stations, stationBalances, currencies]);
 
   // Parcel stats for the current scope
   const parcelStats = useMemo(() => {
@@ -509,63 +563,47 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
         {isCashboxOpen && (
           <div className="pt-3 border-t border-white/15 space-y-3.5 animate-fadeIn">
-            {/* أرصدة الدرهم والأوقية بنفس التصميم الذهبي الموحد بدون أي لون أزرق */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div
-                className={`p-3.5 rounded-2xl border ${
-                  scopedBalances.MAD < 0
-                    ? 'bg-rose-950/60 border-rose-500/50'
-                    : 'bg-black/55 border-[#D4AF37]/35'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] font-bold text-white/85">الدرهم المغربي</span>
-                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#F5C84C]">
-                    MAD
-                  </span>
-                </div>
-                <p
-                  dir="ltr"
-                  className={`text-lg sm:text-xl font-black font-mono text-left ${
-                    scopedBalances.MAD < 0 ? 'text-rose-400' : 'text-[#F5C84C]'
-                  }`}
-                >
-                  {formatAmount(scopedBalances.MAD, 'MAD')}
-                </p>
-                {scopedBalances.MAD < 0 && (
-                  <span className="text-[10px] font-bold text-rose-300 block mt-0.5">
-                    رصيد سالب (عجز فلاكيس)
-                  </span>
-                )}
-              </div>
-
-              <div
-                className={`p-3.5 rounded-2xl border ${
-                  scopedBalances.MRU < 0
-                    ? 'bg-rose-950/60 border-rose-500/50'
-                    : 'bg-black/55 border-[#D4AF37]/35'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] font-bold text-white/85">الأوقية الموريتانية</span>
-                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#F5C84C]">
-                    MRU
-                  </span>
-                </div>
-                <p
-                  dir="ltr"
-                  className={`text-lg sm:text-xl font-black font-mono text-left ${
-                    scopedBalances.MRU < 0 ? 'text-rose-400' : 'text-[#F5C84C]'
-                  }`}
-                >
-                  {formatAmount(scopedBalances.MRU, 'MRU')}
-                </p>
-                {scopedBalances.MRU < 0 && (
-                  <span className="text-[10px] font-bold text-rose-300 block mt-0.5">
-                    رصيد سالب (عجز فلاكيس)
-                  </span>
-                )}
-              </div>
+            {/* أرصدة الصناديق ديناميكية حسب العملات المتاحة (1 عملة = 1 صندوق، 2 عملات = 2 صناديق، 3 عملات أو أكثر = 3 صناديق) */}
+            <div className={`grid gap-2.5 ${
+              scopedCurrencies.length === 1 ? 'grid-cols-1' :
+              scopedCurrencies.length === 2 ? 'grid-cols-2' :
+              'grid-cols-1 sm:grid-cols-3'
+            }`}>
+              {scopedCurrencies.map(curr => {
+                const isNegative = curr.balance < 0;
+                return (
+                  <div
+                    key={curr.code}
+                    className={`p-3.5 rounded-2xl border transition-all ${
+                      isNegative
+                        ? 'bg-rose-950/60 border-rose-500/50'
+                        : 'bg-black/55 border-[#D4AF37]/35'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-bold text-white/85">
+                        {curr.label} {curr.flag}
+                      </span>
+                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#F5C84C]">
+                        {curr.code}
+                      </span>
+                    </div>
+                    <p
+                      dir="ltr"
+                      className={`text-lg sm:text-xl font-black font-mono text-left ${
+                        isNegative ? 'text-rose-400' : 'text-[#F5C84C]'
+                      }`}
+                    >
+                      {formatAmount(curr.balance, curr.code)}
+                    </p>
+                    {isNegative && (
+                      <span className="text-[10px] font-bold text-rose-300 block mt-0.5">
+                        رصيد سالب (عجز فلاكيس)
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* الأزرار الأربعة المنظمة للعمليات المالية في المحطة */}
@@ -1001,35 +1039,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         )}
       </div>
 
-      {/* 3 Commercial Features: Monthly Excel Backup, Subscription Management, and PWA App Install */}
-      <div className="space-y-2.5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {onOpenBackupModal && (
-            <button
-              type="button"
-              onClick={onOpenBackupModal}
-              className="luxury-card rounded-[20px] p-3.5 border border-emerald-500/45 hover:border-emerald-400 transition flex items-center justify-between gap-2.5 text-right cursor-pointer shadow-lg"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
-                  <FileSpreadsheet className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-emerald-300 truncate">
-                    نسخة احتياطية Excel / CSV شهرية
-                  </p>
-                  <p className="text-[10px] text-white/75 truncate">
-                    تحميل جرد الشهر والمحاسبة بنقرة واحدة
-                  </p>
-                </div>
-              </div>
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-black text-[10px] shrink-0">
-                تحميل Excel
-              </span>
-            </button>
-          )}
-
-          {onOpenPlatformOwner && userRole === 'platform_owner' && (
+      {/* Commercial Features: Subscription Management */}
+      {onOpenPlatformOwner && userRole === 'platform_owner' && (
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-1 gap-2.5">
             <button
               type="button"
               onClick={onOpenPlatformOwner}
@@ -1052,9 +1065,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 إدارة
               </span>
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* نافذة التنبيه عند تسليم حوالة ولاكيس المحطة خاوية */}
       {pendingPayoutWarningTransfer && (

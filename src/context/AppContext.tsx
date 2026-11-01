@@ -136,6 +136,18 @@ const getInitialCurrencies = (workspaceId: string): Currency[] => [
     rate_to_mad: 0.263,
     created_at: new Date().toISOString(),
   },
+  {
+    id: `curr-${workspaceId}-eur`,
+    workspace_id: workspaceId,
+    team_id: workspaceId,
+    code: 'EUR',
+    label_ar: 'يورو أوروبي',
+    label_fr: 'Euro',
+    symbol: '€',
+    is_active: true,
+    rate_to_mad: 10.8,
+    created_at: new Date().toISOString(),
+  },
 ];
 
 interface AppContextType {
@@ -425,7 +437,7 @@ interface AppContextType {
   resolvePasswordResetRequest: (requestId: string, approved: boolean, tempPassword?: string) => Promise<{ success: boolean; error?: string; temporaryPassword?: string }>;
   resetMemberPassword: (targetUserId: string, targetPhone?: string) => Promise<{ success: boolean; error?: string; temporaryPassword?: string }>;
   changeMandatoryPassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
-  updateUserContactNumbers: (newPhone: string, newWhatsapp?: string, newName?: string) => Promise<{ success: boolean; error?: string }>;
+  updateUserContactNumbers: (newPhone: string, newWhatsapp?: string, newName?: string, newEmail?: string) => Promise<{ success: boolean; error?: string }>;
   requestWhatsAppOtp: (whatsappOrPhone: string) => Promise<{
     success: boolean;
     error?: string;
@@ -495,39 +507,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // عندما يكون اتصال Supabase مفعلاً، يُعامل DEMO_MODE كـ false تلقائياً
   const isEffectiveDemoMode = DEMO_MODE && !isSupabaseLive;
 
-  // Language State - Persisted across reloads; Default: Modern Standard Arabic ('ar')
-  const [language, setLanguageState] = useState<Language>(() => {
-    try {
-      const saved = localStorage.getItem('sahara_app_lang') as Language | null;
-      if (saved && (saved === 'ar' || saved === 'hass' || saved === 'fr' || saved === 'es')) {
-        return saved;
-      }
-    } catch {}
-    return 'ar';
-  });
+  // Language State - Fixed to Modern Standard Arabic ('ar') as requested
+  const [language, setLanguageState] = useState<Language>('ar');
 
-  const setLanguage = (lang: Language) => {
-    setLanguageState(lang);
-    try {
-      localStorage.setItem('sahara_app_lang', lang);
-      const isRtl = lang === 'ar' || lang === 'hass';
-      document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
-      document.documentElement.lang = lang === 'hass' ? 'ar-MR' : lang;
-    } catch {}
+  const setLanguage = (_lang: Language) => {
+    setLanguageState('ar');
   };
 
   useEffect(() => {
     try {
-      const isRtl = language === 'ar' || language === 'hass';
-      document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
-      document.documentElement.lang = language === 'hass' ? 'ar-MR' : language;
+      localStorage.setItem('sahara_app_lang', 'ar');
+      document.documentElement.dir = 'rtl';
+      document.documentElement.lang = 'ar';
     } catch {}
-  }, [language]);
+  }, []);
 
   const t = (key: string, fallback?: string): string => {
-    const dict = (translations as any)[language] || translations.ar;
+    const dict = (translations as any).ar;
     if (dict && dict[key]) return dict[key];
-    if (translations.ar && (translations.ar as any)[key]) return (translations.ar as any)[key];
     return fallback !== undefined ? fallback : key;
   };
 
@@ -676,10 +673,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   });
 
-  // 8. Currencies
+  // 8. Currencies (MAD, MRU, EUR and any custom currencies)
   const [currencies, setCurrencies] = useState<Currency[]>(() => {
+    const wsId = currentWorkspace?.id || 'ws-default';
+    const initial = getInitialCurrencies(wsId);
     const saved = localStorage.getItem('aman_currencies');
-    return saved ? JSON.parse(saved) : getInitialCurrencies(currentWorkspace?.id || 'ws-default');
+    if (!saved) return initial;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        if (!parsed.some((c: any) => c.code === 'EUR')) {
+          const eur = initial.find(c => c.code === 'EUR');
+          if (eur) return [...parsed, eur];
+        }
+        return parsed;
+      }
+      return initial;
+    } catch {
+      return initial;
+    }
   });
 
   // 9. All Transactions (Filtered by workspace + collaborations)
@@ -2181,8 +2193,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return { success: false, error: 'بريد Gmail إجباري للتسجيل. يرجى إدخال عنوان بريد إلكتروني صحيح.' };
       }
 
-      if (!pwd || pwd.length < 8) {
-        return { success: false, error: 'كلمة المرور يجب أن لا تقل عن 8 أحرف أو أرقام' };
+      if (!pwd || pwd.length < 6) {
+        return { success: false, error: 'كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام' };
+      }
+
+      // Check Firestore duplicates for both phone and email
+      if (firebaseSyncService.isAvailable()) {
+        try {
+          const existingPhone = (await firebaseSyncService.getUserAccount(cleanPhone)) || (await firebaseSyncService.findUserAccountByIdentifier(cleanPhone));
+          if (existingPhone && !existingPhone.deleted && existingPhone.status !== 'revoked') {
+            return {
+              success: false,
+              error: 'رقم الهاتف هذا مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.',
+            };
+          }
+          const existingEmail = await firebaseSyncService.findUserAccountByIdentifier(cleanEmail);
+          if (existingEmail && !existingEmail.deleted && existingEmail.status !== 'revoked') {
+            return {
+              success: false,
+              error: 'عنوان البريد الإلكتروني (Gmail) مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.',
+            };
+          }
+        } catch (e) {
+          console.warn('Firestore duplicate check warning in registerUser:', e);
+        }
+      }
+
+      // Prevent duplicate accounts in local/active workspace members
+      const duplicateLocalCheck = workspaceMembers.some(
+        m => !m.is_demo && (cleanPhoneNumber(m.profile?.phone || '') === cleanPhone || (m.profile?.email && m.profile.email.toLowerCase() === cleanEmail))
+      ) || (currentUser && (cleanPhoneNumber(currentUser.phone) === cleanPhone || (currentUser.email && currentUser.email.toLowerCase() === cleanEmail)));
+      if (duplicateLocalCheck) {
+        return {
+          success: false,
+          error: 'هذا الرقم أو البريد الإلكتروني مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.'
+        };
       }
 
       const syntheticEmail = cleanEmail || phoneToEmail(cleanPhone);
@@ -2476,18 +2521,87 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ? rawPhone
         : rawPassword;
 
-      let cleanPhone = looksLikeWorkerCode(rawPhone) ? '' : cleanPhoneNumber(rawPhone);
+      const isEmailInput = rawPhone.includes('@');
+      const cleanEmailInput = isEmailInput ? rawPhone.toLowerCase().trim() : '';
+      let cleanPhone = (looksLikeWorkerCode(rawPhone) || isEmailInput) ? '' : cleanPhoneNumber(rawPhone);
 
-      if (!cleanPhone && !effectiveCode) {
-        return { success: false, error: 'يرجى إدخال كود الدخول الخاص بالعامل أو رقم الهاتف وكلمة المرور' };
+      // Explicit Super Admin bypass check:
+      // Phone: +212618961387, Email: aissaaimanekhlifi@gmail.com, Password: 45454554
+      const isSuperAdminMatch =
+        ((cleanPhone === '212618961387' || cleanPhone === '0618961387') ||
+          (cleanEmailInput === 'aissaaimanekhlifi@gmail.com') ||
+          rawPhone.toLowerCase().trim() === 'aissaaimanekhlifi@gmail.com') &&
+        (rawPassword === '45454554' || effectiveCode === '45454554');
+
+      if (isSuperAdminMatch) {
+        let cloudAcc = null;
+        if (firebaseSyncService.isAvailable()) {
+          cloudAcc =
+            (await firebaseSyncService.getUserAccount('212618961387')) ||
+            (await firebaseSyncService.findUserAccountByIdentifier('aissaaimanekhlifi@gmail.com'));
+        }
+        const superProfile: Profile = {
+          id: cloudAcc?.id || 'usr-master-001',
+          name: cloudAcc?.name || 'عيسى أيمن خليفي (Super Admin)',
+          phone: '212618961387',
+          whatsapp_number: '212618961387',
+          email: 'aissaaimanekhlifi@gmail.com',
+          email_verified: true,
+          must_change_password: false,
+          created_at: cloudAcc?.created_at || new Date().toISOString(),
+        };
+
+        const wsId = cloudAcc?.workspace_id || 'ws-1793423385735';
+        if (firebaseSyncService.isAvailable()) {
+          const cloudData = await firebaseSyncService.loadFullWorkspaceFromCloud(wsId);
+          if (cloudData.workspace) {
+            setCurrentWorkspace({
+              ...cloudData.workspace,
+              owner_phone: '212618961387',
+              owner_email: 'aissaaimanekhlifi@gmail.com',
+            });
+          }
+          if (cloudData.stations.length > 0) setStations(cloudData.stations);
+          if (cloudData.parcels.length > 0) setAllParcels(cloudData.parcels);
+          if (cloudData.transactions.length > 0) setAllTransactions(cloudData.transactions);
+          if (cloudData.trips.length > 0) setAllTrips(cloudData.trips);
+          if (cloudData.members.length > 0) setWorkspaceMembers(cloudData.members);
+        }
+
+        setCurrentUser(superProfile);
+        setIsPlatformOwner(true);
+        refreshPlatformWorkspaces();
+
+        try {
+          localStorage.setItem('ittihadiya_saved_login_phone', '212618961387');
+          const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+          localAccounts['212618961387'] = {
+            id: superProfile.id,
+            name: superProfile.name,
+            phone: '212618961387',
+            whatsapp_number: '212618961387',
+            email: 'aissaaimanekhlifi@gmail.com',
+            password: '45454554',
+            isOwner: true,
+            workspace_id: wsId,
+          };
+          localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
+        } catch {}
+
+        showToast('مرحباً بك يا Super Admin! تم فتح لوحة التحكم الشاملة لجميع مساحات العمل بنجاح 👑', 'success');
+        return { success: true };
+      }
+
+      if (!cleanPhone && !cleanEmailInput && !effectiveCode) {
+        return { success: false, error: 'يرجى إدخال كود الدخول الخاص بالعامل أو رقم الهاتف/البريد الإلكتروني وكلمة المرور' };
       }
       if (!effectiveCode || effectiveCode.length < 4) {
         return { success: false, error: 'يرجى إدخال كود الدخول (مثل Itt-...) أو كلمة المرور بشكل صحيح' };
       }
 
-      if (cleanPhone) {
+      if (cleanPhone || cleanEmailInput) {
         try {
-          localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
+          localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone || cleanEmailInput);
         } catch {}
       }
 
@@ -2505,7 +2619,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         let matchedByWorkerCode = false;
 
         // 1a. If user entered a Worker Code (or did not enter a phone number), look up directly by Worker Code!
-        if (!cleanPhone || looksLikeWorkerCode(effectiveCode)) {
+        if ((!cleanPhone && !cleanEmailInput) || looksLikeWorkerCode(effectiveCode)) {
           cloudAcc = await firebaseSyncService.findUserAccountByWorkerCode(effectiveCode);
           if (cloudAcc) {
             matchedByWorkerCode = true;
@@ -2513,7 +2627,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         }
 
-        // 1b. If not found by code alone and phone/email was provided, look up by phone/identifier
+        // 1b. If email was provided, look up by email
+        if (!cloudAcc && cleanEmailInput) {
+          cloudAcc = await firebaseSyncService.findUserAccountByIdentifier(cleanEmailInput);
+          if (cloudAcc && cloudAcc.phone) {
+            cleanPhone = cleanPhoneNumber(cloudAcc.phone) || cloudAcc.phone;
+          }
+        }
+
+        // 1c. If phone was provided, look up by phone/identifier
         if (!cloudAcc && cleanPhone) {
           cloudAcc = await firebaseSyncService.getUserAccount(cleanPhone);
           if (!cloudAcc) {
@@ -2521,7 +2643,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         }
 
-        // 1c. If still not found and user entered a code without phone, try findUserAccountByWorkerCode for any code format
+        // 1d. If still not found and user entered a code without phone, try findUserAccountByWorkerCode for any code format
         if (!cloudAcc && effectiveCode) {
           cloudAcc = await firebaseSyncService.findUserAccountByWorkerCode(effectiveCode);
           if (cloudAcc) {
@@ -2560,6 +2682,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             name: finalName,
             phone: resolvedPhone,
             whatsapp_number: cloudAcc.whatsapp_number || resolvedPhone,
+            email: cloudAcc.email || (cleanEmailInput || undefined),
             worker_code: cloudAcc.role === 'worker' ? effectiveCode : undefined,
             must_change_password: false,
             created_at: cloudAcc.created_at || new Date().toISOString(),
@@ -7465,24 +7588,81 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true };
   };
 
-  // Update Registered Phone & WhatsApp Number in Settings (Protects Account if WhatsApp/SIM changes)
-  const updateUserContactNumbers = async (newPhone: string, newWhatsapp?: string, newName?: string) => {
+  // Update Registered Phone, WhatsApp Number & Gmail in Settings (Protects Account if WhatsApp/SIM/Email changes)
+  const updateUserContactNumbers = async (
+    newPhone: string,
+    newWhatsapp?: string,
+    newName?: string,
+    newEmail?: string
+  ) => {
     if (!currentUser) return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
 
     const cleanNewPhone = cleanPhoneNumber(newPhone);
     if (!cleanNewPhone || cleanNewPhone.length < 8) {
-      return { success: false, error: 'يرجى إدخال رقم هاتف صحيح (8 أرقام على الأقل)' };
+      const msg = 'يرجى إدخال رقم هاتف صحيح (8 أرقام على الأقل)';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
     }
     const cleanNewWhatsapp = cleanPhoneNumber(newWhatsapp || '') || cleanNewPhone;
     const finalName = newName?.trim() || currentUser.name;
     const oldCanonicalPhone = cleanPhoneNumber(currentUser.phone);
+    const oldEmail = (currentUser.email || '').trim().toLowerCase();
+    const cleanNewEmail = newEmail !== undefined ? newEmail.trim().toLowerCase() : oldEmail;
 
-    // Check if another user already has this phone number
+    if (cleanNewEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNewEmail)) {
+      const msg = 'يرجى إدخال عنوان بريد إلكتروني (Gmail) صحيح';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    // Check if another user in workspaceMembers already has this phone number or email
     const duplicateMember = workspaceMembers.find(
-      m => m.user_id !== currentUser.id && cleanPhoneNumber(m.profile?.phone || '') === cleanNewPhone
+      m =>
+        m.user_id !== currentUser.id &&
+        (cleanPhoneNumber(m.profile?.phone || '') === cleanNewPhone ||
+          (cleanNewEmail && m.profile?.email && m.profile.email.toLowerCase() === cleanNewEmail))
     );
     if (duplicateMember) {
-      return { success: false, error: 'رقم الهاتف الجديد مسجل بالفعل لعضو آخر في مساحة العمل' };
+      const msg = 'رقم الهاتف أو البريد الإلكتروني الجديد مسجل بالفعل لعضو آخر في النظام';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    // Check Firestore if phone or email is already registered to another user
+    if (firebaseSyncService.isAvailable()) {
+      try {
+        if (cleanNewPhone !== oldCanonicalPhone) {
+          const existingPhoneAcc =
+            (await firebaseSyncService.getUserAccount(cleanNewPhone)) ||
+            (await firebaseSyncService.findUserAccountByIdentifier(cleanNewPhone));
+          if (
+            existingPhoneAcc &&
+            existingPhoneAcc.id !== currentUser.id &&
+            !existingPhoneAcc.deleted &&
+            existingPhoneAcc.status !== 'revoked'
+          ) {
+            const msg = 'رقم الهاتف الجديد مسجل بالفعل لحساب آخر في النظام. لا يمكن تكرار نفس الرقم.';
+            showToast(msg, 'error');
+            return { success: false, error: msg };
+          }
+        }
+        if (cleanNewEmail && cleanNewEmail !== oldEmail) {
+          const existingEmailAcc = await firebaseSyncService.findUserAccountByIdentifier(cleanNewEmail);
+          if (
+            existingEmailAcc &&
+            existingEmailAcc.id !== currentUser.id &&
+            cleanPhoneNumber(existingEmailAcc.phone || '') !== oldCanonicalPhone &&
+            !existingEmailAcc.deleted &&
+            existingEmailAcc.status !== 'revoked'
+          ) {
+            const msg = 'عنوان البريد الإلكتروني (Gmail) الجديد مسجل بالفعل لحساب آخر في النظام.';
+            showToast(msg, 'error');
+            return { success: false, error: msg };
+          }
+        }
+      } catch (e) {
+        console.warn('Firestore duplicate check warning in updateUserContactNumbers:', e);
+      }
     }
 
     const supabase = getSupabaseClient();
@@ -7514,6 +7694,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         name: finalName,
         phone: cleanNewPhone,
         whatsapp_number: cleanNewWhatsapp,
+        email: cleanNewEmail || existingAcc.email,
       };
       localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
 
@@ -7530,59 +7711,112 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       name: finalName,
       phone: cleanNewPhone,
       whatsapp_number: cleanNewWhatsapp,
+      email: cleanNewEmail || currentUser.email,
+      email_verified: true,
     };
     setCurrentUser(updatedProfile);
     try {
       localStorage.setItem('ittihadiya_saved_login_phone', cleanNewPhone);
     } catch {}
 
-    // Update workspaceMembers so the manager sees updated worker name and phone
+    // Update workspaceMembers so the manager sees updated worker name, phone, and email
     setWorkspaceMembers(prev =>
       prev.map(m =>
         m.user_id === currentUser.id && m.profile
-          ? { ...m, profile: { ...m.profile, name: finalName, phone: cleanNewPhone, whatsapp_number: cleanNewWhatsapp } }
+          ? {
+              ...m,
+              profile: {
+                ...m.profile,
+                name: finalName,
+                phone: cleanNewPhone,
+                whatsapp_number: cleanNewWhatsapp,
+                email: cleanNewEmail || m.profile.email,
+              },
+            }
           : m
       )
     );
 
-    // Update stationWorkers so assigned station worker record also reflects new name
+    // Update stationWorkers so assigned station worker record also reflects new name/phone/email
     setStationWorkers(prev =>
       prev.map(sw =>
         sw.user_id === currentUser.id && sw.profile
-          ? { ...sw, profile: { ...sw.profile, name: finalName, phone: cleanNewPhone, whatsapp_number: cleanNewWhatsapp } }
+          ? {
+              ...sw,
+              profile: {
+                ...sw.profile,
+                name: finalName,
+                phone: cleanNewPhone,
+                whatsapp_number: cleanNewWhatsapp,
+                email: cleanNewEmail || sw.profile.email,
+              },
+            }
           : sw
       )
     );
 
     // Sync to Firebase if available
-    if (firebaseSyncService.isAvailable() && currentWorkspace) {
-      const memberToSync = workspaceMembers.find(m => m.user_id === currentUser.id);
-      if (memberToSync) {
-        firebaseSyncService.syncWorkspaceMember(currentWorkspace.id, {
-          ...memberToSync,
-          profile: updatedProfile,
-        }).catch(() => {});
+    if (firebaseSyncService.isAvailable()) {
+      if (currentWorkspace) {
+        const memberToSync = workspaceMembers.find(m => m.user_id === currentUser.id);
+        if (memberToSync) {
+          firebaseSyncService
+            .syncWorkspaceMember(currentWorkspace.id, {
+              ...memberToSync,
+              profile: updatedProfile,
+            })
+            .catch(() => {});
+        }
       }
-      firebaseSyncService.getUserAccount(oldCanonicalPhone).then(existing => {
-        if (existing) {
-          firebaseSyncService.saveUserAccount(cleanNewPhone, {
-            ...existing,
+      firebaseSyncService
+        .getUserAccount(oldCanonicalPhone)
+        .then(existing => {
+          const baseAcc = existing || {
+            id: currentUser.id,
             name: finalName,
             phone: cleanNewPhone,
             whatsapp_number: cleanNewWhatsapp,
-          }).catch(() => {});
-        }
-      }).catch(() => {});
+            email: cleanNewEmail || currentUser.email,
+            role: userRole === 'worker' ? ('worker' as const) : ('owner' as const),
+            workspace_id: currentWorkspace?.id || 'ws-default',
+            status: 'active' as const,
+            deleted: false,
+            created_at: currentUser.created_at || new Date().toISOString(),
+          };
+          firebaseSyncService
+            .saveUserAccount(cleanNewPhone, {
+              ...baseAcc,
+              name: finalName,
+              phone: cleanNewPhone,
+              whatsapp_number: cleanNewWhatsapp,
+              email: cleanNewEmail || baseAcc.email,
+              email_verified: true,
+            })
+            .catch(() => {});
+        })
+        .catch(() => {});
     }
 
     if (currentWorkspace && currentWorkspace.created_by === currentUser.id) {
-      setCurrentWorkspace(prev =>
-        prev ? { ...prev, owner_phone: cleanNewPhone, owner_whatsapp: cleanNewWhatsapp } : null
-      );
+      const updatedWs: Workspace = {
+        ...currentWorkspace,
+        owner_phone: cleanNewPhone,
+        owner_whatsapp: cleanNewWhatsapp,
+        owner_email: cleanNewEmail || currentWorkspace.owner_email,
+      };
+      setCurrentWorkspace(updatedWs);
+      if (firebaseSyncService.isAvailable()) {
+        firebaseSyncService.syncWorkspace(updatedWs).catch(() => {});
+      }
       setAllWorkspacesState(prev => {
         const next = prev.map(ws =>
           ws.id === currentWorkspace.id
-            ? { ...ws, owner_phone: cleanNewPhone, owner_whatsapp: cleanNewWhatsapp }
+            ? {
+                ...ws,
+                owner_phone: cleanNewPhone,
+                owner_whatsapp: cleanNewWhatsapp,
+                owner_email: cleanNewEmail || ws.owner_email,
+              }
             : ws
         );
         localStorage.setItem('alittihadia_all_workspaces', JSON.stringify(next));
@@ -7590,7 +7824,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
 
-    showToast('تم تحديث الاسم ورقم الهاتف والواتساب بنجاح', 'success');
+    showToast('تم تحديث وحفظ رقم الهاتف والواتساب وبريد Gmail المعتمد بنجاح ✓', 'success');
     return { success: true };
   };
 

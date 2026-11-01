@@ -27,20 +27,17 @@ import {
   SlidersHorizontal,
   Store,
   Trash2,
-  CheckCircle2,
-  FileSpreadsheet
+  CheckCircle2
 } from 'lucide-react';
 
 interface LedgerViewProps {
   onOpenNewVoucher: (initialType?: TransactionType) => void;
   onOpenCustomerAccounts?: () => void;
-  onOpenBackupModal?: () => void;
 }
 
 export const LedgerView: React.FC<LedgerViewProps> = ({
   onOpenNewVoucher,
   onOpenCustomerAccounts,
-  onOpenBackupModal,
 }) => {
   const { 
     transactions, 
@@ -141,26 +138,93 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
   const currentStation = stations.find(s => s.id === (filterStation !== 'all' ? filterStation : selectedStationId)) || stations[0];
 
   const displayedBalances = useMemo(() => {
-    if (filterStation !== 'all') {
-      const bals = stationBalances[filterStation] || {};
-      return {
-        mad: Math.round((bals['MAD'] || 0) * 100) / 100,
-        mru: Math.round((bals['MRU'] || 0) * 100) / 100,
-        label: stations.find(s => s.id === filterStation)?.name || 'المحطة'
-      };
-    }
-    let totalMad = 0;
-    let totalMru = 0;
-    Object.values(stationBalances).forEach(bals => {
-      totalMad += bals['MAD'] || 0;
-      totalMru += bals['MRU'] || 0;
-    });
-    return {
-      mad: Math.round(totalMad * 100) / 100,
-      mru: Math.round(totalMru * 100) / 100,
-      label: `مجموع المحطات (${stations.length})`
+    const currencyMeta: Record<string, { code: string; label: string; symbol: string; flag: string; color: string }> = {
+      MAD: { code: 'MAD', label: 'صندوق الدرهم', symbol: 'درهم', flag: '🇲🇦', color: 'border-[#F5C84C]/40 text-[#F5C84C]' },
+      MRU: { code: 'MRU', label: 'صندوق الأوقية', symbol: 'أوقية', flag: '🇲🇷', color: 'border-[#2ECC71]/40 text-[#68E399]' },
+      EUR: { code: 'EUR', label: 'صندوق اليورو', symbol: 'يورو', flag: '🇪🇺', color: 'border-blue-400/40 text-blue-300' },
+      USD: { code: 'USD', label: 'صندوق الدولار', symbol: 'دولار', flag: '🇺🇸', color: 'border-emerald-400/40 text-emerald-300' },
     };
-  }, [stationBalances, filterStation, stations]);
+
+    // Add any configured currencies from workspace
+    currencies.forEach(c => {
+      if (!currencyMeta[c.code]) {
+        currencyMeta[c.code] = {
+          code: c.code,
+          label: `صندوق ${c.label_ar || c.code}`,
+          symbol: c.symbol || c.code,
+          flag: '🪙',
+          color: 'border-[#D4AF37]/40 text-[#F5C84C]'
+        };
+      }
+    });
+
+    const getBal = (code: string): number => {
+      if (filterStation !== 'all') {
+        const bals = stationBalances[filterStation] || {};
+        return Math.round((bals[code] || 0) * 100) / 100;
+      }
+      let total = 0;
+      Object.values(stationBalances).forEach(bals => {
+        total += bals[code] || 0;
+      });
+      return Math.round(total * 100) / 100;
+    };
+
+    // Collect candidate currencies for the current scope:
+    const candidateCodes = new Set<string>();
+    currencies.filter(c => c.is_active).forEach(c => candidateCodes.add(c.code));
+
+    // Also include any currency that has a non-zero balance in this station/scope
+    Object.keys(currencyMeta).forEach(code => {
+      if (getBal(code) !== 0) {
+        candidateCodes.add(code);
+      }
+    });
+
+    // If specific station, also add station primary currency
+    if (filterStation !== 'all') {
+      const st = stations.find(s => s.id === filterStation);
+      if (st?.currency) candidateCodes.add(st.currency);
+      if (st?.default_currency) candidateCodes.add(st.default_currency);
+    }
+
+    // Default to at least MAD and MRU if empty
+    if (candidateCodes.size === 0) {
+      candidateCodes.add('MAD');
+      candidateCodes.add('MRU');
+    }
+
+    const items = Array.from(candidateCodes).map(code => ({
+      ...(currencyMeta[code] || {
+        code,
+        label: `صندوق ${code}`,
+        symbol: code,
+        flag: '🪙',
+        color: 'border-[#F5C84C]/40 text-[#F5C84C]'
+      }),
+      balance: getBal(code),
+    }));
+
+    // Sort order: MAD, MRU, EUR, then others
+    const sortOrder = ['MAD', 'MRU', 'EUR', 'USD'];
+    items.sort((a, b) => {
+      const idxA = sortOrder.indexOf(a.code);
+      const idxB = sortOrder.indexOf(b.code);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.code.localeCompare(b.code);
+    });
+
+    const label = filterStation !== 'all'
+      ? (stations.find(s => s.id === filterStation)?.name || 'المحطة')
+      : `مجموع المحطات (${stations.length})`;
+
+    return {
+      items,
+      label,
+    };
+  }, [stationBalances, filterStation, stations, currencies]);
 
   // Filtered transactions
   const filteredTransactions = useMemo(() => {
@@ -414,16 +478,6 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
               </button>
             )}
 
-            {onOpenBackupModal && (userRole === 'owner' || userRole === 'platform_owner') && (
-              <button
-                type="button"
-                onClick={onOpenBackupModal}
-                className="col-span-2 py-2.5 px-3 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-300 font-black text-xs flex items-center justify-center gap-2 hover:bg-emerald-900/60 transition cursor-pointer"
-              >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                <span>نسخة احتياطية Excel / CSV شهرية بنقرة واحدة</span>
-              </button>
-            )}
           </div>
         )}
       </div>
@@ -715,39 +769,44 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
           )}
         </div>
 
-        {/* 2 Compact Boxes in 1 Row */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className={`border rounded-xl p-2.5 ${displayedBalances.mad < 0 ? 'bg-rose-950/60 border-rose-500/50' : 'bg-black/55 border-[#F5C84C]/40'}`}>
-            <div className="flex items-center justify-between text-[10px] text-white/80 font-bold">
-              <span>صندوق الدرهم 🇲🇦</span>
-              <span className="text-[#F5C84C] font-mono">MAD</span>
-            </div>
-            <div
-              className={`text-sm sm:text-base font-black font-mono mt-0.5 ${
-                displayedBalances.mad < 0 ? 'text-rose-400' : 'text-[#F5C84C]'
-              }`}
-              dir="ltr"
-            >
-              {hideAmounts ? '••••••' : displayedBalances.mad.toLocaleString()}{' '}
-              <span className="text-[10px] font-sans text-white/80">درهم</span>
-            </div>
-          </div>
-
-          <div className={`border rounded-xl p-2.5 ${displayedBalances.mru < 0 ? 'bg-rose-950/60 border-rose-500/50' : 'bg-black/55 border-[#2ECC71]/40'}`}>
-            <div className="flex items-center justify-between text-[10px] text-white/80 font-bold">
-              <span>صندوق الأوقية 🇲🇷</span>
-              <span className="text-[#68E399] font-mono">MRU</span>
-            </div>
-            <div
-              className={`text-sm sm:text-base font-black font-mono mt-0.5 ${
-                displayedBalances.mru < 0 ? 'text-rose-400' : 'text-[#68E399]'
-              }`}
-              dir="ltr"
-            >
-              {hideAmounts ? '••••••' : displayedBalances.mru.toLocaleString()}{' '}
-              <span className="text-[10px] font-sans text-white/80">أوقية</span>
-            </div>
-          </div>
+        {/* Dynamic Currency Balance Boxes (1, 2, 3 or more currencies) */}
+        <div className={`grid gap-2 ${
+          displayedBalances.items.length === 1 ? 'grid-cols-1' :
+          displayedBalances.items.length === 2 ? 'grid-cols-2' :
+          'grid-cols-1 sm:grid-cols-3'
+        }`}>
+          {displayedBalances.items.map(curr => {
+            const isNegative = curr.balance < 0;
+            const borderColorClass = curr.color.split(' ')[0];
+            const textColorClass = curr.color.split(' ')[1];
+            return (
+              <div
+                key={curr.code}
+                className={`border rounded-xl p-2.5 transition-all ${
+                  isNegative ? 'bg-rose-950/60 border-rose-500/50' : `bg-black/55 ${borderColorClass}`
+                }`}
+              >
+                <div className="flex items-center justify-between text-[10px] text-white/80 font-bold">
+                  <span>{curr.label} {curr.flag}</span>
+                  <span className={`font-mono font-bold ${textColorClass}`}>{curr.code}</span>
+                </div>
+                <div
+                  className={`text-sm sm:text-base font-black font-mono mt-0.5 ${
+                    isNegative ? 'text-rose-400' : textColorClass
+                  }`}
+                  dir="ltr"
+                >
+                  {hideAmounts ? '••••••' : curr.balance.toLocaleString('en-US')}{' '}
+                  <span className="text-[10px] font-sans text-white/80">{curr.symbol}</span>
+                </div>
+                {isNegative && (
+                  <span className="text-[9px] font-bold text-rose-300 block mt-0.5">
+                    عجز فلاكيس
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Pending Hawalas for current station scope */}

@@ -6,13 +6,9 @@ import '@fontsource/cairo/800.css';
 import '@fontsource/cairo/900.css';
 import App from './App.tsx';
 import './index.css';
+import { initPWAAutoUpdate } from './services/pwaAutoUpdate';
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // Service worker registration optional in preview environments
-    });
-  });
-}
+// Start PWA Auto-Update engine (auto-checks for new Vercel deployments and refreshes app)
+initPWAAutoUpdate();
 
 createRoot(document.getElementById('root')!).render(<App />);

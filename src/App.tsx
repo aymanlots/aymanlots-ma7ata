@@ -29,7 +29,6 @@ import { CustomerAccountsModal } from './components/CustomerAccountsModal';
 import { PublicTrackingModal } from './components/PublicTrackingModal';
 import { ForcePasswordChangeModal } from './components/ForcePasswordChangeModal';
 import { GuidedSetupTourModal } from './components/GuidedSetupTourModal';
-import { BackupExportModal } from './components/BackupExportModal';
 import { StationScopeBar } from './components/StationScopeBar';
 import { Toast } from './components/Toast';
 import { Parcel, TransactionType } from './types/database';
@@ -44,11 +43,10 @@ const MainApp: React.FC = () => {
     daysUntilExpiry, 
     subscriptionRemainingLabel,
     isSubscriptionExpired,
-    showToast,
-    language
+    showToast
   } = useApp();
 
-  const dir = (language === 'ar' || language === 'hass') ? 'rtl' : 'ltr';
+  const dir = 'rtl';
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [openSettingsTeam, setOpenSettingsTeam] = useState(false);
@@ -68,7 +66,6 @@ const MainApp: React.FC = () => {
   const [stickerBatchParcels, setStickerBatchParcels] = useState<Parcel[] | undefined>(undefined);
   const [showGuidedTour, setShowGuidedTour] = useState(false);
   const [showQuickDeliver, setShowQuickDeliver] = useState(false);
-  const [showBackupModal, setShowBackupModal] = useState(false);
 
   // Auto-open public tracking modal if URL has ?track=CODE
   useEffect(() => {
@@ -170,7 +167,6 @@ const MainApp: React.FC = () => {
           onOpenPublicTracking={() => setShowPublicTracking(true)}
           onOpenCollabRoom={() => setShowCollabRoom(true)}
           onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
-          onOpenBackupModal={() => setShowBackupModal(true)}
           onOpenPlatformOwner={
             userRole === 'platform_owner' ? () => setShowPlatformOwnerDashboard(true) : undefined
           }
@@ -250,7 +246,6 @@ const MainApp: React.FC = () => {
                 onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
                 onOpenPublicTracking={() => setShowPublicTracking(true)}
                 onOpenGuidedTour={() => setShowGuidedTour(true)}
-                onOpenBackupModal={() => setShowBackupModal(true)}
                 onOpenPlatformOwner={
                   userRole === 'platform_owner' ? () => setShowPlatformOwnerDashboard(true) : undefined
                 }
@@ -305,7 +300,6 @@ const MainApp: React.FC = () => {
                 setShowNewVoucher(true);
               }}
               onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
-              onOpenBackupModal={() => setShowBackupModal(true)}
             />
           )}
 
@@ -320,7 +314,6 @@ const MainApp: React.FC = () => {
               onOpenCollabRoom={() => setShowCollabRoom(true)}
               onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
               onOpenGuidedTour={() => setShowGuidedTour(true)}
-              onOpenBackupModal={() => setShowBackupModal(true)}
               initialOpenTeam={openSettingsTeam}
               onTeamOpened={() => setOpenSettingsTeam(false)}
             />
@@ -441,11 +434,6 @@ const MainApp: React.FC = () => {
           />
         )}
 
-        {/* One-Click Monthly Excel / CSV & Full Backup Modal */}
-        <BackupExportModal
-          isOpen={showBackupModal}
-          onClose={() => setShowBackupModal(false)}
-        />
 
         {/* Onboarding Modal */}
         <OnboardingModal

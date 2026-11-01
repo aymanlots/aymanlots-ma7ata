@@ -1,5 +1,16 @@
-const CACHE_NAME = 'sahara-express-shell-v7';
-const APP_SHELL = [
+/**
+ * Sahara Express PWA Service Worker
+ * Features:
+ * - Immediate Skip Waiting & Auto Claim
+ * - Network-First for Navigation (Index & Routes) so new Vercel deploys appear instantly
+ * - Fast Offline Cache Fallback
+ * - Proactive Client Notification on Update
+ */
+
+const SW_VERSION = 'sahara-express-v' + (self.registration ? self.registration.scope : '') + '-20261031';
+const CACHE_NAME = 'sahara-cache-v8';
+
+const OFFLINE_FALLBACKS = [
   '/',
   '/index.html',
   '/manifest.json',
@@ -9,79 +20,137 @@ const APP_SHELL = [
   '/logo.png'
 ];
 
+// Install: Immediately take over without waiting for tabs to close
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
       await Promise.allSettled(
-        APP_SHELL.map(async (url) => {
+        OFFLINE_FALLBACKS.map(async (url) => {
           try {
-            const response = await fetch(url);
-            if (response.ok) {
-              await cache.put(url, response);
+            const res = await fetch(url, { cache: 'no-cache' });
+            if (res.ok) {
+              await cache.put(url, res);
             }
-          } catch (e) {
-            // Silently continue if an optional asset fails
+          } catch {
+            // Non-blocking for optional assets
           }
         })
       );
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
+// Activate: Purge all stale caches and claim all open clients immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-      )
-      .then(() => self.clients.claim())
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+      );
+    }).then(async () => {
+      await self.clients.claim();
+      // Notify all connected tabs/PWA windows that a fresh version has taken over
+      const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      allClients.forEach((client) => {
+        client.postMessage({ type: 'PWA_UPDATED', version: SW_VERSION });
+      });
+    })
   );
 });
 
+// Listen for direct messages from the app (e.g. force skip waiting)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// Fetch: Strategy depending on request type
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  // Do not cache API calls, Supabase, or Firebase Firestore streams
+
+  // 1. Bypass all backend APIs, Supabase, Firebase Firestore/Auth
   if (
     url.pathname.startsWith('/api/') ||
     url.hostname.includes('supabase.co') ||
     url.hostname.includes('googleapis.com') ||
-    url.hostname.includes('firebaseio.com')
+    url.hostname.includes('firebaseio.com') ||
+    url.hostname.includes('gstatic.com/firebasejs')
   ) {
     return;
   }
 
-  // Navigation requests and manifest.json: Network first, fallback to cache
-  if (req.mode === 'navigate' || url.pathname.endsWith('manifest.json')) {
+  // 2. Never cache the service worker file itself
+  if (url.pathname === '/sw.js') {
+    event.respondWith(fetch(req, { cache: 'no-store' }));
+    return;
+  }
+
+  // 3. Navigation requests (HTML pages & routes): NETWORK-FIRST with fast fallback
+  // This guarantees that any new Vercel deployment is loaded immediately when online!
+  const isNavigation = req.mode === 'navigate' || 
+                       req.destination === 'document' || 
+                       url.pathname === '/' || 
+                       url.pathname.endsWith('index.html');
+
+  if (isNavigation) {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-          return res;
+      fetch(req, { cache: 'no-cache' })
+        .then((networkRes) => {
+          if (networkRes && networkRes.status === 200) {
+            const clone = networkRes.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+          }
+          return networkRes;
         })
-        .catch(() => caches.match(req).then((r) => r || caches.match('/index.html')))
+        .catch(async () => {
+          // If offline or network error, fallback to cached index.html
+          const cached = await caches.match(req);
+          if (cached) return cached;
+          const fallback = await caches.match('/index.html');
+          if (fallback) return fallback;
+          return caches.match('/');
+        })
     );
     return;
   }
 
-  // Static assets (JS, CSS, fonts, icons, WebP background): Stale-While-Revalidate
+  // 4. Hashed Vite assets (/assets/*): Cache-First / Network fallback
+  // Since Vite asset filenames have content hashes (e.g. index-D7x9.js), they are immutable.
+  if (url.origin === self.location.origin && url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      caches.match(req).then((cached) => {
+        if (cached) return cached;
+        return fetch(req).then((networkRes) => {
+          if (networkRes && networkRes.status === 200) {
+            const clone = networkRes.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+          }
+          return networkRes;
+        });
+      })
+    );
+    return;
+  }
+
+  // 5. Other static assets (images, icons, manifest, fonts): Stale-While-Revalidate
   if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(req).then((cached) => {
-        const fetched = fetch(req)
-          .then((res) => {
-            if (res && res.status === 200) {
-              const copy = res.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+        const fetchPromise = fetch(req, { cache: 'no-cache' })
+          .then((networkRes) => {
+            if (networkRes && networkRes.status === 200) {
+              const clone = networkRes.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
             }
-            return res;
+            return networkRes;
           })
           .catch(() => cached);
-        return cached || fetched;
+        return cached || fetchPromise;
       })
     );
   }

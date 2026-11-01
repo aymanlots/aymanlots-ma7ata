@@ -279,7 +279,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                     isSelected ? 'btn-gold' : 'btn-cancel'
                   }`}
                 >
-                  {curr.code === 'MAD' ? 'درهم (MAD)' : curr.code === 'MRU' ? 'أوقية (MRU)' : curr.label_ar}
+                  {curr.code === 'MAD' ? 'درهم (MAD)' : curr.code === 'MRU' ? 'أوقية (MRU)' : curr.code === 'EUR' ? 'يورو (EUR)' : `${curr.label_ar || curr.code} (${curr.code})`}
                 </button>
               );
             })}
