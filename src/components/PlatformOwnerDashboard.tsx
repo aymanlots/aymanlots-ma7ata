@@ -13,6 +13,7 @@ import {
   firebaseSyncService,
   CloudUserAccount,
 } from '../services/firebaseSyncService';
+import { hashPassword } from '../utils/security';
 import {
   Crown,
   X,
@@ -36,12 +37,21 @@ import {
   Truck,
   Wallet,
   Eye,
-  ChevronDown,
-  ChevronUp,
   Mail,
   UserCheck,
   Database,
   MapPin,
+  ArrowRight,
+  ArrowLeft,
+  Calendar,
+  Key,
+  Lock,
+  Plus,
+  Minus,
+  Layers,
+  Hash,
+  ChevronLeft,
+  ExternalLink,
 } from 'lucide-react';
 
 interface PlatformOwnerDashboardProps {
@@ -51,7 +61,8 @@ interface PlatformOwnerDashboardProps {
 
 type FilterTab = 'all' | 'active' | 'expiring_soon' | 'stopped';
 type MainViewTab = 'companies' | 'live_activity';
-type InspectorTab = 'activity' | 'users' | 'parcels' | 'stations';
+type CompanyDetailTab = 'subscription' | 'owner_security' | 'cloud_inspector' | 'admin_notes' | 'danger_zone';
+type InspectorSubTab = 'stations' | 'workers' | 'parcels' | 'activity';
 
 interface InspectedWorkspaceData {
   loading: boolean;
@@ -83,18 +94,28 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
   const [mainTab, setMainTab] = useState<MainViewTab>('companies');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [companyDetailTab, setCompanyDetailTab] = useState<CompanyDetailTab>('subscription');
+  const [inspectorSubTab, setInspectorSubTab] = useState<InspectorSubTab>('stations');
+
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [busyWorkspaceId, setBusyWorkspaceId] = useState<string | null>(null);
   const [confirmDeleteWsId, setConfirmDeleteWsId] = useState<string | null>(null);
+
+  // Exact date & custom days adjustment state
+  const [customDaysInput, setCustomDaysInput] = useState<number>(30);
+  const [customDateInput, setCustomDateInput] = useState<string>('');
+
+  // Password reset state for owner
+  const [newOwnerPassword, setNewOwnerPassword] = useState<string>('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Live Activity Feed across all workspaces in Firebase
   const [globalActivityLogs, setGlobalActivityLogs] = useState<PlatformActivityLog[]>([]);
   const [activityFilterWsId, setActivityFilterWsId] = useState<string>('all');
 
   // Per-workspace Firebase Inspector state
-  const [expandedWsId, setExpandedWsId] = useState<string | null>(null);
-  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('activity');
   const [inspectedDataMap, setInspectedDataMap] = useState<
     Record<string, InspectedWorkspaceData>
   >({});
@@ -181,6 +202,26 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
     };
   }, [mergedWorkspaces, allSubscriptions]);
 
+  // Selected workspace object
+  const selectedWorkspace = useMemo(() => {
+    if (!selectedWorkspaceId) return null;
+    return mergedWorkspaces.find((w) => w.id === selectedWorkspaceId) || null;
+  }, [selectedWorkspaceId, mergedWorkspaces]);
+
+  // Load cloud inspection data when a company is selected
+  useEffect(() => {
+    if (selectedWorkspaceId && !inspectedDataMap[selectedWorkspaceId]) {
+      loadInspectorForWorkspace(selectedWorkspaceId);
+    }
+    if (selectedWorkspace) {
+      const info = getWorkspaceStatusInfo(selectedWorkspace);
+      try {
+        const d = new Date(info.endDateStr);
+        setCustomDateInput(d.toISOString().split('T')[0]);
+      } catch {}
+    }
+  }, [selectedWorkspaceId]);
+
   if (!isOpen || userRole !== 'platform_owner') return null;
 
   const formatRelativeTime = (isoDate?: string) => {
@@ -196,7 +237,7 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
     return `منذ ${days} يوم (${new Date(isoDate).toLocaleDateString('ar-MA')})`;
   };
 
-  const filteredWorkspaces = mergedWorkspaces.filter((ws: Workspace) => {
+  const filteredWorkspaces = mergedWorkspaces.filter((ws: Workspace, index: number) => {
     const info = getWorkspaceStatusInfo(ws);
     if (filterTab === 'active' && !info.isActive) return false;
     if (filterTab === 'expiring_soon' && !info.isExpiringSoon) return false;
@@ -204,7 +245,9 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
 
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
+    const companyNumber = `#${index + 1}`;
     return (
+      companyNumber.includes(q) ||
       (ws.name || '').toLowerCase().includes(q) ||
       (ws.owner_name || '').toLowerCase().includes(q) ||
       (ws.owner_email || '').toLowerCase().includes(q) ||
@@ -240,21 +283,16 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
           setGlobalActivityLogs(logs);
         }),
       ]);
-      if (expandedWsId) {
-        await loadInspectorForWorkspace(expandedWsId, true);
+      if (selectedWorkspaceId) {
+        await loadInspectorForWorkspace(selectedWorkspaceId, true);
       }
-      showToast('تم تحديث جميع الشركات وسجل النشاط من Firebase Firestore بنجاح', 'success');
+      showToast('تم تحديث جميع بيانات الشركات والنشاط من Firebase بنجاح', 'success');
     } finally {
       setIsRefreshing(false);
     }
   };
 
   const loadInspectorForWorkspace = async (wsId: string, forceReload = false) => {
-    if (!forceReload && expandedWsId === wsId) {
-      setExpandedWsId(null);
-      return;
-    }
-    setExpandedWsId(wsId);
     setInspectedDataMap((prev) => ({
       ...prev,
       [wsId]: {
@@ -278,13 +316,58 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
     }));
   };
 
-  const handleExtend = async (ws: Workspace, months: number, label: string) => {
+  // Subscription Actions: Extend by months
+  const handleExtendMonths = async (ws: Workspace, months: number, label: string) => {
     setBusyWorkspaceId(ws.id);
     try {
       await updateWorkspaceSubscription(ws.id, 'extend', months);
-      showToast(`✅ تم تفعيل وتمديد حساب "${ws.name}" لمدة ${label}`, 'success');
+      showToast(`✅ تم تمديد اشتراك "${ws.name}" لمدة ${label}`, 'success');
     } catch (err: any) {
-      showToast(err.message || 'تعذر تحديث الاشتراك', 'error');
+      showToast(err.message || 'تعذر تمديد الاشتراك', 'error');
+    } finally {
+      setBusyWorkspaceId(null);
+    }
+  };
+
+  // Subscription Actions: Extend by exact days
+  const handleExtendDays = async (ws: Workspace, days: number, label: string) => {
+    setBusyWorkspaceId(ws.id);
+    try {
+      await updateWorkspaceSubscription(ws.id, 'extend', 0, { days });
+      showToast(`✅ تم تمديد اشتراك "${ws.name}" لمدة ${label}`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر تمديد الاشتراك', 'error');
+    } finally {
+      setBusyWorkspaceId(null);
+    }
+  };
+
+  // Subscription Actions: Decrease duration
+  const handleDecreaseDays = async (ws: Workspace, days: number, label: string) => {
+    setBusyWorkspaceId(ws.id);
+    try {
+      await updateWorkspaceSubscription(ws.id, 'decrease', 0, { days });
+      showToast(`🔻 تم تقليص اشتراك "${ws.name}" بمقدار ${label}`, 'info');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر تقليص الاشتراك', 'error');
+    } finally {
+      setBusyWorkspaceId(null);
+    }
+  };
+
+  // Subscription Actions: Set exact date
+  const handleSetExactDate = async (ws: Workspace) => {
+    if (!customDateInput) {
+      showToast('يرجى اختيار تاريخ صالح', 'error');
+      return;
+    }
+    setBusyWorkspaceId(ws.id);
+    try {
+      const isoDate = new Date(customDateInput + 'T23:59:59.000Z').toISOString();
+      await updateWorkspaceSubscription(ws.id, 'set_date', 0, { exactEndDate: isoDate });
+      showToast(`✅ تم تعيين تاريخ انتهاء الاشتراك بدقة إلى: ${customDateInput}`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر تعيين التاريخ', 'error');
     } finally {
       setBusyWorkspaceId(null);
     }
@@ -294,7 +377,7 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
     setBusyWorkspaceId(ws.id);
     try {
       await updateWorkspaceSubscription(ws.id, 'activate', 1);
-      showToast(`✅ تم تفعيل حساب شركة "${ws.name}" لمدة شهر كامل`, 'success');
+      showToast(`✅ تم تفعيل حساب شركة "${ws.name}" بنجاح`, 'success');
     } catch (err: any) {
       showToast(err.message || 'تعذر تفعيل الحساب', 'error');
     } finally {
@@ -306,7 +389,7 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
     setBusyWorkspaceId(ws.id);
     try {
       await updateWorkspaceSubscription(ws.id, 'suspend');
-      showToast(`⛔ تم توقيف حساب شركة "${ws.name}" فوراً في Firebase (القراءة فقط)`, 'info');
+      showToast(`⛔ تم تجميد وتوقيف حساب شركة "${ws.name}" في Firebase`, 'info');
     } catch (err: any) {
       showToast(err.message || 'تعذر توقيف الحساب', 'error');
     } finally {
@@ -322,7 +405,8 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
         showToast(res.error || 'تعذر حذف الشركة من Firebase', 'error');
       } else {
         setConfirmDeleteWsId(null);
-        if (expandedWsId === ws.id) setExpandedWsId(null);
+        setSelectedWorkspaceId(null);
+        showToast(`تم حذف شركة "${ws.name}" وجميع بياناتها من Firebase نهائياً`, 'info');
       }
     } finally {
       setBusyWorkspaceId(null);
@@ -340,6 +424,51 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
       showToast(err.message, 'error');
     } finally {
       setBusyWorkspaceId(null);
+    }
+  };
+
+  // Securely reset owner password with bcrypt
+  const handleResetOwnerPassword = async (ws: Workspace) => {
+    const cleanPwd = newOwnerPassword.trim();
+    if (!cleanPwd || cleanPwd.length < 6) {
+      showToast('كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام', 'error');
+      return;
+    }
+    const ownerPhone = ws.owner_phone ? ws.owner_phone.replace(/[^0-9]/g, '') : '';
+    if (!ownerPhone) {
+      showToast('رقم هاتف المدير غير متوفر في بيانات الشركة', 'error');
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      // 1. Hash password with bcrypt
+      const hashedPassword = await hashPassword(cleanPwd);
+
+      // 2. Fetch existing owner account if any
+      const existing = await firebaseSyncService.getUserAccount(ownerPhone);
+      await firebaseSyncService.saveUserAccount(ownerPhone, {
+        ...(existing || {}),
+        id: existing?.id || ws.created_by || `usr-${ownerPhone}`,
+        name: existing?.name || ws.owner_name || 'مدير الشركة',
+        phone: ownerPhone,
+        whatsapp_number: ws.owner_whatsapp || ownerPhone,
+        email: ws.owner_email || existing?.email,
+        password: hashedPassword,
+        role: 'owner',
+        workspace_id: ws.id,
+        status: 'active',
+        deleted: false,
+        created_at: existing?.created_at || ws.created_at || new Date().toISOString(),
+      });
+
+      // 3. Clear plain password input
+      setNewOwnerPassword('');
+      showToast(`🔒 تم تشفير وحفظ كلمة المرور الجديدة لمدير "${ws.name}" بأمان (bcrypt)`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'تعذر تحديث كلمة المرور', 'error');
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -375,7 +504,7 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
         `✅ *تم تفعيل وتجديد اشتراك شركتكم بنجاح!*\n` +
         `• اسم الشركة: *${ws.name}* (${ws.short_id})\n` +
         `• الباقة المفعلة: *${planLabel}*\n` +
-        `• صالح إلى غاية: *${endFormatted}* (${info.daysLeft} يوم)\n\n` +
+        `• صالح إلى غاية: *${endFormatted}* (${info.daysLeft} يوم متبقي)\n\n` +
         `يمكنكم الآن ولجميع عمال المحطات استخدام النظام بكامل الصلاحيات. بالتوفيق!`;
     } else if (type === 'expiring') {
       message =
@@ -393,6 +522,11 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
 
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const getCompanyIndex = (wsId: string) => {
+    const idx = mergedWorkspaces.findIndex((w) => w.id === wsId);
+    return idx >= 0 ? idx + 1 : 1;
   };
 
   return (
@@ -413,18 +547,18 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm sm:text-lg font-black text-white">
-                  لوحة تحكم Firebase وإدارة اشتراكات الشركات
+                  لوحة تحكم وإدارة الشركات والاشتراكات
                 </h2>
                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-black flex items-center gap-1">
                   <Database className="w-3 h-3" />
-                  <span>مربوطة مباشرة مع Firebase Firestore</span>
+                  <span>Firebase Firestore</span>
                 </span>
                 <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black">
-                  🔒 خاصة بحسابك فقط
+                  👑 Super Admin
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
-                مراقبة من دخل للتطبيق، اسم ورقم وإيميل كل مدير، تتبع العمليات المباشرة، تفعيل/توقيف الاشتراكات، أو مسح أي شركة نهائياً من Firebase
+                كل شركة بنمرتها المستقلة — تمديد وتقليص المدة، ضبط التاريخ باليوم، تجميد الحساب، وتشفير كلمات المرور بـ bcrypt
               </p>
             </div>
           </div>
@@ -437,7 +571,7 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
               title="تحديث البيانات من Firebase"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">تحديث من Firebase</span>
+              <span className="hidden sm:inline">تحديث السحابة</span>
             </button>
             <button
               onClick={onClose}
@@ -448,142 +582,1129 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
           </div>
         </div>
 
-        {/* Main Navigation Tabs: Companies vs Global Live Activity */}
-        <div className="flex items-center gap-2 bg-[#0B1220] p-1.5 rounded-2xl border border-slate-800 shrink-0">
-          <button
-            type="button"
-            onClick={() => setMainTab('companies')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-black text-xs transition ${
-              mainTab === 'companies'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>الشركات والمدراء في Firebase ({stats.total})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMainTab('live_activity')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-black text-xs transition ${
-              mainTab === 'live_activity'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Activity className="w-4 h-4" />
-            <span>📡 سجل النشاط المباشر — شكون دخل وشنو دار ({globalActivityLogs.length})</span>
-          </button>
-        </div>
-
-        {/* Summary Counters (when on Companies tab) */}
-        {mainTab === 'companies' && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0">
+        {/* Global Navigation: Companies List vs Live Activity Feed */}
+        {!selectedWorkspace && (
+          <div className="flex items-center gap-2 bg-[#0B1220] p-1.5 rounded-2xl border border-slate-800 shrink-0">
             <button
               type="button"
-              onClick={() => setFilterTab('all')}
-              className={`p-2.5 rounded-2xl border text-right transition ${
-                filterTab === 'all'
-                  ? 'bg-amber-500/15 border-amber-500 text-white'
-                  : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
+              onClick={() => setMainTab('companies')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-black text-xs transition ${
+                mainTab === 'companies'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-slate-400 font-bold">إجمالي الشركات</span>
-                <Building2 className="w-4 h-4 text-amber-400" />
-              </div>
-              <p className="text-lg font-black text-white mt-0.5 font-mono">{stats.total}</p>
+              <Building2 className="w-4 h-4" />
+              <span>قائمة الشركات المرتبة بالأرقام ({stats.total})</span>
             </button>
-
             <button
               type="button"
-              onClick={() => setFilterTab('active')}
-              className={`p-2.5 rounded-2xl border text-right transition ${
-                filterTab === 'active'
-                  ? 'bg-emerald-500/15 border-emerald-500 text-white'
-                  : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
+              onClick={() => setMainTab('live_activity')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-black text-xs transition ${
+                mainTab === 'live_activity'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-emerald-300 font-bold">حسابات مفعلة ونشطة</span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              </div>
-              <p className="text-lg font-black text-emerald-400 mt-0.5 font-mono">
-                {stats.activeCount}
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterTab('expiring_soon')}
-              className={`p-2.5 rounded-2xl border text-right transition ${
-                filterTab === 'expiring_soon'
-                  ? 'bg-amber-500/15 border-amber-500 text-white'
-                  : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-amber-300 font-bold">قريبة الانتهاء (≤ 7 أيام)</span>
-                <Clock className="w-4 h-4 text-amber-400" />
-              </div>
-              <p className="text-lg font-black text-amber-400 mt-0.5 font-mono">
-                {stats.expiringSoonCount}
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterTab('stopped')}
-              className={`p-2.5 rounded-2xl border text-right transition ${
-                filterTab === 'stopped'
-                  ? 'bg-rose-500/15 border-rose-500 text-white'
-                  : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-rose-300 font-bold">موقوفة / منتهية</span>
-                <AlertTriangle className="w-4 h-4 text-rose-400" />
-              </div>
-              <p className="text-lg font-black text-rose-400 mt-0.5 font-mono">
-                {stats.stoppedCount}
-              </p>
+              <Activity className="w-4 h-4" />
+              <span>📡 سجل النشاط المباشر العام ({globalActivityLogs.length})</span>
             </button>
           </div>
         )}
 
-        {/* Search Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="ابحث باسم المدير، اسم الشركة، البريد Gmail، رقم الهاتف، أو الكود..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#0B1220] border border-slate-700 rounded-2xl px-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 pl-10"
-            />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        {/* ========================================================================= */}
+        {/* VIEW 1: MASTER NUMBERED COMPANIES LIST (If NO company is currently selected) */}
+        {/* ========================================================================= */}
+        {!selectedWorkspace && mainTab === 'companies' && (
+          <>
+            {/* Summary Counters */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setFilterTab('all')}
+                className={`p-2.5 rounded-2xl border text-right transition ${
+                  filterTab === 'all'
+                    ? 'bg-amber-500/15 border-amber-500 text-white'
+                    : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400 font-bold">إجمالي الشركات</span>
+                  <Building2 className="w-4 h-4 text-amber-400" />
+                </div>
+                <p className="text-lg font-black text-white mt-0.5 font-mono">{stats.total}</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFilterTab('active')}
+                className={`p-2.5 rounded-2xl border text-right transition ${
+                  filterTab === 'active'
+                    ? 'bg-emerald-500/15 border-emerald-500 text-white'
+                    : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-emerald-300 font-bold">حسابات نشطة</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                </div>
+                <p className="text-lg font-black text-emerald-400 mt-0.5 font-mono">
+                  {stats.activeCount}
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFilterTab('expiring_soon')}
+                className={`p-2.5 rounded-2xl border text-right transition ${
+                  filterTab === 'expiring_soon'
+                    ? 'bg-amber-500/15 border-amber-500 text-white'
+                    : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-amber-300 font-bold">قريبة الانتهاء (≤ 7 أيام)</span>
+                  <Clock className="w-4 h-4 text-amber-400" />
+                </div>
+                <p className="text-lg font-black text-amber-400 mt-0.5 font-mono">
+                  {stats.expiringSoonCount}
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFilterTab('stopped')}
+                className={`p-2.5 rounded-2xl border text-right transition ${
+                  filterTab === 'stopped'
+                    ? 'bg-rose-500/15 border-rose-500 text-white'
+                    : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-rose-300 font-bold">موقوفة ومجمدة</span>
+                  <AlertTriangle className="w-4 h-4 text-rose-400" />
+                </div>
+                <p className="text-lg font-black text-rose-400 mt-0.5 font-mono">
+                  {stats.stoppedCount}
+                </p>
+              </button>
+            </div>
+
+            {/* Quick Number Selector Strip */}
+            {mergedWorkspaces.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-1 bg-[#0B1220] rounded-2xl border border-slate-800 shrink-0">
+                <span className="text-[10px] text-amber-400 font-bold px-2 shrink-0">
+                  ⚡ اختيار سريع بالنمرة:
+                </span>
+                {mergedWorkspaces.map((w, idx) => {
+                  const num = idx + 1;
+                  const info = getWorkspaceStatusInfo(w);
+                  return (
+                    <button
+                      key={w.id}
+                      onClick={() => setSelectedWorkspaceId(w.id)}
+                      className={`px-2.5 py-1 rounded-xl text-xs font-black transition shrink-0 flex items-center gap-1 ${
+                        info.isSuspended
+                          ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/30'
+                          : info.isExpiringSoon
+                          ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30'
+                          : 'bg-slate-800 text-slate-200 hover:bg-amber-500 hover:text-slate-950 border border-slate-700'
+                      }`}
+                      title={`${w.name} (#${num})`}
+                    >
+                      <Hash className="w-3 h-3 opacity-60" />
+                      <span>{num}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Search Bar */}
+            <div className="relative shrink-0">
+              <input
+                type="text"
+                placeholder="ابحث بالنمرة (مثال: #1 أو #2) أو اسم الشركة، المدير، رقم الهاتف، أو البريد..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[#0B1220] border border-slate-700 rounded-2xl px-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 pl-10"
+              />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            </div>
+
+            {/* Numbered Companies Grid */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-2.5">
+              {filteredWorkspaces.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 bg-[#0B1220] rounded-2xl border border-slate-800 text-xs">
+                  لا توجد شركات مطابقة للبحث أو الفلتر المحدد.
+                </div>
+              ) : (
+                filteredWorkspaces.map((ws: Workspace) => {
+                  const num = getCompanyIndex(ws.id);
+                  const info = getWorkspaceStatusInfo(ws);
+                  const isPlan2 = ws.plan_tier === 'plan_2_two_stations';
+                  const isThisBusy = busyWorkspaceId === ws.id;
+
+                  return (
+                    <div
+                      key={ws.id}
+                      className={`p-3.5 sm:p-4 rounded-2xl border transition flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+                        info.isSuspended
+                          ? 'bg-rose-950/20 border-rose-500/40 hover:border-rose-500/60'
+                          : info.isExpiringSoon
+                          ? 'bg-amber-950/20 border-amber-500/40 hover:border-amber-500/60'
+                          : 'bg-[#0B1220] border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      {/* Left Side: Number Badge + Identity + Owner Contacts */}
+                      <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+                        {/* Distinctive Number Badge */}
+                        <div
+                          className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center font-black shadow-md shrink-0 border ${
+                            info.isSuspended
+                              ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
+                              : info.isExpiringSoon
+                              ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                              : 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+                          }`}
+                        >
+                          <span className="text-[10px] text-slate-400 font-bold leading-none">نمرة</span>
+                          <span className="text-base font-black leading-tight">#{num}</span>
+                        </div>
+
+                        {/* Company Details */}
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-black text-white text-sm sm:text-base truncate">
+                              {ws.name}
+                            </h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-lg bg-slate-800 text-amber-300 font-mono border border-slate-700">
+                              {ws.short_id || 'ID'}
+                            </span>
+                            <span
+                              className={`text-[10px] px-2.5 py-0.5 rounded-full font-black border flex items-center gap-1 ${
+                                isPlan2
+                                  ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              }`}
+                            >
+                              <Layers className="w-3 h-3" />
+                              <span>{isPlan2 ? 'الباك الأول (99 درهم)' : 'الباك الثاني (199 درهم)'}</span>
+                            </span>
+                          </div>
+
+                          {/* Owner details pill */}
+                          <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
+                            <span className="flex items-center gap-1 text-slate-300 font-bold">
+                              <Crown className="w-3.5 h-3.5 text-amber-400" />
+                              <span>{ws.owner_name || 'المدير'}</span>
+                            </span>
+                            {ws.owner_phone && (
+                              <span className="flex items-center gap-1 font-mono text-emerald-400">
+                                <Phone className="w-3.5 h-3.5" />
+                                <span>{ws.owner_phone}</span>
+                              </span>
+                            )}
+                            {ws.owner_email && (
+                              <span className="flex items-center gap-1 font-mono text-sky-400">
+                                <Mail className="w-3.5 h-3.5" />
+                                <span>{ws.owner_email}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Side: Subscription status badge + Prominent Action Button */}
+                      <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
+                        {/* Status Badge */}
+                        <div className="text-right">
+                          <div
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black border ${
+                              info.isSuspended
+                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                : info.isExpired
+                                ? 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                : info.isExpiringSoon
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            }`}
+                          >
+                            {info.isSuspended ? (
+                              <>
+                                <Ban className="w-3.5 h-3.5" />
+                                <span>متوقف ومجمد</span>
+                              </>
+                            ) : info.isExpired ? (
+                              <>
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                <span>منتهي الصلاحية</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>نشط ({info.daysLeft} يوماً)</span>
+                              </>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            ينتهي: {new Date(info.endDateStr).toLocaleDateString('ar-MA')}
+                          </p>
+                        </div>
+
+                        {/* ENTER COMPANY DEDICATED CONTROL BUTTON */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedWorkspaceId(ws.id);
+                            setCompanyDetailTab('subscription');
+                          }}
+                          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition transform active:scale-95 shrink-0"
+                        >
+                          <span>إدارة وتحكم الشركة</span>
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 2: DEDICATED COMPANY MANAGEMENT SUB-PAGE (When a company is selected) */}
+        {/* ========================================================================= */}
+        {selectedWorkspace && (
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            {/* Top Navigation Bar: Back Button + Number Badge + Name + Quick Jumper */}
+            <div className="bg-[#0B1220] p-3 rounded-2xl border border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedWorkspaceId(null)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs border border-slate-700 transition"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  <span>الرجوع إلى قائمة الشركات</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs shadow-md">
+                    #{getCompanyIndex(selectedWorkspace.id)}
+                  </div>
+                  <div>
+                    <h3 className="font-black text-white text-sm sm:text-base flex items-center gap-2">
+                      <span>{selectedWorkspace.name}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-amber-300 font-mono border border-slate-700">
+                        {selectedWorkspace.short_id}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      المدير: {selectedWorkspace.owner_name || 'غير مسجل'} • الهاتف: {selectedWorkspace.owner_phone || '—'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Switcher between other companies */}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400 hidden sm:inline">تبديل الشركة:</span>
+                <select
+                  value={selectedWorkspace.id}
+                  onChange={(e) => setSelectedWorkspaceId(e.target.value)}
+                  className="bg-[#0F172A] border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-amber-500"
+                >
+                  {mergedWorkspaces.map((w, idx) => (
+                    <option key={w.id} value={w.id}>
+                      #{idx + 1} - {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Inner Tabs for the Selected Company */}
+            <div className="flex items-center gap-1.5 bg-[#0B1220] p-1.5 rounded-2xl border border-slate-800 overflow-x-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => setCompanyDetailTab('subscription')}
+                className={`flex items-center gap-2 py-2 px-3.5 rounded-xl font-bold text-xs transition shrink-0 ${
+                  companyDetailTab === 'subscription'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>الاشتراك والمدة</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCompanyDetailTab('owner_security')}
+                className={`flex items-center gap-2 py-2 px-3.5 rounded-xl font-bold text-xs transition shrink-0 ${
+                  companyDetailTab === 'owner_security'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>المدير وأمان الدخول (bcrypt)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCompanyDetailTab('cloud_inspector')}
+                className={`flex items-center gap-2 py-2 px-3.5 rounded-xl font-bold text-xs transition shrink-0 ${
+                  companyDetailTab === 'cloud_inspector'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>فحص السحابة (المحطات، العمال، الكوليات)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCompanyDetailTab('admin_notes')}
+                className={`flex items-center gap-2 py-2 px-3.5 rounded-xl font-bold text-xs transition shrink-0 ${
+                  companyDetailTab === 'admin_notes'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>ملاحظات إدارية خاصة</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCompanyDetailTab('danger_zone')}
+                className={`flex items-center gap-2 py-2 px-3.5 rounded-xl font-bold text-xs transition shrink-0 ${
+                  companyDetailTab === 'danger_zone'
+                    ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                    : 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10'
+                }`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>منطقة الخطر والحذف</span>
+              </button>
+            </div>
+
+            {/* TAB CONTENT 1: SUBSCRIPTION & DURATION CONTROLS */}
+            {companyDetailTab === 'subscription' && (
+              <div className="space-y-4">
+                {/* Status overview card */}
+                {(() => {
+                  const info = getWorkspaceStatusInfo(selectedWorkspace);
+                  const isPlan2 = selectedWorkspace.plan_tier === 'plan_2_two_stations';
+                  return (
+                    <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-400 font-bold">الحالة الراهنة:</span>
+                          <span
+                            className={`px-3 py-1 rounded-xl text-xs font-black border flex items-center gap-1.5 ${
+                              info.isSuspended
+                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                : info.isExpired
+                                ? 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                : info.isExpiringSoon
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            }`}
+                          >
+                            {info.isSuspended ? (
+                              <>
+                                <Ban className="w-3.5 h-3.5" />
+                                <span>متوقف ومجمد من طرف الإدارة</span>
+                              </>
+                            ) : info.isExpired ? (
+                              <>
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                <span>منتهي الصلاحية</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>نشط ويعمل بكامل الصلاحيات</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-slate-400">
+                            الأيام المتبقية: <strong className="text-white font-mono text-sm">{info.daysLeft}</strong> يوماً
+                          </span>
+                          <span className="text-slate-400">
+                            تاريخ الانتهاء: <strong className="text-amber-400 font-mono text-sm">{new Date(info.endDateStr).toLocaleDateString('ar-MA')}</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Fast Action: Suspend / Activate Toggle */}
+                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between flex-wrap gap-2">
+                        <div className="text-xs text-slate-400">
+                          {info.isSuspended
+                            ? 'الحساب حالياً في وضع القراءة فقط. العمال لا يستطيعون تسجيل الكوليات.'
+                            : 'يمكنك تجميد الحساب فوراً في أي وقت.'}
+                        </div>
+                        {info.isSuspended ? (
+                          <button
+                            type="button"
+                            onClick={() => handleActivate(selectedWorkspace)}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition shadow-md"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                            <span>تفعيل وإلغاء تجميد الحساب الآن (شهر كامل)</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleSuspend(selectedWorkspace)}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-black text-xs transition"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            <span>تجميد وتوقيف مساحة العمل فوراً</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Subscriptions Duration Controls: Quick Extend and Quick Decrease */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Extend Duration */}
+                  <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2 text-emerald-400 font-black text-xs">
+                      <Plus className="w-4 h-4" />
+                      <span>تمديد وزيادة مدة الاشتراك:</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleExtendDays(selectedWorkspace, 7, '7 أيام')}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-slate-200 text-xs font-bold border border-slate-700 transition"
+                      >
+                        + 7 أيام
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExtendDays(selectedWorkspace, 15, '15 يوماً')}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-slate-200 text-xs font-bold border border-slate-700 transition"
+                      >
+                        + 15 يوماً
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExtendMonths(selectedWorkspace, 1, 'شهر كامل (30 يوم)')}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-emerald-300 text-xs font-black border border-emerald-500/30 transition"
+                      >
+                        + شهر (30 يوم)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExtendMonths(selectedWorkspace, 3, '3 أشهر')}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-slate-200 text-xs font-bold border border-slate-700 transition"
+                      >
+                        + 3 أشهر
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExtendMonths(selectedWorkspace, 6, '6 أشهر')}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-slate-200 text-xs font-bold border border-slate-700 transition"
+                      >
+                        + 6 أشهر
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleExtendMonths(selectedWorkspace, 12, 'سنة كاملة')}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-amber-300 text-xs font-black border border-amber-500/30 transition"
+                      >
+                        + سنة كاملة
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Decrease Duration */}
+                  <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2 text-rose-400 font-black text-xs">
+                      <Minus className="w-4 h-4" />
+                      <span>تقليص وإنقاص مدة الاشتراك:</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDecreaseDays(selectedWorkspace, 7, '7 أيام')}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-rose-500 hover:text-white text-slate-200 text-xs font-bold border border-slate-700 transition"
+                      >
+                        - 7 أيام
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDecreaseDays(selectedWorkspace, 15, '15 يوماً')}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-rose-500 hover:text-white text-slate-200 text-xs font-bold border border-slate-700 transition"
+                      >
+                        - 15 يوماً
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDecreaseDays(selectedWorkspace, 30, 'شهر (-30 يوم)')}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-rose-500 hover:text-white text-rose-300 text-xs font-black border border-rose-500/30 transition"
+                      >
+                        - شهر (-30 يوم)
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      يتم خصم الأيام مباشرة من تاريخ الانتهاء الحالي وتحديث العداد في حساب المدير فوراً.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Exact Expiration Date Picker & Custom Days Input */}
+                <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-400 font-black text-xs">
+                    <Calendar className="w-4 h-4" />
+                    <span>تحديد تاريخ الانتهاء باليوم أو عدد أيام مخصص:</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Method 1: Choose Exact Date */}
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-slate-400 font-bold block">
+                        اختيار تاريخ الانتهاء بالتقويم:
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={customDateInput}
+                          onChange={(e) => setCustomDateInput(e.target.value)}
+                          className="bg-[#0F172A] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 flex-1 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSetExactDate(selectedWorkspace)}
+                          className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shrink-0"
+                        >
+                          تطبيق التاريخ
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Method 2: Custom Days Number */}
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-slate-400 font-bold block">
+                        إضافة عدد أيام يدوي مخصص:
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          placeholder="مثلاً: 45"
+                          value={customDaysInput || ''}
+                          onChange={(e) => setCustomDaysInput(Number(e.target.value))}
+                          className="bg-[#0F172A] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 flex-1 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleExtendDays(selectedWorkspace, customDaysInput, `${customDaysInput} يوماً`)}
+                          disabled={!customDaysInput || customDaysInput <= 0}
+                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-slate-200 font-bold text-xs border border-slate-700 transition shrink-0 disabled:opacity-50"
+                        >
+                          + إضافة الأيام
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Plan Tier Switcher */}
+                <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
+                  <div className="flex items-center gap-2 text-sky-400 font-black text-xs">
+                    <Layers className="w-4 h-4" />
+                    <span>تغيير باقة الشركة (الباك):</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div
+                      className={`p-3.5 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-2 ${
+                        selectedWorkspace.plan_tier === 'plan_2_two_stations'
+                          ? 'bg-sky-500/15 border-sky-500 text-white'
+                          : 'bg-[#0F172A] border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                      onClick={() => switchWorkspacePlan('plan_2_two_stations', selectedWorkspace.id)}
+                    >
+                      <div>
+                        <h4 className="font-black text-xs text-white">الباك الأول (99 درهم)</h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          محطتان فقط وعامل واحد لكل محطة
+                        </p>
+                      </div>
+                      {selectedWorkspace.plan_tier === 'plan_2_two_stations' && (
+                        <CheckCircle2 className="w-5 h-5 text-sky-400 shrink-0" />
+                      )}
+                    </div>
+
+                    <div
+                      className={`p-3.5 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-2 ${
+                        selectedWorkspace.plan_tier !== 'plan_2_two_stations'
+                          ? 'bg-emerald-500/15 border-emerald-500 text-white'
+                          : 'bg-[#0F172A] border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                      onClick={() => switchWorkspacePlan('plan_1_full', selectedWorkspace.id)}
+                    >
+                      <div>
+                        <h4 className="font-black text-xs text-white">الباك الثاني (199 درهم)</h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          الباقة الشاملة — محطات وعمال غير محدودين
+                        </p>
+                      </div>
+                      {selectedWorkspace.plan_tier !== 'plan_2_two_stations' && (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT 2: OWNER PROFILE & SECURITY (BCRYPT RESET) */}
+            {companyDetailTab === 'owner_security' && (
+              <div className="space-y-4">
+                {/* Owner Identity Summary */}
+                <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
+                  <h4 className="text-xs font-black text-white flex items-center gap-2">
+                    <Crown className="w-4 h-4 text-amber-400" />
+                    <span>بيانات مدير مساحة العمل المعتمدة:</span>
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div className="bg-[#0F172A] p-3 rounded-xl border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">اسم المدير:</span>
+                      <strong className="text-white font-bold text-sm">
+                        {selectedWorkspace.owner_name || 'غير مسجل'}
+                      </strong>
+                    </div>
+
+                    <div className="bg-[#0F172A] p-3 rounded-xl border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">رقم الهاتف / الواتساب:</span>
+                      <strong className="text-emerald-400 font-mono text-sm">
+                        {selectedWorkspace.owner_phone || selectedWorkspace.owner_whatsapp || '—'}
+                      </strong>
+                    </div>
+
+                    <div className="bg-[#0F172A] p-3 rounded-xl border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">بريد Gmail المعتمد:</span>
+                      <strong className="text-sky-400 font-mono text-sm truncate block">
+                        {selectedWorkspace.owner_email || '—'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Direct WhatsApp Notifications */}
+                  <div className="pt-2 border-t border-slate-800 space-y-2">
+                    <span className="text-[11px] text-slate-400 font-bold block">
+                      إرسال إشعار واتساب رسمي للزبون:
+                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => sendWhatsAppNotification(selectedWorkspace, 'activated')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>رسالة تم تفعيل الاشتراك</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => sendWhatsAppNotification(selectedWorkspace, 'expiring')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold transition"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>تنبيه بقرب انتهاء المدة</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => sendWhatsAppNotification(selectedWorkspace, 'suspended')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-bold transition"
+                      >
+                        <ShieldAlert className="w-3.5 h-3.5" />
+                        <span>إشعار توقف الحساب</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Secure Password Reset with Bcrypt */}
+                <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-400 font-black text-xs">
+                    <Lock className="w-4 h-4" />
+                    <span>إعادة تعيين كلمة مرور المدير بأمان مشفر بـ (bcrypt):</span>
+                  </div>
+
+                  <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-xl text-[11px] text-amber-200/90 leading-relaxed">
+                    🔒 <strong>حماية أمنية مشددة:</strong> يتم تشفير كلمة المرور فوراً عبر دالة <code>bcrypt</code> (10 Rounds) قبل إرسالها إلى قاعدة بيانات Firestore. لن يتم عرض كلمة المرور كنص صريح، ولا يمكن لأي متطفل أو مستعلم قراءتها.
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-400 font-bold block">
+                      أدخل كلمة المرور الجديدة لمدير هذه الشركة:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="أدخل كلمة المرور الجديدة (6 أحرف أو أرقام على الأقل)..."
+                        value={newOwnerPassword}
+                        onChange={(e) => setNewOwnerPassword(e.target.value)}
+                        className="bg-[#0F172A] border border-slate-700 rounded-xl px-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 flex-1 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleResetOwnerPassword(selectedWorkspace)}
+                        disabled={isResettingPassword || !newOwnerPassword.trim()}
+                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shrink-0 disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>{isResettingPassword ? 'جارِ التشفير والحفظ...' : 'تشفير وحفظ الكلمة'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT 3: CLOUD INSPECTOR */}
+            {companyDetailTab === 'cloud_inspector' && (
+              <div className="space-y-3">
+                {/* Sub-tabs for inspector */}
+                <div className="flex items-center gap-1.5 bg-[#0B1220] p-1 rounded-xl border border-slate-800 overflow-x-auto">
+                  <button
+                    type="button"
+                    onClick={() => setInspectorSubTab('stations')}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-bold transition shrink-0 ${
+                      inspectorSubTab === 'stations'
+                        ? 'bg-slate-700 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    🏢 المحطات ({inspectedDataMap[selectedWorkspace.id]?.stations?.length || 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInspectorSubTab('workers')}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-bold transition shrink-0 ${
+                      inspectorSubTab === 'workers'
+                        ? 'bg-slate-700 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    👥 العمال وأكواد الدخول ({inspectedDataMap[selectedWorkspace.id]?.users?.length || 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInspectorSubTab('parcels')}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-bold transition shrink-0 ${
+                      inspectorSubTab === 'parcels'
+                        ? 'bg-slate-700 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    📦 الكوليات ({inspectedDataMap[selectedWorkspace.id]?.parcels?.length || 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInspectorSubTab('activity')}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-bold transition shrink-0 ${
+                      inspectorSubTab === 'activity'
+                        ? 'bg-slate-700 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    📡 سجل النشاط ({inspectedDataMap[selectedWorkspace.id]?.activityLogs?.length || 0})
+                  </button>
+                </div>
+
+                {/* Loading state */}
+                {inspectedDataMap[selectedWorkspace.id]?.loading ? (
+                  <div className="p-8 text-center text-slate-400 bg-[#0B1220] rounded-2xl border border-slate-800 text-xs flex items-center justify-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                    <span>جارِ فحص بيانات الشركة من Firebase Firestore...</span>
+                  </div>
+                ) : (
+                  <>
+                    {/* Stations */}
+                    {inspectorSubTab === 'stations' && (
+                      <div className="space-y-2">
+                        {(!inspectedDataMap[selectedWorkspace.id]?.stations ||
+                          inspectedDataMap[selectedWorkspace.id].stations.length === 0) ? (
+                          <div className="p-4 text-center text-slate-500 bg-[#0B1220] rounded-xl text-xs">
+                            لا توجد محطات مسجلة لهذه الشركة بعد.
+                          </div>
+                        ) : (
+                          inspectedDataMap[selectedWorkspace.id].stations.map((st) => (
+                            <div
+                              key={st.id}
+                              className="bg-[#0B1220] p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div>
+                                <h5 className="font-bold text-white flex items-center gap-2">
+                                  <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>{st.name}</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                                    {st.city} ({st.country})
+                                  </span>
+                                </h5>
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                  الهاتف: {st.phone || '—'} • العنوان: {st.address || '—'}
+                                </p>
+                              </div>
+                              <div className="text-left font-mono">
+                                <span className="text-emerald-400 font-bold block">
+                                  {st.balances?.MAD ?? 0} MAD
+                                </span>
+                                <span className="text-sky-400 text-[11px] block">
+                                  {st.balances?.MRU ?? 0} MRU
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+
+                    {/* Workers & Access Codes */}
+                    {inspectorSubTab === 'workers' && (
+                      <div className="space-y-2">
+                        {(!inspectedDataMap[selectedWorkspace.id]?.users ||
+                          inspectedDataMap[selectedWorkspace.id].users.length === 0) ? (
+                          <div className="p-4 text-center text-slate-500 bg-[#0B1220] rounded-xl text-xs">
+                            لا يوجد عمال مسجلون لهذه الشركة.
+                          </div>
+                        ) : (
+                          inspectedDataMap[selectedWorkspace.id].users.map((u) => (
+                            <div
+                              key={u.id}
+                              className="bg-[#0B1220] p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                                      u.role === 'owner'
+                                        ? 'bg-amber-500/20 text-amber-300'
+                                        : 'bg-sky-500/20 text-sky-300'
+                                    }`}
+                                  >
+                                    {u.role === 'owner' ? '👑 مدير' : '💼 عامل محطة'}
+                                  </span>
+                                  <strong className="text-white font-bold">{u.name}</strong>
+                                </div>
+                                <p className="text-[11px] text-slate-400 font-mono">
+                                  الهاتف: {u.phone || '—'} {u.email ? `• البريد: ${u.email}` : ''}
+                                </p>
+                              </div>
+
+                              <div className="text-left font-mono">
+                                {u.worker_code && (
+                                  <span className="text-amber-300 font-bold bg-slate-800 px-2 py-0.5 rounded text-[11px] block">
+                                    كود العامل: {u.worker_code}
+                                  </span>
+                                )}
+                                <span className="text-slate-500 text-[10px] block mt-0.5">
+                                  🔒 كلمة المرور مشفرة ومحمية (bcrypt)
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+
+                    {/* Parcels */}
+                    {inspectorSubTab === 'parcels' && (
+                      <div className="space-y-2">
+                        {(!inspectedDataMap[selectedWorkspace.id]?.parcels ||
+                          inspectedDataMap[selectedWorkspace.id].parcels.length === 0) ? (
+                          <div className="p-4 text-center text-slate-500 bg-[#0B1220] rounded-xl text-xs">
+                            لا توجد كوليات مسجلة لهذه الشركة.
+                          </div>
+                        ) : (
+                          inspectedDataMap[selectedWorkspace.id].parcels.slice(0, 30).map((p) => (
+                            <div
+                              key={p.id}
+                              className="bg-[#0B1220] p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div>
+                                <span className="font-mono text-amber-300 font-bold block">
+                                  [{p.tracking_code}]
+                                </span>
+                                <span className="text-slate-300 text-[11px]">
+                                  من: {p.sender_name} إلى: {p.receiver_name} ({p.receiver_phone})
+                                </span>
+                              </div>
+                              <div className="text-left">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 block">
+                                  {p.status === 'delivered' ? '✅ تم التسليم' : p.status}
+                                </span>
+                                <span className="text-emerald-400 font-mono text-[11px] font-bold block mt-0.5">
+                                  {p.amount_due} {p.currency}
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+
+                    {/* Activity Logs */}
+                    {inspectorSubTab === 'activity' && (
+                      <div className="space-y-2">
+                        {(!inspectedDataMap[selectedWorkspace.id]?.activityLogs ||
+                          inspectedDataMap[selectedWorkspace.id].activityLogs.length === 0) ? (
+                          <div className="p-4 text-center text-slate-500 bg-[#0B1220] rounded-xl text-xs">
+                            لا توجد أنشطة مسجلة لهذه الشركة.
+                          </div>
+                        ) : (
+                          inspectedDataMap[selectedWorkspace.id].activityLogs.map((log) => (
+                            <div
+                              key={log.id}
+                              className="bg-[#0B1220] p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div>
+                                <strong className="text-white block">{log.action_title}</strong>
+                                <span className="text-[11px] text-slate-400">
+                                  بواسطة: {log.actor_name} ({log.actor_role})
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-amber-400 font-mono shrink-0">
+                                {formatRelativeTime(log.created_at)}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* TAB CONTENT 4: PRIVATE ADMIN NOTES */}
+            {companyDetailTab === 'admin_notes' && (
+              <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div className="flex items-center gap-2 text-amber-400 font-black text-xs">
+                  <Save className="w-4 h-4" />
+                  <span>الملاحظات والاتفاقات الإدارية الخاصة بهذه الشركة:</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  سجل هنا أي تفاصيل خاصة (مثلاً: تم استلام 199 درهم كاش بلوس، أو اتفقنا على التجديد يوم كذا...). هذه الملاحظات خاصة بـ Super Admin فقط ولا يراها الزبون.
+                </p>
+
+                <textarea
+                  rows={4}
+                  placeholder="اكتب ملاحظاتك الإدارية هنا..."
+                  value={
+                    editingNotes[selectedWorkspace.id] !== undefined
+                      ? editingNotes[selectedWorkspace.id]
+                      : selectedWorkspace.admin_notes || ''
+                  }
+                  onChange={(e) =>
+                    setEditingNotes({
+                      ...editingNotes,
+                      [selectedWorkspace.id]: e.target.value,
+                    })
+                  }
+                  className="w-full bg-[#0F172A] border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                />
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handleSaveNotes(selectedWorkspace.id)}
+                    className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>حفظ الملاحظات في Firebase</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT 5: DANGER ZONE (DELETE) */}
+            {companyDetailTab === 'danger_zone' && (
+              <div className="bg-rose-950/20 border border-rose-500/40 p-4 rounded-2xl space-y-3">
+                <div className="flex items-center gap-2 text-rose-400 font-black text-xs">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>منطقة الخطر — الحذف النهائي من السحابة:</span>
+                </div>
+                <p className="text-[11px] text-rose-200/80 leading-relaxed">
+                  ⚠️ <strong>تحذير لا رجعة فيه:</strong> حذف شركة <strong>"{selectedWorkspace.name}"</strong> سيقوم بمسح كافة محطاتها، كولياتها، حسابات عمالها، وسجل نشاطها بشكل نهائي من Firebase Firestore.
+                </p>
+
+                {confirmDeleteWsId === selectedWorkspace.id ? (
+                  <div className="p-3 bg-rose-500/20 border border-rose-500/50 rounded-xl space-y-2">
+                    <p className="text-xs font-bold text-rose-300">
+                      هل أنت متأكد تماماً من حذف هذه الشركة نهائياً من Firebase؟
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteWorkspacePermanently(selectedWorkspace)}
+                        className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition shadow-md"
+                      >
+                        نعم، احذف الشركة نهائياً الآن
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteWsId(null)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-xs font-bold transition"
+                      >
+                        إلغاء التراجع
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteWsId(selectedWorkspace.id)}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-black text-xs transition shadow-md shadow-rose-500/20"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>حذف شركة "{selectedWorkspace.name}" نهائياً من Firebase</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+        )}
 
-          {mainTab === 'live_activity' && (
-            <select
-              value={activityFilterWsId}
-              onChange={(e) => setActivityFilterWsId(e.target.value)}
-              className="bg-[#0B1220] border border-slate-700 rounded-2xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-amber-500"
-            >
-              <option value="all">جميع الشركات والمدراء ({mergedWorkspaces.length})</option>
-              {mergedWorkspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name} ({w.short_id})
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {/* CONTENT AREA */}
-        {mainTab === 'live_activity' ? (
-          /* TAB 2: GLOBAL LIVE ACTIVITY STREAM */
+        {/* ========================================================================= */}
+        {/* VIEW 3: GLOBAL LIVE ACTIVITY FEED */}
+        {/* ========================================================================= */}
+        {!selectedWorkspace && mainTab === 'live_activity' && (
           <div className="flex-1 overflow-y-auto pr-1 space-y-2">
+            {/* Filter by workspace */}
+            <div className="flex items-center gap-2 shrink-0 bg-[#0B1220] p-2 rounded-xl border border-slate-800">
+              <span className="text-[11px] text-slate-400 font-bold shrink-0">فلترة النشاط:</span>
+              <select
+                value={activityFilterWsId}
+                onChange={(e) => setActivityFilterWsId(e.target.value)}
+                className="bg-[#0F172A] border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-amber-500 flex-1"
+              >
+                <option value="all">جميع الشركات والمدراء ({mergedWorkspaces.length})</option>
+                {mergedWorkspaces.map((w, idx) => (
+                  <option key={w.id} value={w.id}>
+                    #{idx + 1} - {w.name} ({w.short_id})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {filteredGlobalLogs.length === 0 ? (
               <div className="p-8 text-center text-slate-400 bg-[#0B1220] rounded-2xl border border-slate-800 text-xs space-y-2">
                 <Activity className="w-8 h-8 text-amber-400 mx-auto opacity-75" />
@@ -637,625 +1758,12 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
               ))
             )}
           </div>
-        ) : (
-          /* TAB 1: COMPANIES & ADMINS IN FIREBASE */
-          <div className="flex-1 overflow-y-auto pr-1 space-y-3">
-            {filteredWorkspaces.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 bg-[#0B1220] rounded-2xl border border-slate-800 text-xs">
-                لا توجد شركات مطابقة للفلتر أو البحث الحالي.
-              </div>
-            ) : (
-              filteredWorkspaces.map((ws: Workspace) => {
-                const info = getWorkspaceStatusInfo(ws);
-                const isWsPlan2 =
-                  ws.plan_tier === 'plan_2_two_stations' ||
-                  ws.max_stations === 2 ||
-                  ws.max_workers_per_station === 1;
-                const isBusy = busyWorkspaceId === ws.id;
-                const isMyCurrentWs = currentWorkspace?.id === ws.id;
-                const isExpanded = expandedWsId === ws.id;
-                const inspected = inspectedDataMap[ws.id];
-
-                return (
-                  <div
-                    key={ws.id}
-                    className={`bg-[#0B1220] p-4 rounded-3xl border space-y-3 text-xs transition ${
-                      info.isSuspended
-                        ? 'border-rose-500/40'
-                        : info.isExpired
-                        ? 'border-amber-500/40'
-                        : isExpanded
-                        ? 'border-amber-500/60'
-                        : 'border-slate-800'
-                    }`}
-                  >
-                    {/* Top line: Name, Short ID, Status */}
-                    <div className="flex items-center justify-between pb-2.5 border-b border-slate-800 flex-wrap gap-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-black text-white text-sm sm:text-base">
-                          {ws.name}
-                        </span>
-                        <span className="font-mono text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
-                          {ws.short_id}
-                        </span>
-                        {isMyCurrentWs && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black">
-                            حسابك الرئيسي
-                          </span>
-                        )}
-                        <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-amber-500/30 font-bold">
-                          {isWsPlan2
-                            ? '🏪 الباك الأول (99 درهم — محطتين)'
-                            : '👑 الباك الثاني (199 درهم — شامل مفتوح)'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={`text-[11px] px-3 py-1 rounded-full font-black flex items-center gap-1.5 ${
-                            info.isSuspended
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : info.isExpired
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          }`}
-                        >
-                          {info.isSuspended ? (
-                            <>
-                              <Ban className="w-3.5 h-3.5" />
-                              <span>حساب موقوف</span>
-                            </>
-                          ) : info.isExpired ? (
-                            <>
-                              <AlertTriangle className="w-3.5 h-3.5" />
-                              <span>منتهي الصلاحية</span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>مفعل ونشط ({info.daysLeft} يوم متبقي)</span>
-                            </>
-                          )}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Manager Identity & Live Last Activity Row */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[11px] text-slate-400">
-                      <div className="flex items-center justify-between bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-800/80">
-                        <span className="flex items-center gap-1">
-                          <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-                          <span>اسم المدير:</span>
-                        </span>
-                        <span className="text-white font-black truncate max-w-[150px]">
-                          {ws.owner_name || ws.name.replace('Sahara📦 Express - ', '') || 'مدير المحطة'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-800/80">
-                        <span className="flex items-center gap-1">
-                          <Phone className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>هاتف المدير:</span>
-                        </span>
-                        <span className="font-mono text-white font-bold" dir="ltr">
-                          {ws.owner_phone || ws.owner_whatsapp || 'غير مسجل'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-800/80">
-                        <span className="flex items-center gap-1">
-                          <Mail className="w-3.5 h-3.5 text-sky-400" />
-                          <span>البريد:</span>
-                        </span>
-                        <span
-                          className="font-mono text-slate-200 truncate max-w-[160px]"
-                          dir="ltr"
-                          title={ws.owner_email || ''}
-                        >
-                          {ws.owner_email || '—'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-800/80">
-                        <span>نهاية الاشتراك:</span>
-                        <span className="font-mono text-amber-300 font-black" dir="ltr">
-                          {new Date(info.endDateStr).toLocaleDateString('ar-MA')}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Live Firebase Stats & Last Action Bar */}
-                    <div className="bg-[#0F172A] p-2.5 rounded-2xl border border-slate-800/90 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[11px] font-black text-slate-300 flex items-center gap-1">
-                          <Database className="w-3.5 h-3.5 text-amber-400" />
-                          <span>بيانات الشركة في Firebase:</span>
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-800/90 text-slate-200 font-bold text-[11px] flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-amber-400" />
-                          <span>المحطات: {ws.stations_count ?? 0}</span>
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-800/90 text-slate-200 font-bold text-[11px] flex items-center gap-1">
-                          <Users className="w-3 h-3 text-sky-400" />
-                          <span>العمال: {ws.workers_count ?? 0}</span>
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-800/90 text-slate-200 font-bold text-[11px] flex items-center gap-1">
-                          <Package className="w-3 h-3 text-emerald-400" />
-                          <span>الكوليات: {ws.parcels_count ?? 0}</span>
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-800/90 text-slate-200 font-bold text-[11px] flex items-center gap-1">
-                          <Truck className="w-3 h-3 text-purple-400" />
-                          <span>الرحلات: {ws.trips_count ?? 0}</span>
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-800/90 text-slate-200 font-bold text-[11px] flex items-center gap-1">
-                          <Wallet className="w-3 h-3 text-amber-300" />
-                          <span>الصندوق: {ws.transactions_count ?? 0}</span>
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="text-[11px] text-slate-400">
-                          <span>آخر نشاط: </span>
-                          <span className="text-emerald-300 font-bold">
-                            {ws.last_active_at
-                              ? `${formatRelativeTime(ws.last_active_at)}${
-                                  ws.last_action_summary ? ` — ${ws.last_action_summary}` : ''
-                                }`
-                              : ws.created_at
-                              ? `سجل يوم ${new Date(ws.created_at).toLocaleDateString('ar-MA')}`
-                              : '—'}
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => loadInspectorForWorkspace(ws.id)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black text-[11px] border transition ${
-                            isExpanded
-                              ? 'bg-amber-500 text-slate-950 border-amber-400'
-                              : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border-amber-500/30'
-                          }`}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>
-                            {isExpanded ? 'إخفاء تفاصيل وسجل الشركة' : '🔍 فحص الشركة وسجل عملياتها'}
-                          </span>
-                          {isExpanded ? (
-                            <ChevronUp className="w-3.5 h-3.5" />
-                          ) : (
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* EXPANDABLE FIREBASE INSPECTOR PANEL FOR THIS WORKSPACE */}
-                    {isExpanded && (
-                      <div className="bg-[#090E1A] p-3.5 rounded-2xl border border-amber-500/40 space-y-3 animate-fadeIn">
-                        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-800 pb-2">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => setInspectorTab('activity')}
-                              className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition ${
-                                inspectorTab === 'activity'
-                                  ? 'bg-amber-500 text-slate-950'
-                                  : 'bg-slate-800 text-slate-300 hover:text-white'
-                              }`}
-                            >
-                              📡 سجل تحركات المدير والعمال ({inspected?.activityLogs?.length || 0})
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setInspectorTab('users')}
-                              className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition ${
-                                inspectorTab === 'users'
-                                  ? 'bg-amber-500 text-slate-950'
-                                  : 'bg-slate-800 text-slate-300 hover:text-white'
-                              }`}
-                            >
-                              👥 الحسابات في Firebase ({inspected?.users?.length || 0})
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setInspectorTab('parcels')}
-                              className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition ${
-                                inspectorTab === 'parcels'
-                                  ? 'bg-amber-500 text-slate-950'
-                                  : 'bg-slate-800 text-slate-300 hover:text-white'
-                              }`}
-                            >
-                              📦 الكوليات ({inspected?.parcels?.length || 0})
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setInspectorTab('stations')}
-                              className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition ${
-                                inspectorTab === 'stations'
-                                  ? 'bg-amber-500 text-slate-950'
-                                  : 'bg-slate-800 text-slate-300 hover:text-white'
-                              }`}
-                            >
-                              🏪 المحطات ({inspected?.stations?.length || 0})
-                            </button>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => loadInspectorForWorkspace(ws.id, true)}
-                            className="text-[11px] text-amber-300 hover:underline flex items-center gap-1 font-bold"
-                          >
-                            <RefreshCw
-                              className={`w-3 h-3 ${inspected?.loading ? 'animate-spin' : ''}`}
-                            />
-                            <span>تحديث بيانات الفحص</span>
-                          </button>
-                        </div>
-
-                        {inspected?.loading ? (
-                          <div className="p-4 text-center text-amber-300 text-xs font-bold">
-                            جاري جلب بيانات وسجل نشاط الشركة من Firebase Firestore...
-                          </div>
-                        ) : inspectorTab === 'activity' ? (
-                          <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-                            {!inspected?.activityLogs || inspected.activityLogs.length === 0 ? (
-                              <p className="text-slate-400 text-center py-4 text-[11px]">
-                                لا توجد عمليات مسجلة بعد في سجل هذه الشركة. ستظهر هنا كل عملية دخول أو إضافة كولي أو محطة.
-                              </p>
-                            ) : (
-                              inspected.activityLogs.map((act) => (
-                                <div
-                                  key={act.id}
-                                  className="bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-800 flex items-center justify-between gap-2"
-                                >
-                                  <div>
-                                    <span className="text-amber-300 font-black ml-1.5">
-                                      [{act.actor_role === 'worker' ? 'عامل' : 'مدير'}: {act.actor_name}]
-                                    </span>
-                                    <span className="text-white font-bold">{act.action_title}</span>
-                                    {act.details && (
-                                      <p className="text-[10px] text-slate-400 mt-0.5">
-                                        {act.details}
-                                      </p>
-                                    )}
-                                  </div>
-                                  <span className="text-[10px] font-mono text-slate-400 shrink-0">
-                                    {formatRelativeTime(act.created_at)}
-                                  </span>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        ) : inspectorTab === 'users' ? (
-                          <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-                            {!inspected?.users || inspected.users.length === 0 ? (
-                              <p className="text-slate-400 text-center py-4 text-[11px]">
-                                لا توجد حسابات مسجلة في Firebase لهذه الشركة.
-                              </p>
-                            ) : (
-                              inspected.users.map((u) => (
-                                <div
-                                  key={u.id}
-                                  className="bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-800 flex items-center justify-between flex-wrap gap-2"
-                                >
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span
-                                      className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
-                                        u.role === 'owner'
-                                          ? 'bg-amber-500/20 text-amber-300'
-                                          : 'bg-sky-500/20 text-sky-300'
-                                      }`}
-                                    >
-                                      {u.role === 'owner' ? '👑 مدير الشركة' : '💼 عامل محطة'}
-                                    </span>
-                                    <span className="text-white font-black">{u.name}</span>
-                                    <span className="font-mono text-slate-300" dir="ltr">
-                                      {u.phone}
-                                    </span>
-                                    {u.email && (
-                                      <span className="font-mono text-sky-300 text-[10px]" dir="ltr">
-                                        {u.email}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {u.role === 'worker' && (u.worker_code || u.password) && (
-                                    <span className="font-mono text-[11px] bg-slate-800 px-2.5 py-0.5 rounded-lg text-emerald-300 border border-emerald-500/30">
-                                      كود الدخول: {u.worker_code || u.password}
-                                    </span>
-                                  )}
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        ) : inspectorTab === 'parcels' ? (
-                          <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-                            {!inspected?.parcels || inspected.parcels.length === 0 ? (
-                              <p className="text-slate-400 text-center py-4 text-[11px]">
-                                لا توجد كوليات مسجلة في هذه الشركة حتى الآن.
-                              </p>
-                            ) : (
-                              inspected.parcels.slice(0, 30).map((p) => (
-                                <div
-                                  key={p.id}
-                                  className="bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-800 flex items-center justify-between flex-wrap gap-2"
-                                >
-                                  <div>
-                                    <span className="font-mono text-amber-300 font-black ml-2">
-                                      {p.tracking_code}
-                                    </span>
-                                    <span className="text-white font-bold">
-                                      {p.sender_name} ➔ {p.receiver_name}
-                                    </span>
-                                    <span className="text-slate-400 text-[10px] mr-2">
-                                      ({p.origin_station_name} ➔ {p.destination_station_name})
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-emerald-300 font-bold">
-                                      {p.amount_due} {p.currency}
-                                    </span>
-                                    <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-[10px] font-bold">
-                                      {p.status === 'delivered'
-                                        ? 'تم التسليم'
-                                        : p.status === 'arrived'
-                                        ? 'في الستوك'
-                                        : p.status === 'in_transit'
-                                        ? 'في الطريق'
-                                        : 'مسجل'}
-                                    </span>
-                                  </div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        ) : (
-                          <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-                            {!inspected?.stations || inspected.stations.length === 0 ? (
-                              <p className="text-slate-400 text-center py-4 text-[11px]">
-                                لم يقم المدير بإنشاء أي محطة بعد.
-                              </p>
-                            ) : (
-                              inspected.stations.map((st) => (
-                                <div
-                                  key={st.id}
-                                  className="bg-[#0F172A] px-3 py-2 rounded-xl border border-slate-800 flex items-center justify-between"
-                                >
-                                  <div>
-                                    <span className="text-white font-black">{st.name}</span>
-                                    <span className="text-slate-400 text-[11px] mr-2">
-                                      ({st.city} — {st.country === 'MR' ? 'موريتانيا' : 'المغرب'})
-                                    </span>
-                                  </div>
-                                  <span className="font-mono text-amber-300 font-bold">
-                                    العملة: {st.currency || st.default_currency || 'MAD'}
-                                  </span>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Package Tier Selection (الباك الأول 99 درهم vs الباك الثاني 199 درهم) */}
-                    <div className="bg-[#0F172A] p-2.5 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-slate-300">
-                        تحديد باقة الشركة (تطبق فوراً في Firebase):
-                      </span>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => switchWorkspacePlan('plan_2_two_stations', ws.id)}
-                          className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition ${
-                            isWsPlan2
-                              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                              : 'bg-slate-800 text-slate-300 hover:text-white'
-                          }`}
-                        >
-                          🏪 الباك الأول (99 درهم — محطتين + عامل/محطة)
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => switchWorkspacePlan('plan_1_full', ws.id)}
-                          className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition ${
-                            !isWsPlan2
-                              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                              : 'bg-slate-800 text-slate-300 hover:text-white'
-                          }`}
-                        >
-                          👑 الباك الثاني (199 درهم — محطات وعمال غير محدودين)
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Action Buttons: Extend / Activate / Suspend / Delete from Firebase */}
-                    <div className="bg-[#0F172A] p-3 rounded-2xl border border-slate-800/90 space-y-2.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[11px] text-slate-300 font-black ml-1">
-                            تمديد وتفعيل الاشتراك:
-                          </span>
-                          <button
-                            disabled={isBusy}
-                            onClick={() => handleExtend(ws, 0.25, '7 أيام')}
-                            className="px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-black text-[11px] border border-emerald-500/30 transition"
-                          >
-                            +7 أيام
-                          </button>
-                          <button
-                            disabled={isBusy}
-                            onClick={() => handleExtend(ws, 1, 'شهر واحد')}
-                            className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-black text-[11px] border border-emerald-500/40 transition"
-                          >
-                            +1 شهر
-                          </button>
-                          <button
-                            disabled={isBusy}
-                            onClick={() => handleExtend(ws, 3, '3 أشهر')}
-                            className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-black text-[11px] border border-emerald-500/40 transition"
-                          >
-                            +3 أشهر
-                          </button>
-                          <button
-                            disabled={isBusy}
-                            onClick={() => handleExtend(ws, 6, '6 أشهر')}
-                            className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-black text-[11px] border border-emerald-500/40 transition"
-                          >
-                            +6 أشهر
-                          </button>
-                          <button
-                            disabled={isBusy}
-                            onClick={() => handleExtend(ws, 12, 'سنة كاملة (12 شهراً)')}
-                            className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-black text-[11px] border border-amber-500/40 transition"
-                          >
-                            +1 سنة (12 شهراً)
-                          </button>
-                        </div>
-
-                        {/* Activate / Suspend / Delete Controls */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {info.isSuspended || info.isExpired ? (
-                            <button
-                              disabled={isBusy}
-                              onClick={() => handleActivate(ws)}
-                              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 transition"
-                            >
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                              <span>إعادة تفعيل الحساب (+1 شهر)</span>
-                            </button>
-                          ) : (
-                            <button
-                              disabled={isBusy}
-                              onClick={() => handleSuspend(ws)}
-                              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white font-black text-xs border border-rose-500/40 transition"
-                            >
-                              <Ban className="w-3.5 h-3.5" />
-                              <span>توقيف الحساب فوراً</span>
-                            </button>
-                          )}
-
-                          {!isMyCurrentWs && (
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() =>
-                                setConfirmDeleteWsId(confirmDeleteWsId === ws.id ? null : ws.id)
-                              }
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white font-black text-[11px] border border-rose-500/40 transition"
-                              title="حذف الشركة والمدير وجميع بياناته من Firebase نهائياً"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>حذف من Firebase</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Confirmation Banner for Permanent Firebase Deletion */}
-                      {confirmDeleteWsId === ws.id && (
-                        <div className="bg-rose-950/60 border border-rose-500/60 rounded-2xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 animate-fadeIn">
-                          <div className="text-[11px] text-rose-200 space-y-0.5">
-                            <p className="font-black text-rose-300">
-                              ⚠️ تأكيد الحذف النهائي من قاعدة بيانات Firebase Firestore:
-                            </p>
-                            <p>
-                              سيتم مسح شركة <b>"{ws.name}"</b> وحساب مديرها وعمالها وكولياتها وصناديقها نهائياً من Firebase ولن يتمكن من الدخول مجدداً.
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() => handleDeleteWorkspacePermanently(ws)}
-                              className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-lg transition"
-                            >
-                              {isBusy ? 'جاري المسح من Firebase...' : 'نعم، امسح نهائياً من Firebase'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteWsId(null)}
-                              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition"
-                            >
-                              إلغاء
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* WhatsApp Notification Shortcuts */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
-                        <span className="text-[11px] text-slate-400 font-bold">
-                          إرسال إشعار واتساب لمدير الشركة:
-                        </span>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => sendWhatsAppNotification(ws, 'activated')}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold transition"
-                          >
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            <span>وصل تفعيل الاشتراك</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => sendWhatsAppNotification(ws, 'expiring')}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-bold transition"
-                          >
-                            <Send className="w-3.5 h-3.5" />
-                            <span>تذكير بالتجديد</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => sendWhatsAppNotification(ws, 'suspended')}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[11px] font-bold transition"
-                          >
-                            <ShieldAlert className="w-3.5 h-3.5" />
-                            <span>إشعار توقف الحساب</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Notes per workspace */}
-                    <div className="pt-0.5">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="ملاحظاتك الخاصة حول هذه الشركة (مثال: دفع 199 درهم عبر كاش بلوس يوم...)"
-                          value={
-                            editingNotes[ws.id] !== undefined
-                              ? editingNotes[ws.id]
-                              : ws.admin_notes || ''
-                          }
-                          onChange={(e) =>
-                            setEditingNotes({ ...editingNotes, [ws.id]: e.target.value })
-                          }
-                          className="flex-1 bg-[#0F172A] border border-slate-700 rounded-xl px-3 py-1.5 text-[11px] text-white focus:outline-none focus:border-amber-500"
-                        />
-                        <button
-                          onClick={() => handleSaveNotes(ws.id)}
-                          disabled={isBusy}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-amber-500 text-slate-200 hover:text-slate-950 font-bold text-[11px] transition"
-                          title="حفظ الملاحظة"
-                        >
-                          <Save className="w-3.5 h-3.5" />
-                          <span>حفظ</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
         )}
 
         {/* Footer */}
         <div className="pt-2 border-t border-slate-800 flex items-center justify-between shrink-0 flex-wrap gap-2">
           <p className="text-[11px] text-slate-400">
-            🔒 جميع التعديلات (تفعيل، توقيف، تغيير الباقة، أو الحذف النهائي) تطبق مباشرة في Firebase Firestore.
+            🔒 جميع العمليات تطبق فوراً ومباشرة في Firebase Firestore ومشفرة بنظام bcrypt.
           </p>
           <button
             onClick={onClose}

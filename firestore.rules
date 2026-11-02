@@ -21,14 +21,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // User accounts (Phone+Password & Google Auth cross-device profiles)
+    // User accounts: SECURED
+    // allow get: allowed for direct account lookup by ID (phone/email/code)
+    // allow list: STRICTLY FALSE - Prevents malicious scrapers from dumping all users and credential hashes
     match /users/{userId} {
-      allow get, list: if true;
+      allow get: if isValidId(userId);
+      allow list: if false;
       allow create, update: if isValidId(userId) && incoming().id is string && incoming().id.size() <= 128;
       allow delete: if isValidId(userId);
     }
 
     // 6-digit WhatsApp OTP records for password recovery (5-minute expiry & rate limit tracking)
+    // allow list: STRICTLY FALSE - Protected from enumeration
     match /password_reset_otps/{phone} {
       allow get: if isValidId(phone);
       allow list: if false;

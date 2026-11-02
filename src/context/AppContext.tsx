@@ -58,6 +58,7 @@ import {
 import { PLATFORM_CONFIG, DEMO_MODE } from '../config/constants';
 import { generateWorkspaceDemoData } from '../utils/demoData';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { hashPassword, verifyPassword, isBcryptHash } from '../utils/security';
 
 // Helper to generate 6-character short workspace ID
 const generateShortId = (): string => {
@@ -413,7 +414,12 @@ interface AppContextType {
   allWorkspaces: Workspace[];
   allSubscriptions: Subscription[];
   refreshPlatformWorkspaces: () => Promise<void>;
-  updateWorkspaceSubscription: (workspaceId: string, action: 'activate' | 'extend' | 'suspend', months?: number) => Promise<{ success: boolean; error?: string }>;
+  updateWorkspaceSubscription: (
+    workspaceId: string,
+    action: 'activate' | 'extend' | 'suspend' | 'decrease' | 'set_date',
+    months?: number,
+    options?: { days?: number; exactEndDate?: string }
+  ) => Promise<{ success: boolean; error?: string }>;
   updateWorkspaceNotes: (workspaceId: string, notes: string) => Promise<{ success: boolean; error?: string }>;
   updateWorkspaceQuotas: (workspaceId: string, quotas: { max_workers: number; max_stations: number; max_workers_per_station?: number; max_collaborations: number; plan_name?: string; plan_tier?: 'plan_1_full' | 'plan_2_two_stations' }) => Promise<{ success: boolean; error?: string }>;
   switchWorkspacePlan: (planTier: 'plan_1_full' | 'plan_2_two_stations', workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
@@ -2662,17 +2668,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
           const storedPass = (cloudAcc.password || '').trim();
           const storedWorkerCode = (cloudAcc.worker_code || '').trim();
-          const passMatchesExact = storedPass === effectiveCode || storedWorkerCode === effectiveCode;
-          const passMatchesCaseInsensitive =
-            (storedPass && storedPass.toUpperCase() === effectiveCode.toUpperCase()) ||
-            (storedWorkerCode && storedWorkerCode.toUpperCase() === effectiveCode.toUpperCase());
+          
+          let passMatches = false;
+          if (storedPass) {
+            passMatches = await verifyPassword(effectiveCode, storedPass);
+          }
+          if (!passMatches && storedWorkerCode) {
+            passMatches = await verifyPassword(effectiveCode, storedWorkerCode);
+          }
+          if (!passMatches && storedPass) {
+            passMatches = (storedPass.toUpperCase() === effectiveCode.toUpperCase());
+          }
+          if (!passMatches && storedWorkerCode) {
+            passMatches = (storedWorkerCode.toUpperCase() === effectiveCode.toUpperCase());
+          }
 
           // If this is an active worker account and the Admin generated a fresh Itt-... code (even if generated before cloud indexing), accept & bind it
           const isWorkerWithValidIttCode =
             cloudAcc.role === 'worker' && looksLikeWorkerCode(effectiveCode);
 
-          if (!matchedByWorkerCode && storedPass && !passMatchesExact && !passMatchesCaseInsensitive && !isWorkerWithValidIttCode) {
+          if (!matchedByWorkerCode && storedPass && !passMatches && !isWorkerWithValidIttCode) {
             return { success: false, error: 'كود الدخول أو كلمة المرور غير صحيحة. تأكد من الكود الذي أعطاك إياه الأدمين.' };
+          }
+
+          // If matched a legacy unhashed password, upgrade to bcrypt in the background
+          if (storedPass && !isBcryptHash(storedPass) && passMatches) {
+            hashPassword(effectiveCode).then(hashed => {
+              const canon = cleanPhoneNumber(cloudAcc.phone) || cloudAcc.phone;
+              if (canon) {
+                firebaseSyncService.saveUserAccount(canon, {
+                  ...cloudAcc,
+                  password: hashed,
+                }).catch(() => {});
+              }
+            }).catch(() => {});
           }
 
           const resolvedPhone = cleanPhoneNumber(cloudAcc.phone) || cleanPhone || cloudAcc.phone || '0600000000';
@@ -6289,14 +6318,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Platform Owner Controls: Update Subscription via Firestore & server-side RPC
   const updateWorkspaceSubscription = async (
     workspaceId: string, 
-    action: 'activate' | 'extend' | 'suspend', 
-    months: number = 1
+    action: 'activate' | 'extend' | 'suspend' | 'decrease' | 'set_date', 
+    months: number = 1,
+    options?: { days?: number; exactEndDate?: string }
   ) => {
     if (!isPlatformOwner && !checkIsMasterAccount(currentUser, currentWorkspace)) {
       return { success: false, error: 'هذه الصلاحية خاصة بمالك التطبيق فقط' };
     }
     const supabase = getSupabaseClient();
-    if (supabase && isValidUUID(workspaceId)) {
+    if (supabase && isValidUUID(workspaceId) && (action === 'activate' || action === 'extend' || action === 'suspend')) {
       const { data: rpcRes, error } = await supabase.rpc('rpc_platform_update_subscription', {
         p_workspace_id: workspaceId,
         p_action: action,
@@ -6318,13 +6348,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ? new Date(baseEndStr)
       : new Date();
 
-    if (action === 'extend' || action === 'activate') {
-      if (months < 1) {
+    if (action === 'set_date' && options?.exactEndDate) {
+      newEndDate = new Date(options.exactEndDate);
+    } else if (action === 'extend' || action === 'activate') {
+      if (options?.days && options.days > 0) {
+        newEndDate = new Date(newEndDate.getTime() + options.days * 86400000);
+      } else if (months < 1) {
         // Fractional months e.g. 0.25 = 7 days
         const daysToAdd = Math.max(1, Math.round(months * 30));
         newEndDate = new Date(newEndDate.getTime() + daysToAdd * 86400000);
       } else {
         newEndDate.setMonth(newEndDate.getMonth() + Math.round(months));
+      }
+    } else if (action === 'decrease') {
+      if (options?.days && options.days > 0) {
+        newEndDate = new Date(newEndDate.getTime() - options.days * 86400000);
+      } else {
+        const monthsToSub = months || 1;
+        newEndDate.setMonth(newEndDate.getMonth() - Math.round(monthsToSub));
       }
     }
 

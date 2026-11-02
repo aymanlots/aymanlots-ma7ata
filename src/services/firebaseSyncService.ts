@@ -20,6 +20,7 @@ import {
   WorkspaceMember,
   PlatformActivityLog,
 } from '../types/database';
+import { hashPassword, verifyPassword, isBcryptHash } from '../utils/security';
 
 export enum OperationType {
   CREATE = 'create',
@@ -131,15 +132,27 @@ export const firebaseSyncService = {
     return isFirebaseConfigured();
   },
 
-  // 0. USER ACCOUNTS (Cross-Device Phone + Password & Direct Worker Code Sync)
+  // 0. USER ACCOUNTS (Cross-Device Phone + Password & Direct Worker Code Sync with bcrypt hashing)
   async saveUserAccount(docId: string, account: CloudUserAccount): Promise<void> {
     if (!this.isAvailable() || !docId) return;
     const path = `users/${docId}`;
     const nowIso = new Date().toISOString();
     const resolvedCode = account.worker_code || (account.role === 'worker' ? account.password : undefined);
+
+    // Hash password with bcrypt before writing to Firestore if not already a hash
+    let securedPassword = account.password;
+    if (securedPassword && !isBcryptHash(securedPassword)) {
+      try {
+        securedPassword = await hashPassword(securedPassword);
+      } catch (e) {
+        console.warn('bcrypt hash warning in saveUserAccount:', e);
+      }
+    }
+
     const payload = sanitizeForFirestore({
       ...account,
       id: account.id || docId,
+      password: securedPassword || account.password || null,
       worker_code: resolvedCode || account.worker_code || null,
       status: account.status || 'active',
       deleted: Boolean(account.deleted),
@@ -148,11 +161,19 @@ export const firebaseSyncService = {
     try {
       await setDoc(doc(db, 'users', docId), payload, { merge: true });
 
+      // Direct email alias index: users/email_<clean_email>
+      if (account.email && !account.deleted && account.status !== 'revoked') {
+        const cleanEmailKey = String(account.email).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        if (cleanEmailKey.length >= 3) {
+          await setDoc(doc(db, 'users', `email_${cleanEmailKey}`), payload, { merge: true }).catch(() => {});
+        }
+      }
+
       // Also index worker account directly by their access code (users/code_<CODE>) so workers can log in with JUST the code
       if (account.role === 'worker' && resolvedCode && !account.deleted && account.status !== 'revoked') {
         const cleanCodeKey = String(resolvedCode).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
         if (cleanCodeKey.length >= 4) {
-          await setDoc(doc(db, 'users', `code_${cleanCodeKey}`), payload, { merge: true });
+          await setDoc(doc(db, 'users', `code_${cleanCodeKey}`), payload, { merge: true }).catch(() => {});
         }
       }
     } catch (err) {
@@ -293,39 +314,36 @@ export const firebaseSyncService = {
     const isEmail = cleanId.includes('@');
 
     try {
+      // 1. Direct O(1) email alias lookup if email provided (getDoc allowed by rules)
       if (isEmail) {
-        const lowerEmail = cleanId.toLowerCase();
-        const qEmail = query(collection(db, 'users'), where('email', '==', lowerEmail));
-        const snapEmail = await getDocs(qEmail);
-        if (!snapEmail.empty) {
-          return snapEmail.docs[0].data() as CloudUserAccount;
+        const cleanEmailKey = cleanId.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        const emailSnap = await getDoc(doc(db, 'users', `email_${cleanEmailKey}`));
+        if (emailSnap.exists()) {
+          const acc = emailSnap.data() as CloudUserAccount;
+          if (!acc.deleted && acc.status !== 'revoked') {
+            return acc;
+          }
         }
       }
 
-      // 1. Direct lookup by document ID (phone)
+      // 2. Direct lookup by document ID (phone number or doc key)
       const direct = await this.getUserAccount(cleanId);
-      if (direct) return direct;
+      if (direct && !direct.deleted && direct.status !== 'revoked') return direct;
 
-      // 2. Query by whatsapp_number field
-      const qWhatsapp = query(collection(db, 'users'), where('whatsapp_number', '==', cleanId));
-      const snapWhatsapp = await getDocs(qWhatsapp);
-      if (!snapWhatsapp.empty) {
-        return snapWhatsapp.docs[0].data() as CloudUserAccount;
+      // 3. Direct lookup by clean digits only
+      const numOnly = cleanId.replace(/[^0-9]/g, '');
+      if (numOnly && numOnly !== cleanId) {
+        const directNum = await this.getUserAccount(numOnly);
+        if (directNum && !directNum.deleted && directNum.status !== 'revoked') return directNum;
       }
 
-      // 3. Query by phone field
-      const qPhone = query(collection(db, 'users'), where('phone', '==', cleanId));
-      const snapPhone = await getDocs(qPhone);
-      if (!snapPhone.empty) {
-        return snapPhone.docs[0].data() as CloudUserAccount;
-      }
-
-      // 4. Query by email if identifier was passed without @
+      // 4. Try email alias without @ if formatted as email prefix
       if (!isEmail) {
-        const qEmailFallback = query(collection(db, 'users'), where('email', '==', cleanId.toLowerCase()));
-        const snapEmailFallback = await getDocs(qEmailFallback);
-        if (!snapEmailFallback.empty) {
-          return snapEmailFallback.docs[0].data() as CloudUserAccount;
+        const cleanEmailKey = cleanId.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        const emailSnap = await getDoc(doc(db, 'users', `email_${cleanEmailKey}`));
+        if (emailSnap.exists()) {
+          const acc = emailSnap.data() as CloudUserAccount;
+          if (!acc.deleted && acc.status !== 'revoked') return acc;
         }
       }
 
@@ -491,24 +509,7 @@ export const firebaseSyncService = {
   async listAllWorkspacesFromCloud(): Promise<Workspace[]> {
     if (!this.isAvailable()) return [];
     try {
-      const [wsSnap, usersSnap] = await Promise.all([
-        getDocs(collection(db, 'workspaces')),
-        getDocs(collection(db, 'users')),
-      ]);
-      const ownersByWs = new Map<string, CloudUserAccount>();
-      const workersCountByWs = new Map<string, number>();
-
-      usersSnap.forEach((d) => {
-        if (d.id.startsWith('code_')) return;
-        const u = d.data() as CloudUserAccount;
-        if (u.deleted || u.status === 'revoked' || !u.workspace_id) return;
-        if (u.role === 'owner') {
-          ownersByWs.set(u.workspace_id, u);
-        } else if (u.role === 'worker') {
-          workersCountByWs.set(u.workspace_id, (workersCountByWs.get(u.workspace_id) || 0) + 1);
-        }
-      });
-
+      const wsSnap = await getDocs(collection(db, 'workspaces'));
       const rawWorkspaces: Workspace[] = [];
       wsSnap.forEach((d) => {
         const ws = d.data() as Workspace;
@@ -521,31 +522,33 @@ export const firebaseSyncService = {
       // Fetch live subcollection counts in parallel for each workspace
       const enriched = await Promise.all(
         rawWorkspaces.map(async (ws) => {
-          const ownerAcc = ownersByWs.get(ws.id);
           let stationsCount = ws.stations_count ?? 0;
           let parcelsCount = ws.parcels_count ?? 0;
           let tripsCount = ws.trips_count ?? 0;
           let txCount = ws.transactions_count ?? 0;
+          let workersCount = ws.workers_count ?? 0;
           try {
-            const [stSnap, pclSnap, trpSnap, txSnap] = await Promise.all([
+            const [stSnap, pclSnap, trpSnap, txSnap, memSnap] = await Promise.all([
               getDocs(collection(db, 'workspaces', ws.id, 'stations')),
               getDocs(collection(db, 'workspaces', ws.id, 'parcels')),
               getDocs(collection(db, 'workspaces', ws.id, 'trips')),
               getDocs(collection(db, 'workspaces', ws.id, 'transactions')),
+              getDocs(collection(db, 'workspaces', ws.id, 'members')),
             ]);
             stationsCount = stSnap.size;
             parcelsCount = pclSnap.size;
             tripsCount = trpSnap.size;
             txCount = txSnap.size;
+            workersCount = memSnap.size;
           } catch {}
 
           return {
             ...ws,
-            owner_name: ws.owner_name || ownerAcc?.name || '',
-            owner_email: ws.owner_email || ownerAcc?.email || '',
-            owner_phone: ws.owner_phone || ownerAcc?.phone || '',
-            owner_whatsapp: ws.owner_whatsapp || ownerAcc?.whatsapp_number || ownerAcc?.phone || '',
-            workers_count: workersCountByWs.get(ws.id) ?? ws.workers_count ?? 0,
+            owner_name: ws.owner_name || '',
+            owner_email: ws.owner_email || '',
+            owner_phone: ws.owner_phone || '',
+            owner_whatsapp: ws.owner_whatsapp || ws.owner_phone || '',
+            workers_count: workersCount,
             stations_count: stationsCount,
             parcels_count: parcelsCount,
             trips_count: tripsCount,
@@ -1037,13 +1040,14 @@ export const firebaseSyncService = {
       return { stations: [], parcels: [], transactions: [], trips: [], users: [], activityLogs: [] };
     }
     try {
-      const [stSnap, pclSnap, txSnap, trpSnap, actSnap, usersSnap] = await Promise.all([
+      const [stSnap, pclSnap, txSnap, trpSnap, actSnap, memSnap, wsDocSnap] = await Promise.all([
         getDocs(collection(db, 'workspaces', wsId, 'stations')),
         getDocs(collection(db, 'workspaces', wsId, 'parcels')),
         getDocs(collection(db, 'workspaces', wsId, 'transactions')),
         getDocs(collection(db, 'workspaces', wsId, 'trips')),
         getDocs(collection(db, 'workspaces', wsId, 'activity_logs')),
-        getDocs(query(collection(db, 'users'), where('workspace_id', '==', wsId))),
+        getDocs(collection(db, 'workspaces', wsId, 'members')),
+        getDoc(doc(db, 'workspaces', wsId)),
       ]);
 
       const stations: Station[] = [];
@@ -1066,11 +1070,44 @@ export const firebaseSyncService = {
       activityLogs.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
       const users: CloudUserAccount[] = [];
-      usersSnap.forEach((d) => {
-        if (d.id.startsWith('code_')) return;
-        const u = d.data() as CloudUserAccount;
-        if (!u.deleted && u.status !== 'revoked') {
-          users.push(u);
+      const wsData = wsDocSnap.exists() ? (wsDocSnap.data() as Workspace) : null;
+      if (wsData && (wsData.owner_phone || wsData.owner_name || wsData.owner_email)) {
+        users.push({
+          id: wsData.created_by || wsData.owner_phone || 'owner',
+          name: wsData.owner_name || wsData.name.replace('Sahara📦 Express - ', '') || 'المدير',
+          phone: wsData.owner_phone || '',
+          whatsapp_number: wsData.owner_whatsapp || wsData.owner_phone || '',
+          email: wsData.owner_email || '',
+          role: 'owner',
+          workspace_id: wsId,
+          status: 'active',
+          deleted: false,
+          created_at: wsData.created_at || new Date().toISOString(),
+          password: undefined, // SECURITY: Password is never exposed
+        });
+      }
+
+      memSnap.forEach((d) => {
+        const m = d.data();
+        if (m.status !== 'removed' && m.status !== 'rejected') {
+          // If not already in list as owner
+          if (!users.some(u => u.phone && u.phone === (m.profile?.phone || m.phone))) {
+            users.push({
+              id: m.user_id || d.id,
+              name: m.profile?.name || m.name || 'عضو المحطة',
+              phone: m.profile?.phone || m.phone || '',
+              whatsapp_number: m.profile?.whatsapp_number || m.whatsapp_number || m.profile?.phone || '',
+              email: m.profile?.email || m.email || '',
+              role: m.role || 'worker',
+              station_id: m.station_id || undefined,
+              worker_code: m.worker_code || m.profile?.worker_code || undefined,
+              workspace_id: wsId,
+              status: m.status || 'active',
+              deleted: false,
+              created_at: m.joined_at || m.profile?.created_at || new Date().toISOString(),
+              password: undefined, // SECURITY: Password is never exposed
+            });
+          }
         }
       });
 
