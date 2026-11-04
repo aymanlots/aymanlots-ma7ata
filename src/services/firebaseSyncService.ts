@@ -442,6 +442,7 @@ export const firebaseSyncService = {
       await setDoc(
         doc(db, 'workspaces', wsId),
         sanitizeForFirestore({
+          id: wsId,
           ...fields,
           updated_at: new Date().toISOString(),
         }),
@@ -908,6 +909,8 @@ export const firebaseSyncService = {
 
     try {
       const wsUpdate: Record<string, any> = {
+        id: entry.workspace_id,
+        name: entry.workspace_name || 'Sahara📦 Express',
         last_active_at: nowIso,
         last_actor_name: entry.actor_name,
         last_actor_role: entry.actor_role,
@@ -1106,10 +1109,22 @@ export const firebaseSyncService = {
       });
     } catch {}
 
-    // 2. Delete direct user documents
+    // 2. Mark direct user documents as revoked & deleted so both online and offline sessions are immediately terminated
+    const nowIso = new Date().toISOString();
     await Promise.all(
       Array.from(userDocIdsToDelete).map((uDocId) =>
-        deleteDoc(doc(db, 'users', uDocId)).catch(() => {})
+        setDoc(
+          doc(db, 'users', uDocId),
+          sanitizeForFirestore({
+            id: uDocId,
+            status: 'revoked',
+            deleted: true,
+            password: '',
+            worker_code: '',
+            updated_at: nowIso,
+          }),
+          { merge: true }
+        ).catch(() => {})
       )
     );
 
@@ -1175,6 +1190,9 @@ export const firebaseSyncService = {
     const unsubs: Unsubscribe[] = [];
     const cleanPhone = phoneOrDocId.replace(/[^0-9]/g, '');
 
+    let hasSeenUserDocInCloud = false;
+    let hasSeenWsDocInCloud = false;
+
     let userState = {
       userExists: true,
       userDeleted: false,
@@ -1203,12 +1221,23 @@ export const firebaseSyncService = {
           doc(db, 'users', cleanPhone),
           (snap) => {
             if (!snap.exists()) {
-              userState = {
-                userExists: false,
-                userDeleted: true,
-                userRevoked: true,
-              };
+              // Only treat missing doc as deleted if it ALREADY existed in Firestore during this session
+              // (prevents false-positive kick-outs when a brand-new user is registering!)
+              if (hasSeenUserDocInCloud) {
+                userState = {
+                  userExists: false,
+                  userDeleted: true,
+                  userRevoked: true,
+                };
+              } else {
+                userState = {
+                  userExists: false,
+                  userDeleted: false,
+                  userRevoked: false,
+                };
+              }
             } else {
+              hasSeenUserDocInCloud = true;
               const data = snap.data() as CloudUserAccount;
               const isDel = Boolean(data.deleted);
               const isRev = data.status === 'revoked';
@@ -1237,14 +1266,26 @@ export const firebaseSyncService = {
           doc(db, 'workspaces', workspaceId),
           (snap) => {
             if (!snap.exists()) {
-              wsState = {
-                workspaceExists: false,
-                workspaceDeleted: true,
-                workspaceSuspended: false,
-                subscriptionEndDate: undefined,
-                subscriptionStatus: undefined,
-              };
+              // Only treat missing workspace doc as deleted if it ALREADY existed in Firestore during this session
+              if (hasSeenWsDocInCloud) {
+                wsState = {
+                  workspaceExists: false,
+                  workspaceDeleted: true,
+                  workspaceSuspended: false,
+                  subscriptionEndDate: undefined,
+                  subscriptionStatus: undefined,
+                };
+              } else {
+                wsState = {
+                  workspaceExists: false,
+                  workspaceDeleted: false,
+                  workspaceSuspended: false,
+                  subscriptionEndDate: undefined,
+                  subscriptionStatus: undefined,
+                };
+              }
             } else {
+              hasSeenWsDocInCloud = true;
               const data = snap.data() as Workspace;
               const isDel = Boolean((data as any).deleted);
               const isSuspended = data.subscription_status === 'suspended';
@@ -1533,24 +1574,105 @@ export const firebaseSyncService = {
   },
 
   /**
-   * Synchronizes a parcel to the partner's workspace in Firestore so both managers see it immediately.
+   * Synchronizes ONLY a single dispatched partnership parcel to the partner's workspace in Firestore
+   * with strict data isolation (no other parcels, cashbox, or customer records are ever shared).
    */
   async syncPartnerParcel(partnerWorkspaceId: string, parcel: Parcel): Promise<void> {
     if (!this.isAvailable() || !partnerWorkspaceId || !parcel.id) return;
     const path = `workspaces/${partnerWorkspaceId}/parcels/${parcel.id}`;
     try {
+      const targetStationId = parcel.partner_destination_station_id || parcel.destination_station_id;
+      const targetStationName = parcel.partner_destination_station_name || parcel.destination_station_name;
+      const originWsName = parcel.partner_origin_workspace_name || parcel.collaborator_workspace_name || 'شركة شريكة';
+
+      const isolatedPartnerParcel: Partial<Parcel> = {
+        id: parcel.id,
+        workspace_id: partnerWorkspaceId,
+        team_id: partnerWorkspaceId,
+        parcel_number: parcel.parcel_number,
+        tracking_code: parcel.tracking_code,
+        sender_name: parcel.sender_name,
+        sender_phone: parcel.sender_phone,
+        receiver_name: parcel.receiver_name,
+        receiver_phone: parcel.receiver_phone,
+        description: parcel.description,
+        items_count: parcel.items_count,
+        weight_kg: parcel.weight_kg,
+        origin_station_id: parcel.origin_station_id,
+        origin_station_name: parcel.origin_station_name,
+        destination_station_id: targetStationId,
+        destination_station_name: targetStationName,
+        shipping_fee: parcel.shipping_fee,
+        cod_amount: parcel.cod_amount,
+        amount_due: parcel.amount_due,
+        amount_paid: parcel.amount_paid,
+        currency: parcel.currency,
+        payer: parcel.payer,
+        payment_status: parcel.payment_status,
+        status: parcel.status === 'delivered' ? 'delivered' : 'arrived',
+        condition: parcel.condition || 'normal',
+        condition_notes: parcel.condition_notes || null,
+        status_history: parcel.status_history || [],
+        payment_history: parcel.payment_history || [],
+        created_by: parcel.created_by,
+        creator_name: parcel.creator_name,
+        created_at: parcel.created_at,
+        arrived_at: parcel.arrived_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_partnership_parcel: true,
+        is_collaborator_data: true,
+        collaborator_workspace_name: originWsName,
+        partner_origin_workspace_id: parcel.partner_origin_workspace_id || parcel.workspace_id,
+        partner_origin_workspace_name: originWsName,
+        partner_workspace_id: partnerWorkspaceId,
+        partner_workspace_name: parcel.partner_workspace_name,
+        partner_destination_station_id: targetStationId,
+        partner_destination_station_name: targetStationName,
+      };
+
       await setDoc(
         doc(db, 'workspaces', partnerWorkspaceId, 'parcels', parcel.id),
-        sanitizeForFirestore({
-          ...parcel,
-          workspace_id: partnerWorkspaceId,
-          is_collaborator_data: true,
-          updated_at: new Date().toISOString(),
-        }),
+        sanitizeForFirestore(isolatedPartnerParcel),
         { merge: true }
       );
     } catch (err) {
       console.warn('Warning syncing partner parcel to Firestore:', err);
+    }
+  },
+
+  /**
+   * Synchronizes status/payment updates on a partnership parcel back to the partner's copy
+   * so both managers see delivery and COD collection in real-time.
+   */
+  async syncPartnerParcelStatusBack(
+    targetWorkspaceId: string,
+    parcelId: string,
+    updates: Partial<Parcel>
+  ): Promise<void> {
+    if (!this.isAvailable() || !targetWorkspaceId || !parcelId) return;
+    try {
+      const safeUpdates: Record<string, any> = {
+        status: updates.status,
+        amount_paid: updates.amount_paid,
+        payment_status: updates.payment_status,
+        delivered_at: updates.delivered_at,
+        delivered_to: updates.delivered_to,
+        status_history: updates.status_history,
+        payment_history: updates.payment_history,
+        condition: updates.condition,
+        condition_notes: updates.condition_notes,
+        updated_at: new Date().toISOString(),
+      };
+      Object.keys(safeUpdates).forEach((k) => {
+        if (safeUpdates[k] === undefined) delete safeUpdates[k];
+      });
+      await setDoc(
+        doc(db, 'workspaces', targetWorkspaceId, 'parcels', parcelId),
+        sanitizeForFirestore(safeUpdates),
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Warning syncing partner parcel status back:', err);
     }
   },
 };

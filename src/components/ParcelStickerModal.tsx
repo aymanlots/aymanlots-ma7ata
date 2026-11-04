@@ -349,6 +349,21 @@ function buildSingleStickerHtml(
           }
 
           <div style="display:flex;flex-direction:column;gap:0.6mm;font-size:8.5pt;line-height:1.15;font-weight:700;color:#000000;">
+            ${
+              parcel.is_partnership_parcel ||
+              parcel.is_collaborator_data ||
+              parcel.partner_workspace_id ||
+              parcel.partner_origin_workspace_id
+                ? `<div style="border:1.5px solid #000000;padding:0.4mm 1mm;font-size:7.5pt;font-weight:900;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                    🤝 شراكة: ${escapeHtml(
+                      parcel.partner_workspace_name ||
+                        parcel.partner_origin_workspace_name ||
+                        parcel.collaborator_workspace_name ||
+                        'غرفة الشراكة'
+                    )}
+                  </div>`
+                : ''
+            }
             <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
               <span>الكود: </span>
               <span dir="ltr" style="font-family:monospace;font-weight:900;">${escapeHtml(numericCode)} (#${escapeHtml(String(parcel.parcel_number))})</span>

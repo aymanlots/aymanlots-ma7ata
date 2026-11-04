@@ -10,6 +10,7 @@ import {
   formatDateTimeStandard,
   formatTrackingCodeNumeric,
   matchesTrackingCode,
+  getParcelSourceOwnershipInfo,
 } from '../utils/logisticsFeatures';
 import {
   Plus,
@@ -97,12 +98,13 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   const balances = currentStation ? stationBalances[currentStation.id] || {} : {};
   const activeCurrencies = currencies.filter((c) => c.is_active);
 
-  // Parcels related to this station
+  // Parcels related to this station (including partnership parcels addressed to this station)
   const stationParcels = useMemo(() => {
     return parcels.filter(
       (p) =>
-        !p.is_collaborator_data &&
-        (p.origin_station_id === currentStation?.id || p.destination_station_id === currentStation?.id)
+        p.origin_station_id === currentStation?.id ||
+        p.destination_station_id === currentStation?.id ||
+        p.partner_destination_station_id === currentStation?.id
     );
   }, [parcels, currentStation?.id]);
 
@@ -110,7 +112,8 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   const arrivedUncollectedParcels = useMemo(() => {
     return stationParcels.filter(
       (p) =>
-        p.destination_station_id === currentStation?.id &&
+        (p.destination_station_id === currentStation?.id ||
+          p.partner_destination_station_id === currentStation?.id) &&
         p.status === 'arrived'
     );
   }, [stationParcels, currentStation?.id]);
@@ -207,6 +210,12 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
       parcels.find((p) => matchesTrackingCode(p, code));
     setShowScanner(false);
     if (found) {
+      const ownershipInfo = getParcelSourceOwnershipInfo(
+        found,
+        currentWorkspace?.id,
+        currentWorkspace?.name
+      );
+      showToast(ownershipInfo.workerScanAlert, ownershipInfo.isPartnership ? 'info' : 'success');
       setSelectedParcelDetail(found);
     } else {
       setSearchQuery(code.trim());
@@ -648,6 +657,16 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             <span className="text-[10px] font-bold">إرجاع للمرسل</span>
           </button>
         </div>
+
+        {/* Direct Barcode/QR Scanner Button for Worker to Check Parcel Ownership */}
+        <button
+          type="button"
+          onClick={() => setShowScanner(true)}
+          className="w-full py-2.5 px-3 rounded-2xl btn-gold text-xs font-black flex items-center justify-center gap-2 shadow-md transition active:scale-95 cursor-pointer"
+        >
+          <QrCode className="w-4 h-4 shrink-0" />
+          <span>مسح كولي بالكاميرا (تحقق واش ديال المحطة أو غرفة الشراكة)</span>
+        </button>
       </div>
 
       {/* 5. COLLAPSIBLE: "آخر العمليات (عدد العمليات)" AT BOTTOM */}
@@ -726,9 +745,29 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-extrabold text-white line-clamp-2 break-words leading-snug">
-                            {item.title}
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-xs font-extrabold text-white line-clamp-2 break-words leading-snug">
+                              {item.title}
+                            </p>
+                            {item.kind === 'parcel' && item.parcel && (() => {
+                              const pOwn = getParcelSourceOwnershipInfo(
+                                item.parcel,
+                                currentWorkspace?.id,
+                                currentWorkspace?.name
+                              );
+                              return (
+                                <span
+                                  className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border ${
+                                    pOwn.isPartnership
+                                      ? 'bg-purple-950/90 text-purple-200 border-purple-400/60'
+                                      : 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
+                                  }`}
+                                >
+                                  {pOwn.shortBadgeLabel}
+                                </span>
+                              );
+                            })()}
+                          </div>
                           <p className="text-[11px] text-white/75 mt-0.5 flex items-center gap-1 flex-wrap">
                             <span>{item.subtitle}</span>
                             <span>•</span>

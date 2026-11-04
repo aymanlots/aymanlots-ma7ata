@@ -98,6 +98,84 @@ export function matchesTrackingCode(parcel: Parcel, rawQuery: string): boolean {
   return false;
 }
 
+export interface ParcelSourceOwnershipInfo {
+  isPartnership: boolean;
+  direction: 'own' | 'incoming_partner' | 'outgoing_partner';
+  partnerName: string;
+  shortBadgeLabel: string;
+  fullBannerTitle: string;
+  workerScanAlert: string;
+}
+
+/**
+ * يحدد بدقة ما إذا كان الكولي خاصاً بمحطة المدير نفسه أو تابعاً لغرفة الشراكة (وارد من شريك أو مرسل لشريك)
+ */
+export function getParcelSourceOwnershipInfo(
+  parcel: Parcel,
+  currentWorkspaceId?: string | null,
+  currentWorkspaceName?: string | null
+): ParcelSourceOwnershipInfo {
+  const myWsId = currentWorkspaceId || '';
+  const myWsName = currentWorkspaceName || 'محطتنا';
+
+  const hasPartnerOrigin = Boolean(
+    parcel.partner_origin_workspace_id && parcel.partner_origin_workspace_id !== myWsId
+  );
+  const hasPartnerDest = Boolean(
+    parcel.partner_workspace_id && parcel.partner_workspace_id !== myWsId
+  );
+  const isCollabOrFlagged = Boolean(
+    parcel.is_partnership_parcel ||
+      parcel.is_collaborator_data ||
+      hasPartnerOrigin ||
+      hasPartnerDest ||
+      parcel.partner_workspace_id
+  );
+
+  if (!isCollabOrFlagged) {
+    return {
+      isPartnership: false,
+      direction: 'own',
+      partnerName: myWsName,
+      shortBadgeLabel: '🏠 سلعة محطتنا',
+      fullBannerTitle: `🏠 سلعة خاصة بمحطتنا (${myWsName})`,
+      workerScanAlert: `🏠 هذا الكولي خاص بمحطتنا مباشرة (تابع لمديرك: ${myWsName})`,
+    };
+  }
+
+  // Incoming from another partner manager to our station
+  if (hasPartnerOrigin || parcel.is_collaborator_data) {
+    const senderPartner =
+      parcel.partner_origin_workspace_name ||
+      parcel.collaborator_workspace_name ||
+      parcel.partner_workspace_name ||
+      'شركة شريكة';
+    return {
+      isPartnership: true,
+      direction: 'incoming_partner',
+      partnerName: senderPartner,
+      shortBadgeLabel: `🤝 غرفة الشراكة (وارد: ${senderPartner})`,
+      fullBannerTitle: `🤝 سلعة غرفة الشراكة — واردة من الشريك: ${senderPartner}`,
+      workerScanAlert: `🤝 تنبيه للعامل: هذه السلعة تابعة لـ «غرفة الشراكة»! (واردة من الشريك: ${senderPartner})`,
+    };
+  }
+
+  // Outgoing from our station to a partner manager's station
+  const destPartner =
+    parcel.partner_workspace_name ||
+    parcel.collaborator_workspace_name ||
+    parcel.partner_origin_workspace_name ||
+    'شركة شريكة';
+  return {
+    isPartnership: true,
+    direction: 'outgoing_partner',
+    partnerName: destPartner,
+    shortBadgeLabel: `🤝 غرفة الشراكة (مرسل: ${destPartner})`,
+    fullBannerTitle: `🤝 سلعة غرفة الشراكة — مرسلة للشريك: ${destPartner}`,
+    workerScanAlert: `🤝 تنبيه للعامل: هذه السلعة تابعة لـ «غرفة الشراكة»! (مرسلة إلى الشريك: ${destPartner})`,
+  };
+}
+
 export function getPublicTrackingLink(trackingCode: string, parcelNumber?: number): string {
   const numericCode = formatTrackingCodeNumeric(trackingCode, parcelNumber);
   if (typeof window === 'undefined') return numericCode;

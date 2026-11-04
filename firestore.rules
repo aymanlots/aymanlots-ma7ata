@@ -68,7 +68,8 @@ service cloud.firestore {
     // Workspaces and their subcollections
     match /workspaces/{workspaceId} {
       allow get, list: if true;
-      allow create, update: if isValidId(workspaceId) && incoming().id is string && incoming().name is string && incoming().name.size() <= 200;
+      allow create: if isValidId(workspaceId) && incoming().id is string && incoming().name is string && incoming().name.size() <= 200;
+      allow update: if isValidId(workspaceId);
       allow delete: if isValidId(workspaceId);
 
       // Stations

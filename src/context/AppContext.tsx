@@ -1781,22 +1781,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       phone,
       wsId,
       (status) => {
-        // 1. If user doc was deleted from Firebase directly or marked deleted/revoked
-        if (status.userDeleted || status.userRevoked || (!status.userExists && phone)) {
+        // 1. If user doc was explicitly deleted after existing or marked deleted/revoked
+        if (status.userDeleted || status.userRevoked) {
           handleAccountTerminated('deleted');
           return;
         }
 
-        // 2. If workspace was deleted from Firebase directly
-        if (status.workspaceDeleted || (!status.workspaceExists && wsId)) {
-          handleAccountTerminated('deleted', '⚠️ تم حذف مساحة العمل هذه نهائياً من Firebase. يرجى التسجيل برقم هاتف وجيمايل جديدين.');
+        // 2. If workspace was explicitly deleted after existing or marked deleted
+        if (status.workspaceDeleted) {
+          handleAccountTerminated('deleted', '⚠️ تم حذف مساحة العمل هذه نهائياً من قِبل الإدارة أو Firebase. يرجى التسجيل برقم هاتف وجيمايل جديدين.');
           return;
         }
 
-        // 3. If workspace was suspended in real-time
+        // 3. If workspace was suspended in real-time by the Platform Owner -> immediately block and log out!
         if (status.workspaceSuspended) {
-          setCurrentWorkspace(prev => prev ? { ...prev, subscription_status: 'suspended' } : null);
-          setSubscription(prev => prev ? { ...prev, status: 'suspended' } : null);
+          handleAccountTerminated('suspended', '⛔ تم توقيف وتجميد هذا الحساب من قِبل إدارة التطبيق.');
+          return;
         } else if (status.subscriptionEndDate || status.subscriptionStatus) {
           if (status.subscriptionStatus && status.subscriptionStatus !== 'suspended') {
             setCurrentWorkspace(prev => prev ? {
@@ -2430,7 +2430,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
 
-      // 2. Create profile
+      // Clear any previous termination notice and local revocation entry for this new registration
+      setAccountTerminatedNotice({ isOpen: false, reason: 'deleted', message: '' });
+      try {
+        const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
+        if (revokedMap[cleanPhone]) {
+          delete revokedMap[cleanPhone];
+          localStorage.setItem('alittihadia_revoked_accounts_v1', JSON.stringify(revokedMap));
+        }
+      } catch {}
+
+      // 2. Create profile object (we set state AFTER cloud persistence to avoid race condition with listeners)
       const newProfile: Profile = {
         id: userId,
         phone: cleanPhone,
@@ -2441,7 +2451,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         must_change_password: false,
         created_at: new Date().toISOString(),
       };
-      setCurrentUser(newProfile);
       try {
         localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
       } catch {}
@@ -2501,10 +2510,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               short_id = newWorkspace.short_id;
               invite_code = newWorkspace.invite_code;
               wsId = newWorkspace.id;
-              setCurrentWorkspace(newWorkspace);
 
               // Never pre-populate default Dakhla/Nouadhibou stations for a new manager account!
-              // Delete any auto-seeded stations from rpc_create_workspace so the manager names their own stations.
               if (Array.isArray(rpcData.stations) && rpcData.stations.length > 0) {
                 await supabase.from('stations').delete().eq('workspace_id', newWorkspace.id);
               }
@@ -2543,27 +2550,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           profile: newProfile,
         };
 
-        if (!rpcCreated) {
-          setCurrentWorkspace(newWorkspace);
-          setSubscription({
-            id: `sub-${newWorkspace.id}`,
-            workspace_id: newWorkspace.id,
-            team_id: newWorkspace.id,
-            status: 'active',
-            start_date: newWorkspace.created_at,
-            end_date: initialSubEnd,
-            created_at: newWorkspace.created_at,
-          });
-
-          const initialWsCurrencies = getInitialCurrencies(newWorkspace.id);
-          setCurrencies(initialWsCurrencies);
-          setWorkspaceMembers([adminMember]);
-          setStationWorkers([]);
-          setStations([]);
-          setSelectedStationId(null);
-        }
-
-        // Always sync new workspace, admin member, and user account to Firebase Firestore (even when rpcCreated is true)
+        // Always sync new workspace, admin member, and user account to Firebase Firestore BEFORE mounting currentUser/currentWorkspace
         if (firebaseSyncService.isAvailable()) {
           const enrichedNewWs: Workspace = {
             ...newWorkspace,
@@ -2571,6 +2558,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             owner_email: cleanEmail,
             owner_phone: cleanPhone,
             owner_whatsapp: cleanWhatsapp,
+            subscription_status: 'active',
           };
           await Promise.all([
             firebaseSyncService.syncWorkspace(enrichedNewWs),
@@ -2606,6 +2594,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           ]).catch(() => {});
         }
 
+        if (!rpcCreated) {
+          setSubscription({
+            id: `sub-${newWorkspace.id}`,
+            workspace_id: newWorkspace.id,
+            team_id: newWorkspace.id,
+            status: 'active',
+            start_date: newWorkspace.created_at,
+            end_date: initialSubEnd,
+            created_at: newWorkspace.created_at,
+          });
+
+          const initialWsCurrencies = getInitialCurrencies(newWorkspace.id);
+          setCurrencies(initialWsCurrencies);
+          setWorkspaceMembers([adminMember]);
+          setStationWorkers([]);
+          setStations([]);
+          setSelectedStationId(null);
+        }
+
+        setCurrentWorkspace(newWorkspace);
+        setCurrentUser(newProfile);
+
         localStorage.setItem(`ittihadiya_demo_deleted_${newWorkspace.id}`, 'true');
         localStorage.setItem(`alittihadia_guided_tour_pending_${newWorkspace.id}`, 'true');
         localStorage.removeItem(`alittihadia_guided_tour_completed_${newWorkspace.id}`);
@@ -2638,6 +2648,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           ? currentWorkspace 
           : null;
 
+        if (firebaseSyncService.isAvailable()) {
+          await firebaseSyncService.saveUserAccount(cleanPhone, {
+            id: newProfile.id,
+            name: newProfile.name,
+            phone: cleanPhone,
+            whatsapp_number: cleanWhatsapp,
+            email: cleanEmail,
+            email_verified: true,
+            password: pwd,
+            role: 'worker',
+            workspace_id: targetWs ? targetWs.id : 'ws-external',
+            must_change_password: false,
+            status: 'active',
+            deleted: false,
+            created_at: newProfile.created_at,
+          }).catch(() => {});
+        }
+
         const req: JoinRequest = {
           id: `req-${Date.now()}`,
           workspace_id: targetWs ? targetWs.id : 'ws-external',
@@ -2651,6 +2679,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         };
 
         setJoinRequests(prev => [req, ...prev]);
+        setCurrentUser(newProfile);
 
         showToast(`تم إرسال طلب انضمامك يا ${newProfile.name}. بانتظار موافقة مدير المحطة.`, 'info');
         return { success: true };
@@ -2807,9 +2836,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (cloudAcc) {
           if (cloudAcc.deleted || cloudAcc.status === 'revoked') {
+            handleAccountTerminated('deleted');
             return {
               success: false,
-              error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
+              error: 'تم توقيف أو حذف هذا الحساب من قِبل الإدارة أو Firebase. لم يعد بإمكانك تسجيل الدخول.',
             };
           }
 
@@ -2885,6 +2915,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (cloudAcc.workspace_id) {
             const cloudData = await firebaseSyncService.loadFullWorkspaceFromCloud(cloudAcc.workspace_id);
 
+            // Check if workspace was deleted or suspended by the Platform Owner (unless master account)
+            if (cloudData.workspace && !checkIsMasterAccount(restoredProfile, cloudData.workspace)) {
+              if ((cloudData.workspace as any).deleted === true) {
+                handleAccountTerminated('deleted');
+                return {
+                  success: false,
+                  error: 'تم حذف مساحة العمل هذه نهائياً من قِبل الإدارة.',
+                };
+              }
+              if (cloudData.workspace.subscription_status === 'suspended') {
+                handleAccountTerminated('suspended', '⛔ تم توقيف وتجميد هذا الحساب من قِبل إدارة التطبيق.');
+                return {
+                  success: false,
+                  error: '⛔ تم توقيف وتجميد هذا الحساب من قِبل إدارة التطبيق.',
+                };
+              }
+            }
+
             // If worker: verify they are still an active member of the manager's workspace
             let activeWorkerStationId: string | undefined = cloudAcc.station_id || undefined;
             if (cloudAcc.role === 'worker' && cloudData.members.length > 0) {
@@ -2895,6 +2943,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   m.status === 'active'
               );
               if (!activeWorkerMember) {
+                handleAccountTerminated('deleted', 'تم حذف أو إيقاف حسابك من فريق المحطة من طرف المدير.');
                 return {
                   success: false,
                   error: 'تم حذف أو إيقاف حسابك من فريق المحطة من طرف المدير. لم يعد بإمكانك تسجيل الدخول.',
@@ -2936,6 +2985,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               localStorage.setItem(`ittihadiya_demo_deleted_${cloudData.workspace.id}`, 'true');
               localStorage.setItem(`alittihadia_guided_tour_completed_${cloudData.workspace.id}`, 'true');
             }
+            setAccountTerminatedNotice({ isOpen: false, reason: 'deleted', message: '' });
             setStations(cloudData.stations);
             setAllParcels(cloudData.parcels);
             setAllTransactions(cloudData.transactions);
@@ -3875,6 +3925,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const updatedParcel: Parcel = {
       ...p,
+      is_partnership_parcel: true,
+      partner_origin_workspace_id: currentWorkspace?.id || p.workspace_id,
+      partner_origin_workspace_name: currentWorkspace?.name || 'محطتنا',
       partner_workspace_id: partnerWorkspaceId,
       partner_workspace_name: partnerWsName,
       partner_destination_station_id: partnerStationId,
@@ -5124,6 +5177,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.syncParcel(updated.workspace_id, updated).catch(err => {
         console.warn('Firebase parcel sync error:', err);
       });
+      // If this is a Partnership Room parcel, mirror the status update to the counterpart partner workspace
+      const counterpartWsId =
+        updated.partner_origin_workspace_id && updated.partner_origin_workspace_id !== updated.workspace_id
+          ? updated.partner_origin_workspace_id
+          : updated.partner_workspace_id && updated.partner_workspace_id !== updated.workspace_id
+          ? updated.partner_workspace_id
+          : null;
+      if (counterpartWsId) {
+        firebaseSyncService.syncPartnerParcelStatusBack(counterpartWsId, updated.id, updated).catch(() => {});
+      }
       if (currentUser) {
         firebaseSyncService
           .logPlatformActivity({
@@ -5213,6 +5276,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (firebaseSyncService.isAvailable()) {
       firebaseSyncService.syncParcel(updated.workspace_id, updated).catch(() => {});
+      const counterpartWsId =
+        updated.partner_origin_workspace_id && updated.partner_origin_workspace_id !== updated.workspace_id
+          ? updated.partner_origin_workspace_id
+          : updated.partner_workspace_id && updated.partner_workspace_id !== updated.workspace_id
+          ? updated.partner_workspace_id
+          : null;
+      if (counterpartWsId) {
+        firebaseSyncService.syncPartnerParcelStatusBack(counterpartWsId, updated.id, updated).catch(() => {});
+      }
     }
 
     const paymentStationId =

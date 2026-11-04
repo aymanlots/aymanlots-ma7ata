@@ -129,26 +129,36 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
   // Mutual parcels calculation for activePartnership
   const partnerInfo = activePartnership ? getPartnerInfo(activePartnership) : null;
 
-  // Parcels sent to partner (where origin is our workspace, and partner_workspace_id is partner's)
+  // Parcels sent by us to this specific partner (strictly isolated to partnerInfo.workspaceId)
   const sentParcels = useMemo(() => {
     if (!partnerInfo) return [];
-    return parcels.filter(
-      (p) =>
-        (p.workspace_id === myWsId && p.partner_workspace_id === partnerInfo.workspaceId) ||
-        (p.workspace_id === myWsId &&
-          partnerInfo.stations.some((st) => st.id === p.destination_station_id))
-    );
+    return parcels.filter((p) => {
+      const isFromUs =
+        !p.is_collaborator_data &&
+        (!p.partner_origin_workspace_id || p.partner_origin_workspace_id === myWsId);
+      if (!isFromUs) return false;
+      return (
+        p.partner_workspace_id === partnerInfo.workspaceId ||
+        partnerInfo.stations.some(
+          (st) => st.id === p.destination_station_id || st.id === p.partner_destination_station_id
+        )
+      );
+    });
   }, [parcels, myWsId, partnerInfo]);
 
-  // Parcels received from partner (where partner sent it to our station)
+  // Parcels received from this specific partner (strictly isolated to partnerInfo.workspaceId)
   const receivedParcels = useMemo(() => {
     if (!partnerInfo) return [];
-    return parcels.filter(
-      (p) =>
-        p.partner_workspace_id === partnerInfo.workspaceId ||
-        (p.is_collaborator_data && p.workspace_id === myWsId)
-    );
-  }, [parcels, myWsId, partnerInfo]);
+    return parcels.filter((p) => {
+      if (p.partner_origin_workspace_id) {
+        return p.partner_origin_workspace_id === partnerInfo.workspaceId;
+      }
+      if (p.is_collaborator_data && p.collaborator_workspace_name) {
+        return p.collaborator_workspace_name === partnerInfo.workspaceName;
+      }
+      return false;
+    });
+  }, [parcels, partnerInfo]);
 
   // Base list of other managers (strictly excluding current user AND Super Admin / Platform Owner)
   const eligibleManagers = useMemo(() => {
@@ -1205,9 +1215,15 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                     onChange={(e) => setDispatchParcelId(e.target.value)}
                     className="w-full bg-[#120a00] border border-[#D4AF37]/45 rounded-xl px-3 py-2.5 text-xs text-white font-mono"
                   >
-                    <option value="">-- اختر كولي من محطتك --</option>
+                    <option value="">-- اختر كولي خاص بمحطتك --</option>
                     {parcels
-                      .filter((p) => p.workspace_id === myWsId && p.status !== 'delivered')
+                      .filter(
+                        (p) =>
+                          p.workspace_id === myWsId &&
+                          !p.is_collaborator_data &&
+                          !p.partner_workspace_id &&
+                          p.status !== 'delivered'
+                      )
                       .map((p) => (
                         <option key={p.id} value={p.id}>
                           [{p.tracking_code}] - {p.sender_name} ➔ {p.receiver_name} ({p.amount_due}{' '}

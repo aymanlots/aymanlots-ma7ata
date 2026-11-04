@@ -17,6 +17,7 @@ import {
   formatDateTimeStandard,
   formatTrackingCodeNumeric,
   matchesTrackingCode,
+  getParcelSourceOwnershipInfo,
 } from '../utils/logisticsFeatures';
 import { 
   Package, 
@@ -91,6 +92,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
   );
   const [dateFilter] = useState<string>('all');
   const [conditionFilter, setConditionFilter] = useState<string>('all');
+  const [ownershipFilter, setOwnershipFilter] = useState<'all' | 'own' | 'partnership'>('all');
 
   // Keep station filter in sync with global station scope (and locked for workers)
   useEffect(() => {
@@ -161,9 +163,20 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
 
       // Station Filter
       if (stationFilter !== 'all') {
-        if (p.origin_station_id !== stationFilter && p.destination_station_id !== stationFilter) {
+        if (
+          p.origin_station_id !== stationFilter &&
+          p.destination_station_id !== stationFilter &&
+          p.partner_destination_station_id !== stationFilter
+        ) {
           return false;
         }
+      }
+
+      // Source / Ownership Filter (الكل / سلعة محطتنا الخاصة / سلعة غرفة الشراكة)
+      if (ownershipFilter !== 'all') {
+        const ownership = getParcelSourceOwnershipInfo(p, currentWorkspace?.id, currentWorkspace?.name);
+        if (ownershipFilter === 'own' && ownership.isPartnership) return false;
+        if (ownershipFilter === 'partnership' && !ownership.isPartnership) return false;
       }
 
       // Payment Filter
@@ -195,15 +208,40 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
 
       return true;
     });
-  }, [parcels, statusFilter, conditionFilter, paymentFilter, stationFilter, dateFilter, searchQuery]);
+  }, [
+    parcels,
+    statusFilter,
+    conditionFilter,
+    paymentFilter,
+    stationFilter,
+    ownershipFilter,
+    dateFilter,
+    searchQuery,
+    currentWorkspace?.id,
+    currentWorkspace?.name,
+  ]);
 
   // Scoped parcels & trips for the currently selected station (or all when stationFilter === 'all')
   const stationScopedParcels = useMemo(() => {
     if (stationFilter === 'all') return parcels;
     return parcels.filter(
-      p => p.origin_station_id === stationFilter || p.destination_station_id === stationFilter
+      p =>
+        p.origin_station_id === stationFilter ||
+        p.destination_station_id === stationFilter ||
+        p.partner_destination_station_id === stationFilter
     );
   }, [parcels, stationFilter]);
+
+  const ownershipCounts = useMemo(() => {
+    let ownCount = 0;
+    let partnershipCount = 0;
+    stationScopedParcels.forEach(p => {
+      const info = getParcelSourceOwnershipInfo(p, currentWorkspace?.id, currentWorkspace?.name);
+      if (info.isPartnership) partnershipCount++;
+      else ownCount++;
+    });
+    return { ownCount, partnershipCount };
+  }, [stationScopedParcels, currentWorkspace?.id, currentWorkspace?.name]);
 
   const stationScopedTrips = useMemo(() => {
     if (stationFilter === 'all') return trips;
@@ -298,7 +336,15 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
       setIsBarcodeScannerOpen(false);
       setDetailParcel(found);
       const numericCode = formatTrackingCodeNumeric(found.tracking_code, found.parcel_number);
-      showToast(`تم العثور على الكولي ${numericCode} (${found.sender_name} ➔ ${found.receiver_name})`, 'success');
+      const ownershipInfo = getParcelSourceOwnershipInfo(
+        found,
+        currentWorkspace?.id,
+        currentWorkspace?.name
+      );
+      showToast(
+        `${ownershipInfo.workerScanAlert} — كود: ${numericCode}`,
+        ownershipInfo.isPartnership ? 'info' : 'success'
+      );
     } else {
       playErrorBeep();
       showToast(`لم يتم العثور على أي كولي بالرقم [${code}]`, 'error');
@@ -610,8 +656,43 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             )}
           </div>
 
-          {/* Compact Search Bar + Collapsible Filters Toggle */}
+          {/* Compact Search Bar + Dedicated Source Ownership Filter (فصل سلعة المحطة عن سلعة غرفة الشراكة) */}
           <div className="luxury-card p-2.5 rounded-[20px] space-y-2">
+            {/* Ownership Filter Pills: الكل | سلعتنا الخاصة | سلعة غرفة الشراكة */}
+            <div className="grid grid-cols-3 gap-1.5 bg-black/50 p-1 rounded-xl border border-white/15 text-[10px] font-black">
+              <button
+                type="button"
+                onClick={() => setOwnershipFilter('all')}
+                className={`py-1.5 px-2 rounded-lg transition cursor-pointer truncate ${
+                  ownershipFilter === 'all' ? 'btn-gold' : 'text-white/80 hover:text-white'
+                }`}
+              >
+                الكل ({stationScopedParcels.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOwnershipFilter('own')}
+                className={`py-1.5 px-2 rounded-lg transition cursor-pointer truncate ${
+                  ownershipFilter === 'own'
+                    ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                    : 'text-emerald-300 hover:bg-emerald-500/15'
+                }`}
+              >
+                🏠 سلعة محطتنا ({ownershipCounts.ownCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOwnershipFilter('partnership')}
+                className={`py-1.5 px-2 rounded-lg transition cursor-pointer truncate ${
+                  ownershipFilter === 'partnership'
+                    ? 'bg-purple-500 text-white shadow-sm'
+                    : 'text-purple-300 hover:bg-purple-500/15'
+                }`}
+              >
+                🤝 غرفة الشراكة ({ownershipCounts.partnershipCount})
+              </button>
+            </div>
+
             <div className="flex items-center gap-1.5">
               <div className="relative flex-1">
                 <input
@@ -784,12 +865,21 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                 const payerLabel = parcel.payer === 'sender' ? 'المرسل' : 'المستلم';
                 const isNormal = (parcel.condition || 'normal') === 'normal';
                 const isExpanded = expandedParcelIds.has(parcel.id);
+                const ownershipInfo = getParcelSourceOwnershipInfo(
+                  parcel,
+                  currentWorkspace?.id,
+                  currentWorkspace?.name
+                );
 
                 return (
                   <div 
                     key={parcel.id}
                     className={`luxury-card px-3 py-2.5 rounded-[18px] transition text-xs border ${
-                      isExpanded ? 'border-[#F5C84C]/55' : 'border-white/12'
+                      isExpanded
+                        ? 'border-[#F5C84C]/55'
+                        : ownershipInfo.isPartnership
+                        ? 'border-purple-500/45'
+                        : 'border-white/12'
                     }`}
                   >
                     {/* Compact Summary Header (Always Visible — Click to Expand/Collapse) */}
@@ -805,7 +895,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                       }}
                       className="flex items-center justify-between gap-2 cursor-pointer select-none"
                     >
-                      {/* Right Side: Checkbox + Number + Sender -> Receiver */}
+                      {/* Right Side: Checkbox + Number + Ownership Badge + Sender -> Receiver */}
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         <button
                           type="button"
@@ -833,6 +923,18 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                           className="font-mono text-[11px] font-black text-[#F5C84C] bg-black/60 px-1.5 py-0.5 rounded-lg border border-[#F5C84C]/40 shrink-0"
                         >
                           {formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number)}
+                        </span>
+
+                        {/* Clear Visual Tag distinguishing Own Parcel vs Partnership Room Parcel */}
+                        <span
+                          className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border shrink-0 ${
+                            ownershipInfo.isPartnership
+                              ? 'bg-purple-950/90 text-purple-200 border-purple-400/60'
+                              : 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
+                          }`}
+                          title={ownershipInfo.fullBannerTitle}
+                        >
+                          {ownershipInfo.isPartnership ? '🤝 شراكة' : '🏠 محطتنا'}
                         </span>
 
                         <div className="min-w-0 flex-1 truncate">
@@ -880,6 +982,20 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                     {/* Expanded Details (Only shown when arrow/row is clicked) */}
                     {isExpanded && (
                       <div className="mt-2.5 pt-2.5 border-t border-white/15 space-y-2 animate-fadeIn">
+                        {/* Full Source & Ownership Banner inside Expanded Card */}
+                        <div
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center justify-between gap-2 border ${
+                            ownershipInfo.isPartnership
+                              ? 'bg-purple-950/85 text-purple-200 border-purple-400/55'
+                              : 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
+                          }`}
+                        >
+                          <span>{ownershipInfo.fullBannerTitle}</span>
+                          <span className="text-[10px] opacity-90 shrink-0">
+                            {ownershipInfo.isPartnership ? 'حساب الشريك مستقل' : 'خاص بمحطتنا'}
+                          </span>
+                        </div>
+
                         {/* Tracking Code, Quick Copy, Status & Date */}
                         <div className="flex items-center justify-between flex-wrap gap-1.5 text-[11px]">
                           <div className="flex items-center gap-1.5">

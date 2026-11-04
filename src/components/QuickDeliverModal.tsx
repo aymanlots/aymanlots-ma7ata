@@ -23,7 +23,8 @@ import { playSuccessBeep, playErrorBeep } from '../utils/audioFeedback';
 import { 
   formatTrackingCodeNumeric, 
   formatDateTimeStandard, 
-  matchesTrackingCode 
+  matchesTrackingCode,
+  getParcelSourceOwnershipInfo
 } from '../utils/logisticsFeatures';
 
 interface QuickDeliverModalProps {
@@ -41,6 +42,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
 }) => {
   const { 
     parcels, 
+    currentWorkspace,
     hideAmounts,
     updateParcelStatus, 
     recordParcelPayment, 
@@ -68,9 +70,14 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
   const arrivedStockParcels = useMemo(() => {
     const activeStation = workerStationId || (selectedStationId && selectedStationId !== 'all' ? selectedStationId : '');
     return parcels.filter(p => {
-      if (p.is_collaborator_data) return false;
       if (p.status !== 'arrived') return false;
-      if (activeStation && p.destination_station_id !== activeStation) return false;
+      if (
+        activeStation &&
+        p.destination_station_id !== activeStation &&
+        p.partner_destination_station_id !== activeStation
+      ) {
+        return false;
+      }
       if (selectedParcels.some(sel => sel.id === p.id)) return false;
       return true;
     });
@@ -170,7 +177,12 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     }
 
     // Role check: Worker station destination check
-    if (userRole === 'worker' && workerStationId && found.destination_station_id !== workerStationId) {
+    if (
+      userRole === 'worker' &&
+      workerStationId &&
+      found.destination_station_id !== workerStationId &&
+      found.partner_destination_station_id !== workerStationId
+    ) {
       playErrorBeep();
       setErrorMessage(`غير مسموح: الكولي #${found.parcel_number} متجه إلى محطة (${found.destination_station_name}) ولا يمكنك تسليمه من محطتك.`);
       return;
@@ -191,6 +203,8 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     }
 
     playSuccessBeep();
+    const ownershipInfo = getParcelSourceOwnershipInfo(found, currentWorkspace?.id, currentWorkspace?.name);
+    showToast(ownershipInfo.workerScanAlert, ownershipInfo.isPartnership ? 'info' : 'success');
     setSelectedParcels(prev => [...prev, found]);
     if (!deliveredTo.trim()) {
       setDeliveredTo(found.receiver_name);
@@ -236,7 +250,9 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
 
     // Validate worker restrictions across all parcels
     if (userRole === 'worker' && workerStationId) {
-      const invalid = selectedParcels.find(p => p.destination_station_id !== workerStationId);
+      const invalid = selectedParcels.find(
+        p => p.destination_station_id !== workerStationId && p.partner_destination_station_id !== workerStationId
+      );
       if (invalid) {
         setErrorMessage(`غير مسموح: الكولي #${invalid.parcel_number} تابع لمحطة (${invalid.destination_station_name}) فقط.`);
         return;
@@ -427,21 +443,30 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
               <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5">
                 {arrivedStockParcels.map(sp => {
                   const spRem = Math.max(0, Math.round((sp.amount_due - sp.amount_paid) * 100) / 100);
+                  const spOwnership = getParcelSourceOwnershipInfo(sp, currentWorkspace?.id, currentWorkspace?.name);
                   return (
                     <div
                       key={sp.id}
-                      className="bg-[#0d0700] px-2.5 py-2 rounded-xl border border-[#D4AF37]/25 flex items-center justify-between gap-2"
+                      className={`bg-[#0d0700] px-2.5 py-2 rounded-xl border flex items-center justify-between gap-2 ${
+                        spOwnership.isPartnership ? 'border-purple-500/50' : 'border-[#D4AF37]/25'
+                      }`}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-mono text-[10px] font-black text-[#F5D799] bg-[#D4AF37]/15 px-1.5 py-0.5 rounded border border-[#D4AF37]/30">
                             #{sp.parcel_number}
                           </span>
                           <span className="font-bold text-white text-[11px] truncate">
                             {sp.receiver_name}
                           </span>
-                          <span className="text-[9px] text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded-full border border-emerald-500/30 font-bold">
-                            في الستوك ✓
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded-full font-black border ${
+                              spOwnership.isPartnership
+                                ? 'bg-purple-950/80 text-purple-200 border-purple-400/50'
+                                : 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
+                            }`}
+                          >
+                            {spOwnership.shortBadgeLabel}
                           </span>
                         </div>
                         <div className="text-[10px] text-[#C2A878] flex items-center gap-2 mt-0.5">
@@ -498,14 +523,32 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
                 </div>
 
                 {/* Scanned Items Cards */}
-                <div className="max-h-48 overflow-y-auto space-y-2 pr-0.5">
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-0.5">
                   {selectedParcels.map((parcel) => {
                     const rem = Math.max(0, Math.round((parcel.amount_due - parcel.amount_paid) * 100) / 100);
+                    const pOwnership = getParcelSourceOwnershipInfo(
+                      parcel,
+                      currentWorkspace?.id,
+                      currentWorkspace?.name
+                    );
                     return (
                       <div 
                         key={parcel.id}
-                        className="bg-[#0d0700] p-2.5 rounded-xl border border-[#D4AF37]/25 space-y-1.5"
+                        className={`bg-[#0d0700] p-2.5 rounded-xl border space-y-1.5 ${
+                          pOwnership.isPartnership ? 'border-purple-500/60' : 'border-[#D4AF37]/25'
+                        }`}
                       >
+                        {/* High-Contrast Worker Ownership Alert Banner upon Scan */}
+                        <div
+                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black flex items-center justify-between gap-2 border ${
+                            pOwnership.isPartnership
+                              ? 'bg-purple-950/85 text-purple-200 border-purple-400/50'
+                              : 'bg-emerald-950/75 text-emerald-300 border-emerald-500/40'
+                          }`}
+                        >
+                          <span>{pOwnership.workerScanAlert}</span>
+                        </div>
+
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono text-xs font-black text-[#F5D799] bg-[#D4AF37]/15 px-2 py-0.5 rounded-md border border-[#D4AF37]/35">

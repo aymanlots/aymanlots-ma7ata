@@ -10,6 +10,7 @@ import {
   formatDateTimeStandard,
   formatTrackingCodeNumeric,
   getPublicTrackingLink,
+  getParcelSourceOwnershipInfo,
 } from '../utils/logisticsFeatures';
 import { 
   X, 
@@ -114,6 +115,11 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
   const numericCode = formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number);
   const remaining = Math.max(0, Math.round((parcel.amount_due - parcel.amount_paid) * 100) / 100);
   const isSettled = remaining <= 0;
+  const ownershipInfo = getParcelSourceOwnershipInfo(
+    parcel,
+    currentWorkspace?.id,
+    currentWorkspace?.name
+  );
 
   const statusNames: Record<ParcelStatus, string> = {
     registered: 'تم التسجيل في المحطة',
@@ -275,6 +281,35 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* High-Contrast Source & Ownership Alert Banner (فرق واضح بين سلعة المحطة وسلعة غرفة الشراكة) */}
+        <div
+          className={`rounded-2xl p-2.5 border-2 flex items-center justify-between gap-2 shrink-0 ${
+            ownershipInfo.isPartnership
+              ? 'bg-purple-950/90 border-purple-400/70 text-purple-100 shadow-lg'
+              : 'bg-emerald-950/80 border-emerald-500/55 text-emerald-200'
+          }`}
+        >
+          <div className="min-w-0">
+            <span className="text-xs font-black block">
+              {ownershipInfo.fullBannerTitle}
+            </span>
+            <span className="text-[10px] opacity-90 block mt-0.5 font-bold">
+              {ownershipInfo.isPartnership
+                ? '⚠️ تنبيه للمدير والعامل: هذه السلعة تابعة لغرفة الشراكة (حسابها مستقل مع الشريك ولا تخلطها مع سلعة المحطة)'
+                : '✓ هذه السلعة مسجلة لحساب محطتنا الخاصة مباشرة'}
+            </span>
+          </div>
+          <span
+            className={`text-[10px] font-black px-2.5 py-1 rounded-xl shrink-0 border ${
+              ownershipInfo.isPartnership
+                ? 'bg-purple-500 text-white border-purple-300'
+                : 'bg-emerald-500 text-slate-950 border-emerald-300'
+            }`}
+          >
+            {ownershipInfo.isPartnership ? '🤝 شراكة' : '🏠 محطتنا'}
+          </span>
         </div>
 
         {/* Numeric Code Quick Copy + WhatsApp Bar */}

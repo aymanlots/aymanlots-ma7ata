@@ -419,6 +419,9 @@ export interface Parcel {
   pending_sync?: boolean;
 
   // حقول كوليات الشراكة بين المدراء
+  is_partnership_parcel?: boolean;
+  partner_origin_workspace_id?: string;
+  partner_origin_workspace_name?: string;
   partner_workspace_id?: string;
   partner_workspace_name?: string;
   partner_destination_station_id?: string;
