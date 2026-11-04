@@ -387,10 +387,12 @@ const MainApp: React.FC = () => {
         />
 
         {/* Co-Admin Live Collaboration & Broadcast Room Modal */}
-        <AdminCollaborationRoomModal
-          isOpen={showCollabRoom}
-          onClose={() => setShowCollabRoom(false)}
-        />
+        {showCollabRoom && (
+          <AdminCollaborationRoomModal
+            isOpen={showCollabRoom}
+            onClose={() => setShowCollabRoom(false)}
+          />
+        )}
 
         {/* VIP / Merchant Customer Accounts & Credit Ledger Modal */}
         <CustomerAccountsModal

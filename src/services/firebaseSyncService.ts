@@ -19,6 +19,9 @@ import {
   Trip,
   WorkspaceMember,
   PlatformActivityLog,
+  ManagerPartnership,
+  PartnershipSettlement,
+  PartnershipStationInfo,
 } from '../types/database';
 import { hashPassword, verifyPassword, isBcryptHash } from '../utils/security';
 
@@ -226,44 +229,7 @@ export const firebaseSyncService = {
         }
       }
 
-      // 2. Query users collection by exact password or worker_code
-      const qPass = query(collection(db, 'users'), where('password', '==', trimmed));
-      const snapPass = await getDocs(qPass);
-      const activePassDoc = snapPass.docs.find(d => {
-        const acc = d.data() as CloudUserAccount;
-        return !acc.deleted && acc.status !== 'revoked';
-      });
-      if (activePassDoc) {
-        return activePassDoc.data() as CloudUserAccount;
-      }
-
-      const qCode = query(collection(db, 'users'), where('worker_code', '==', trimmed));
-      const snapCode = await getDocs(qCode);
-      const activeCodeDoc = snapCode.docs.find(d => {
-        const acc = d.data() as CloudUserAccount;
-        return !acc.deleted && acc.status !== 'revoked';
-      });
-      if (activeCodeDoc) {
-        return activeCodeDoc.data() as CloudUserAccount;
-      }
-
-      // 3. Case-insensitive scan across active worker accounts in users collection
-      const qWorkers = query(collection(db, 'users'), where('role', '==', 'worker'));
-      const snapWorkers = await getDocs(qWorkers);
-      const activeWorkers: CloudUserAccount[] = [];
-      for (const d of snapWorkers.docs) {
-        if (d.id.startsWith('code_')) continue;
-        const acc = d.data() as CloudUserAccount;
-        if (acc.deleted || acc.status === 'revoked') continue;
-        activeWorkers.push(acc);
-        const pUpper = String(acc.password || '').trim().toUpperCase();
-        const cUpper = String(acc.worker_code || '').trim().toUpperCase();
-        if (pUpper === cleanUpper || cUpper === cleanUpper) {
-          return acc;
-        }
-      }
-
-      // 4. Special recovery for worker codes generated via resetMemberPassword before cloud indexing (e.g. Itt-Y64VqUvr for 212617566513)
+      // 2. Special recovery for worker codes generated via resetMemberPassword before cloud indexing (e.g. Itt-Y64VqUvr for 212617566513)
       if (cleanUpper === 'ITT-Y64VQUVR') {
         const knownWorker = await this.getUserAccount('212617566513');
         if (knownWorker && !knownWorker.deleted && knownWorker.status !== 'revoked') {
@@ -276,21 +242,6 @@ export const firebaseSyncService = {
           await this.saveUserAccount('212617566513', healed).catch(() => {});
           return healed;
         }
-      }
-
-      // If there is exactly 1 active worker in the database and the user entered a valid Itt-... code, heal and bind it
-      if (activeWorkers.length === 1 && /^ITT-[A-Z0-9]{6,12}$/i.test(trimmed)) {
-        const singleWorker = activeWorkers[0];
-        const healed = {
-          ...singleWorker,
-          password: trimmed,
-          worker_code: trimmed,
-          must_change_password: false,
-        };
-        if (singleWorker.phone) {
-          await this.saveUserAccount(singleWorker.phone, healed).catch(() => {});
-        }
-        return healed;
       }
 
       return null;
@@ -403,24 +354,19 @@ export const firebaseSyncService = {
           { merge: true }
         );
       }
-      if (userId) {
-        const q = query(collection(db, 'users'), where('id', '==', userId));
-        const snap = await getDocs(q);
-        const updates = snap.docs.map(d =>
-          setDoc(
-            d.ref,
-            sanitizeForFirestore({
-              id: userId,
-              status: 'revoked',
-              deleted: true,
-              password: '',
-              worker_code: '',
-              updated_at: nowIso,
-            }),
-            { merge: true }
-          )
-        );
-        await Promise.all(updates);
+      if (userId && userId !== docId) {
+        await setDoc(
+          doc(db, 'users', userId),
+          sanitizeForFirestore({
+            id: userId,
+            status: 'revoked',
+            deleted: true,
+            password: '',
+            worker_code: '',
+            updated_at: nowIso,
+          }),
+          { merge: true }
+        ).catch(() => {});
       }
     } catch (err) {
       console.warn('Firestore revokeUserAccount warning:', err);
@@ -1121,7 +1067,53 @@ export const firebaseSyncService = {
   async deleteWorkspaceCompletelyFromCloud(wsId: string, ownerPhone?: string): Promise<void> {
     if (!this.isAvailable() || !wsId) return;
 
-    // 1. Delete all subcollections of workspaces/{wsId}
+    // 1. Read workspace and members first so we can delete their direct user documents by ID without listing /users
+    const userDocIdsToDelete = new Set<string>();
+    if (ownerPhone) {
+      const cleanOwnerPhone = ownerPhone.replace(/[^0-9]/g, '');
+      if (cleanOwnerPhone) userDocIdsToDelete.add(cleanOwnerPhone);
+    }
+
+    try {
+      const [wsDocSnap, memSnap] = await Promise.all([
+        getDoc(doc(db, 'workspaces', wsId)),
+        getDocs(collection(db, 'workspaces', wsId, 'members')),
+      ]);
+
+      if (wsDocSnap.exists()) {
+        const wsData = wsDocSnap.data() as Workspace;
+        if (wsData.owner_phone) {
+          const cp = wsData.owner_phone.replace(/[^0-9]/g, '');
+          if (cp) userDocIdsToDelete.add(cp);
+        }
+        if (wsData.owner_email) {
+          const cleanEmailKey = String(wsData.owner_email).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+          if (cleanEmailKey.length >= 3) userDocIdsToDelete.add(`email_${cleanEmailKey}`);
+        }
+      }
+
+      memSnap.forEach((d) => {
+        const m = d.data();
+        const mp = String(m.profile?.phone || m.phone || '').replace(/[^0-9]/g, '');
+        if (mp) userDocIdsToDelete.add(mp);
+        const me = String(m.profile?.email || m.email || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        if (me.length >= 3) userDocIdsToDelete.add(`email_${me}`);
+        const rawCode = m.worker_code || m.profile?.worker_code;
+        if (rawCode) {
+          const cleanCodeKey = String(rawCode).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+          if (cleanCodeKey.length >= 4) userDocIdsToDelete.add(`code_${cleanCodeKey}`);
+        }
+      });
+    } catch {}
+
+    // 2. Delete direct user documents
+    await Promise.all(
+      Array.from(userDocIdsToDelete).map((uDocId) =>
+        deleteDoc(doc(db, 'users', uDocId)).catch(() => {})
+      )
+    );
+
+    // 3. Delete all subcollections of workspaces/{wsId}
     const subcollections = [
       'stations',
       'parcels',
@@ -1141,34 +1133,7 @@ export const firebaseSyncService = {
       })
     );
 
-    // 2. Delete all user accounts (owner + workers + code_* documents) linked to this workspace
-    try {
-      const usersQuery = query(collection(db, 'users'), where('workspace_id', '==', wsId));
-      const usersSnap = await getDocs(usersQuery);
-      const userDeletions: Promise<void>[] = [];
-      usersSnap.docs.forEach((d) => {
-        const acc = d.data() as CloudUserAccount;
-        userDeletions.push(deleteDoc(d.ref));
-        const rawCode = acc.worker_code || acc.password;
-        if (rawCode) {
-          const cleanCodeKey = String(rawCode).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
-          if (cleanCodeKey.length >= 4) {
-            userDeletions.push(deleteDoc(doc(db, 'users', `code_${cleanCodeKey}`)).catch(() => {}));
-          }
-        }
-      });
-      if (ownerPhone) {
-        const cleanOwnerPhone = ownerPhone.replace(/[^0-9]/g, '');
-        if (cleanOwnerPhone) {
-          userDeletions.push(deleteDoc(doc(db, 'users', cleanOwnerPhone)).catch(() => {}));
-        }
-      }
-      await Promise.all(userDeletions);
-    } catch (err) {
-      console.warn('Warning deleting workspace users from Firestore:', err);
-    }
-
-    // 3. Delete platform_activity_logs entries for this workspace
+    // 4. Delete platform_activity_logs entries for this workspace
     try {
       const actQuery = query(
         collection(db, 'platform_activity_logs'),
@@ -1180,12 +1145,412 @@ export const firebaseSyncService = {
       console.warn('Warning deleting platform_activity_logs for workspace:', err);
     }
 
-    // 4. Finally delete the workspace document itself
+    // 5. Finally delete the workspace document itself
     const path = `workspaces/${wsId}`;
     try {
       await deleteDoc(doc(db, 'workspaces', wsId));
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, path);
+    }
+  },
+
+  // ============================================================================
+  // 8. REAL-TIME ACCOUNT STATUS & IMMEDIATE DELETION/SUSPENSION WATCHDOG
+  // ============================================================================
+  subscribeToAccountStatus(
+    phoneOrDocId: string,
+    workspaceId: string,
+    onStatusChange: (status: {
+      userExists: boolean;
+      userDeleted: boolean;
+      userRevoked: boolean;
+      workspaceExists: boolean;
+      workspaceSuspended: boolean;
+      workspaceDeleted: boolean;
+      subscriptionEndDate?: string;
+      subscriptionStatus?: string;
+    }) => void
+  ): Unsubscribe {
+    if (!this.isAvailable()) return () => {};
+    const unsubs: Unsubscribe[] = [];
+    const cleanPhone = phoneOrDocId.replace(/[^0-9]/g, '');
+
+    let userState = {
+      userExists: true,
+      userDeleted: false,
+      userRevoked: false,
+    };
+
+    let wsState = {
+      workspaceExists: true,
+      workspaceSuspended: false,
+      workspaceDeleted: false,
+      subscriptionEndDate: undefined as string | undefined,
+      subscriptionStatus: undefined as string | undefined,
+    };
+
+    const emitStatus = () => {
+      onStatusChange({
+        ...userState,
+        ...wsState,
+      });
+    };
+
+    // 1. Listen directly to user document
+    if (cleanPhone) {
+      try {
+        const uSub = onSnapshot(
+          doc(db, 'users', cleanPhone),
+          (snap) => {
+            if (!snap.exists()) {
+              userState = {
+                userExists: false,
+                userDeleted: true,
+                userRevoked: true,
+              };
+            } else {
+              const data = snap.data() as CloudUserAccount;
+              const isDel = Boolean(data.deleted);
+              const isRev = data.status === 'revoked';
+              userState = {
+                userExists: true,
+                userDeleted: isDel,
+                userRevoked: isRev,
+              };
+            }
+            emitStatus();
+          },
+          (err) => {
+            console.warn('subscribeToAccountStatus userDoc warning:', err);
+          }
+        );
+        unsubs.push(uSub);
+      } catch (err) {
+        console.warn('Error subscribing to user doc:', err);
+      }
+    }
+
+    // 2. Listen directly to workspace document
+    if (workspaceId) {
+      try {
+        const wSub = onSnapshot(
+          doc(db, 'workspaces', workspaceId),
+          (snap) => {
+            if (!snap.exists()) {
+              wsState = {
+                workspaceExists: false,
+                workspaceDeleted: true,
+                workspaceSuspended: false,
+                subscriptionEndDate: undefined,
+                subscriptionStatus: undefined,
+              };
+            } else {
+              const data = snap.data() as Workspace;
+              const isDel = Boolean((data as any).deleted);
+              const isSuspended = data.subscription_status === 'suspended';
+              wsState = {
+                workspaceExists: true,
+                workspaceDeleted: isDel,
+                workspaceSuspended: isSuspended,
+                subscriptionEndDate: data.subscription_end_date,
+                subscriptionStatus: data.subscription_status,
+              };
+            }
+            emitStatus();
+          },
+          (err) => {
+            console.warn('subscribeToAccountStatus wsDoc warning:', err);
+          }
+        );
+        unsubs.push(wSub);
+      } catch (err) {
+        console.warn('Error subscribing to workspace doc:', err);
+      }
+    }
+
+    return () => {
+      unsubs.forEach((u) => u());
+    };
+  },
+
+  // ============================================================================
+  // 9. MANAGER CROSS-PARTNERSHIP NETWORK (غرفة الشراكة بين المدراء)
+  // ============================================================================
+
+  /**
+   * Loads all registered companies/managers and their stations & activity stars from Firestore
+   * to display in the Manager Partnership Room Directory.
+   * Strictly excludes the Super Admin / Platform Owner account so it remains 100% private.
+   */
+  async listAllRegisteredManagersAndStations(): Promise<
+    {
+      workspaceId: string;
+      workspaceName: string;
+      shortId: string;
+      ownerName: string;
+      phone: string;
+      whatsapp?: string;
+      email?: string;
+      stations: PartnershipStationInfo[];
+      planTier?: string;
+      createdAt: string;
+      stars: number;
+      parcelsCount: number;
+      deliveredCount: number;
+      activityLabel: string;
+    }[]
+  > {
+    if (!this.isAvailable()) return [];
+    try {
+      const snap = await getDocs(collection(db, 'workspaces'));
+      const results: {
+        workspaceId: string;
+        workspaceName: string;
+        shortId: string;
+        ownerName: string;
+        phone: string;
+        whatsapp?: string;
+        email?: string;
+        stations: PartnershipStationInfo[];
+        planTier?: string;
+        createdAt: string;
+        stars: number;
+        parcelsCount: number;
+        deliveredCount: number;
+        activityLabel: string;
+      }[] = [];
+
+      await Promise.all(
+        snap.docs.map(async (d) => {
+          const ws = d.data() as Workspace;
+          const wsId = ws.id || d.id;
+          if ((ws as any).deleted || ws.subscription_status === 'suspended' || (ws as any).is_demo) return;
+
+          // Strictly exclude the Super Admin / Platform Owner account & demo/placeholder accounts
+          const cleanPhone = String(ws.owner_phone || '').replace(/[^0-9]/g, '');
+          const cleanWhatsapp = String(ws.owner_whatsapp || '').replace(/[^0-9]/g, '');
+          const cleanEmail = String(ws.owner_email || '').trim().toLowerCase();
+          if (
+            cleanPhone.includes('618961387') ||
+            cleanWhatsapp.includes('618961387') ||
+            cleanEmail === 'aissaaimanekhlifi@gmail.com' ||
+            cleanPhone === '0000000000' ||
+            cleanPhone === '0600000000' ||
+            wsId === 'ws-1' ||
+            wsId === 'ws-platform-owner' ||
+            ws.created_by === 'user-platform-owner'
+          ) {
+            return;
+          }
+
+          // Fetch stations and parcels for this workspace in parallel
+          let stationsList: PartnershipStationInfo[] = [];
+          let parcelsCount = 0;
+          let deliveredCount = 0;
+          try {
+            const [stSnap, pclSnap] = await Promise.all([
+              getDocs(collection(db, 'workspaces', wsId, 'stations')),
+              getDocs(collection(db, 'workspaces', wsId, 'parcels')),
+            ]);
+            stSnap.forEach((stDoc) => {
+              const st = stDoc.data() as Station;
+              if (st.is_active !== false && !st.is_demo) {
+                stationsList.push({
+                  id: st.id || stDoc.id,
+                  name: st.name,
+                  city: st.city,
+                  country: st.country,
+                  phone: st.phone,
+                });
+              }
+            });
+            pclSnap.forEach((pDoc) => {
+              const p = pDoc.data() as Parcel;
+              if (!p.is_demo && p.status !== 'cancelled') {
+                parcelsCount++;
+                if (p.status === 'delivered') {
+                  deliveredCount++;
+                }
+              }
+            });
+          } catch {}
+
+          // Calculate Star Rating (0 to 5 stars) based on real stations & parcel work
+          const stCount = stationsList.length;
+          let stars = 0;
+          let activityLabel = 'غير نشيط (بدون محطات)';
+
+          if (stCount === 0 && parcelsCount === 0) {
+            stars = 0;
+            activityLabel = 'غير نشيط (بدون محطات)';
+          } else if ((stCount >= 1 && parcelsCount >= 25) || (stCount >= 2 && parcelsCount >= 15)) {
+            stars = 5;
+            activityLabel = 'ممتاز ونشيط جداً';
+          } else if ((stCount >= 1 && parcelsCount >= 12) || (stCount >= 2 && parcelsCount >= 7)) {
+            stars = 4;
+            activityLabel = 'خدام مزيان ونشيط';
+          } else if ((stCount >= 1 && parcelsCount >= 4) || (stCount >= 2 && parcelsCount >= 2)) {
+            stars = 3;
+            activityLabel = 'مدير نشيط';
+          } else if ((stCount >= 1 && parcelsCount >= 1) || stCount >= 2) {
+            stars = 2;
+            activityLabel = 'نشاط متوسط';
+          } else {
+            stars = 1;
+            activityLabel = 'بداية الخدمة';
+          }
+
+          results.push({
+            workspaceId: wsId,
+            workspaceName: ws.name,
+            shortId: ws.short_id || wsId.slice(0, 6).toUpperCase(),
+            ownerName: ws.owner_name || 'مدير المحطة',
+            phone: ws.owner_phone || '',
+            whatsapp: ws.owner_whatsapp || ws.owner_phone || '',
+            email: ws.owner_email || '',
+            stations: stationsList,
+            planTier: ws.plan_tier,
+            createdAt: ws.created_at || new Date().toISOString(),
+            stars,
+            parcelsCount,
+            deliveredCount,
+            activityLabel,
+          });
+        })
+      );
+
+      // Sort by highest star rating first, then number of stations, then parcels count, then newest
+      return results.sort((a, b) => {
+        if (b.stars !== a.stars) return b.stars - a.stars;
+        if (b.stations.length !== a.stations.length) return b.stations.length - a.stations.length;
+        if (b.parcelsCount !== a.parcelsCount) return b.parcelsCount - a.parcelsCount;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    } catch (err) {
+      console.warn('Firestore listAllRegisteredManagersAndStations warning:', err);
+      return [];
+    }
+  },
+
+  /**
+   * Listens in real-time to partnerships involving a specific workspace.
+   */
+  subscribeToManagerPartnerships(
+    myWorkspaceId: string,
+    onUpdate: (partnerships: ManagerPartnership[]) => void
+  ): Unsubscribe {
+    if (!this.isAvailable() || !myWorkspaceId) return () => {};
+    try {
+      return onSnapshot(
+        collection(db, 'partnerships'),
+        (snap) => {
+          const list: ManagerPartnership[] = [];
+          snap.forEach((d) => {
+            const p = d.data() as ManagerPartnership;
+            if (p.workspace_a_id === myWorkspaceId || p.workspace_b_id === myWorkspaceId) {
+              list.push({ ...p, id: p.id || d.id });
+            }
+          });
+          list.sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
+          onUpdate(list);
+        },
+        (err) => {
+          console.warn('subscribeToManagerPartnerships warning:', err);
+        }
+      );
+    } catch (err) {
+      console.warn('Error subscribing to partnerships:', err);
+      return () => {};
+    }
+  },
+
+  /**
+   * Creates or updates a partnership between two managers.
+   */
+  async savePartnership(partnership: ManagerPartnership): Promise<void> {
+    if (!this.isAvailable() || !partnership.id) return;
+    const path = `partnerships/${partnership.id}`;
+    try {
+      await setDoc(
+        doc(db, 'partnerships', partnership.id),
+        sanitizeForFirestore({
+          ...partnership,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  /**
+   * Records a financial settlement payment between two partners.
+   */
+  async recordPartnershipSettlement(
+    partnershipId: string,
+    settlement: PartnershipSettlement
+  ): Promise<void> {
+    if (!this.isAvailable() || !partnershipId || !settlement.id) return;
+    const path = `partnerships/${partnershipId}/settlements/${settlement.id}`;
+    try {
+      await setDoc(
+        doc(db, 'partnerships', partnershipId, 'settlements', settlement.id),
+        sanitizeForFirestore(settlement)
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  },
+
+  /**
+   * Listens in real-time to settlement transactions for a specific partnership.
+   */
+  subscribeToPartnershipSettlements(
+    partnershipId: string,
+    onUpdate: (settlements: PartnershipSettlement[]) => void
+  ): Unsubscribe {
+    if (!this.isAvailable() || !partnershipId) return () => {};
+    try {
+      return onSnapshot(
+        collection(db, 'partnerships', partnershipId, 'settlements'),
+        (snap) => {
+          const list: PartnershipSettlement[] = [];
+          snap.forEach((d) => {
+            list.push(d.data() as PartnershipSettlement);
+          });
+          list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          onUpdate(list);
+        },
+        (err) => {
+          console.warn('subscribeToPartnershipSettlements warning:', err);
+        }
+      );
+    } catch (err) {
+      console.warn('Error subscribing to settlements:', err);
+      return () => {};
+    }
+  },
+
+  /**
+   * Synchronizes a parcel to the partner's workspace in Firestore so both managers see it immediately.
+   */
+  async syncPartnerParcel(partnerWorkspaceId: string, parcel: Parcel): Promise<void> {
+    if (!this.isAvailable() || !partnerWorkspaceId || !parcel.id) return;
+    const path = `workspaces/${partnerWorkspaceId}/parcels/${parcel.id}`;
+    try {
+      await setDoc(
+        doc(db, 'workspaces', partnerWorkspaceId, 'parcels', parcel.id),
+        sanitizeForFirestore({
+          ...parcel,
+          workspace_id: partnerWorkspaceId,
+          is_collaborator_data: true,
+          updated_at: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Warning syncing partner parcel to Firestore:', err);
     }
   },
 };

@@ -27,6 +27,24 @@
         e.preventDefault();
         window.__deferredPwaPrompt = e;
       });
+      // Immediately purge stale v8 service worker cache that cached dev .tsx modules
+      if ('caches' in window) {
+        caches.has('sahara-cache-v8').then(function(hasV8) {
+          if (hasV8) {
+            caches.delete('sahara-cache-v8').then(function() {
+              if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function(regs) {
+                  Promise.all(regs.map(function(r) { return r.unregister(); })).then(function() {
+                    window.location.reload();
+                  });
+                });
+              } else {
+                window.location.reload();
+              }
+            });
+          }
+        }).catch(function() {});
+      }
     </script>
   </head>
   <body class="bg-[#0B1220] text-slate-100 font-['Cairo',sans-serif] antialiased select-none min-h-screen">

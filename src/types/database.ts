@@ -169,6 +169,58 @@ export interface WorkspaceCollaboration {
   updated_at: string;
 }
 
+// ============================================================================
+// MANAGER CROSS-PARTNERSHIP NETWORK (غرفة الشراكة بين المدراء)
+// ============================================================================
+
+export interface PartnershipStationInfo {
+  id: string;
+  name: string;
+  city: string;
+  country: 'MA' | 'MR';
+  phone?: string;
+}
+
+export interface ManagerPartnership {
+  id: string; // e.g. partner_<wsIdA>_<wsIdB>
+  workspace_a_id: string;
+  workspace_a_name: string;
+  workspace_a_owner_name: string;
+  workspace_a_phone: string;
+  workspace_a_whatsapp?: string;
+  workspace_a_email?: string;
+  workspace_a_stations: PartnershipStationInfo[];
+
+  workspace_b_id: string;
+  workspace_b_name: string;
+  workspace_b_owner_name: string;
+  workspace_b_phone: string;
+  workspace_b_whatsapp?: string;
+  workspace_b_email?: string;
+  workspace_b_stations: PartnershipStationInfo[];
+
+  status: 'active' | 'pending' | 'rejected' | 'terminated';
+  initiated_by_workspace_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PartnershipSettlement {
+  id: string;
+  partnership_id: string;
+  payer_workspace_id: string;
+  payer_workspace_name: string;
+  receiver_workspace_id: string;
+  receiver_workspace_name: string;
+  amount: number;
+  currency: string; // 'MAD' | 'MRU'
+  payment_method: 'cash' | 'bank_transfer' | 'cash_plus' | 'wafacash' | 'other';
+  reference_number?: string;
+  notes?: string;
+  recorded_by_name: string;
+  created_at: string;
+}
+
 export interface Station {
   id: string;
   workspace_id?: string;
@@ -365,6 +417,15 @@ export interface Parcel {
   collaborator_workspace_short_id?: string;
   is_demo?: boolean;
   pending_sync?: boolean;
+
+  // حقول كوليات الشراكة بين المدراء
+  partner_workspace_id?: string;
+  partner_workspace_name?: string;
+  partner_destination_station_id?: string;
+  partner_destination_station_name?: string;
+  partner_cod_amount?: number;
+  partner_settled?: boolean;
+  partner_settlement_id?: string;
 }
 
 // واجهة بيانات الرحلة (الديسباتش والشحن بين المحطات)

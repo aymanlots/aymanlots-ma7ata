@@ -7,8 +7,8 @@
  * - Proactive Client Notification on Update
  */
 
-const SW_VERSION = 'sahara-express-v' + (self.registration ? self.registration.scope : '') + '-20261031';
-const CACHE_NAME = 'sahara-cache-v8';
+const SW_VERSION = 'sahara-express-v' + (self.registration ? self.registration.scope : '') + '-20261104-v9';
+const CACHE_NAME = 'sahara-cache-v9';
 
 const OFFLINE_FALLBACKS = [
   '/',
@@ -73,9 +73,14 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // 1. Bypass all backend APIs, Supabase, Firebase Firestore/Auth
+  // 1. Bypass all backend APIs, Vite dev modules, Supabase, Firebase Firestore/Auth
   if (
     url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.endsWith('.tsx') ||
+    url.pathname.endsWith('.ts') ||
     url.hostname.includes('supabase.co') ||
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('firebaseio.com') ||

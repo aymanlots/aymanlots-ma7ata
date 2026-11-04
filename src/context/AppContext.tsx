@@ -37,7 +37,10 @@ import {
   AuditLogEntry, 
   UserRole,
   Language,
-  MoneyTransfer
+  MoneyTransfer,
+  ManagerPartnership,
+  PartnershipSettlement,
+  PartnershipStationInfo
 } from '../types/database';
 import { translations } from '../lib/i18n';
 import { parcelService, mapSupabaseRowToParcel } from '../services/parcelService';
@@ -211,6 +214,39 @@ interface AppContextType {
   sendCollaborationRequest: (targetShortId: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   respondToCollaboration: (collabId: string, accept: boolean) => Promise<{ success: boolean; error?: string; message?: string }>;
   updateSharingSettings: (collabId: string, shareCash: boolean, shareParcels: boolean, shareReports: boolean) => Promise<{ success: boolean; error?: string }>;
+
+  // Manager Cross-Partnership Network (غرفة الشراكة بين المدراء)
+  managerPartnerships: ManagerPartnership[];
+  registeredManagersNetwork: {
+    workspaceId: string;
+    workspaceName: string;
+    shortId: string;
+    ownerName: string;
+    phone: string;
+    whatsapp?: string;
+    email?: string;
+    stations: PartnershipStationInfo[];
+    planTier?: string;
+    stars?: number;
+    parcelsCount?: number;
+    deliveredCount?: number;
+    activityLabel?: string;
+  }[];
+  loadRegisteredManagersNetwork: () => Promise<void>;
+  sendPartnershipRequest: (targetWorkspaceId: string) => Promise<{ success: boolean; error?: string }>;
+  respondToPartnershipRequest: (partnershipId: string, accept: boolean) => Promise<{ success: boolean; error?: string }>;
+  recordPartnershipSettlement: (partnershipId: string, data: {
+    amount: number;
+    currency: 'MAD' | 'MRU';
+    payment_method: 'cash' | 'bank_transfer' | 'cash_plus' | 'wafacash' | 'other';
+    reference_number?: string;
+    notes?: string;
+  }) => Promise<{ success: boolean; error?: string }>;
+  dispatchParcelToPartner: (parcelId: string, partnerWorkspaceId: string, partnerStationId: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Account Terminated Real-time Watchdog Notice
+  accountTerminatedNotice: { isOpen: boolean; reason: 'deleted' | 'suspended'; message: string };
+  dismissAccountTerminatedNotice: () => void;
 
   // Dual Currency & Exchange Rate
   currencies: Currency[];
@@ -818,6 +854,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     return [];
   });
+
+  // 16. Manager Cross-Partnership Network (غرفة الشراكة بين المدراء)
+  const [managerPartnerships, setManagerPartnerships] = useState<ManagerPartnership[]>(() => {
+    try {
+      const saved = localStorage.getItem('alittihadia_manager_partnerships_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [registeredManagersNetwork, setRegisteredManagersNetwork] = useState<{
+    workspaceId: string;
+    workspaceName: string;
+    shortId: string;
+    ownerName: string;
+    phone: string;
+    whatsapp?: string;
+    email?: string;
+    stations: PartnershipStationInfo[];
+    planTier?: string;
+    stars?: number;
+    parcelsCount?: number;
+    deliveredCount?: number;
+    activityLabel?: string;
+  }[]>([]);
 
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
   const [isPlatformOwner, setIsPlatformOwner] = useState<boolean>(false);
@@ -1667,13 +1729,90 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return false;
   }, []);
 
-  // Force immediate logout when a worker account is deleted/revoked by manager
-  const forceRevokedWorkerLogout = useCallback(() => {
+  // Account Termination & Revocation State
+  const [accountTerminatedNotice, setAccountTerminatedNotice] = useState<{
+    isOpen: boolean;
+    reason: 'deleted' | 'suspended';
+    message: string;
+  }>({ isOpen: false, reason: 'deleted', message: '' });
+
+  const dismissAccountTerminatedNotice = useCallback(() => {
+    setAccountTerminatedNotice({ isOpen: false, reason: 'deleted', message: '' });
+  }, []);
+
+  // Force immediate logout and session cleanup when account or workspace is deleted/revoked
+  const handleAccountTerminated = useCallback((reason: 'deleted' | 'suspended', customMsg?: string) => {
     setIsPlatformOwner(false);
     setCurrentUser(null);
-    localStorage.removeItem('aman_user');
-    showToast('تم إيقاف أو حذف حسابك من طرف مدير المحطة. لم يعد بإمكانك الوصول إلى النظام.', 'error');
+    setCurrentWorkspace(null);
+    try {
+      localStorage.removeItem('aman_user');
+      localStorage.removeItem('aman_workspace');
+      localStorage.removeItem('aman_team');
+      localStorage.removeItem('ittihadiya_saved_login_phone');
+    } catch {}
+
+    const msg = customMsg || (reason === 'deleted'
+      ? '⚠️ تم حذف أو إنهاء هذا الحساب من قاعدة البيانات. يرجى إدخال رقم هاتف وبريد Gmail جديدين للتسجيل أو استخدام حساب نشط.'
+      : '⛔ تم تجميد وتوقيف هذا الحساب ومساحة العمل من قِبل إدارة النظام.');
+
+    setAccountTerminatedNotice({
+      isOpen: true,
+      reason,
+      message: msg,
+    });
+    showToast(msg, 'error');
   }, [showToast]);
+
+  // Force immediate logout when a worker account is deleted/revoked by manager
+  const forceRevokedWorkerLogout = useCallback(() => {
+    handleAccountTerminated('deleted', 'تم إيقاف أو حذف حسابك من طرف مدير المحطة. لم يعد بإمكانك الوصول إلى النظام.');
+  }, [handleAccountTerminated]);
+
+  // REAL-TIME ACCOUNT & WORKSPACE DELETION/SUSPENSION WATCHDOG
+  useEffect(() => {
+    if (!currentUser || !firebaseSyncService.isAvailable()) return;
+    // Never terminate the Platform Owner / Super Admin master account
+    if (checkIsMasterAccount(currentUser, currentWorkspace)) return;
+    const phone = currentUser.phone || '';
+    const wsId = currentWorkspace?.id || '';
+
+    const unsub = firebaseSyncService.subscribeToAccountStatus(
+      phone,
+      wsId,
+      (status) => {
+        // 1. If user doc was deleted from Firebase directly or marked deleted/revoked
+        if (status.userDeleted || status.userRevoked || (!status.userExists && phone)) {
+          handleAccountTerminated('deleted');
+          return;
+        }
+
+        // 2. If workspace was deleted from Firebase directly
+        if (status.workspaceDeleted || (!status.workspaceExists && wsId)) {
+          handleAccountTerminated('deleted', '⚠️ تم حذف مساحة العمل هذه نهائياً من Firebase. يرجى التسجيل برقم هاتف وجيمايل جديدين.');
+          return;
+        }
+
+        // 3. If workspace was suspended in real-time
+        if (status.workspaceSuspended) {
+          setCurrentWorkspace(prev => prev ? { ...prev, subscription_status: 'suspended' } : null);
+          setSubscription(prev => prev ? { ...prev, status: 'suspended' } : null);
+        } else if (status.subscriptionEndDate || status.subscriptionStatus) {
+          if (status.subscriptionStatus && status.subscriptionStatus !== 'suspended') {
+            setCurrentWorkspace(prev => prev ? {
+              ...prev,
+              subscription_status: status.subscriptionStatus as any,
+              subscription_end_date: status.subscriptionEndDate || prev.subscription_end_date
+            } : null);
+          }
+        }
+      }
+    );
+
+    return () => {
+      unsub();
+    };
+  }, [currentUser?.id, currentUser?.phone, currentWorkspace?.id, handleAccountTerminated]);
 
   // Real-time Authoritative Firebase Sync Listener (Prevents Ghost Data Resurrection Across Devices)
   useEffect(() => {
@@ -2089,6 +2228,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [effectiveSubscriptionStatus, effectiveSubscriptionEndDate, nowMs]);
 
   const checkWriteAllowed = useCallback((): { allowed: boolean; error?: string } => {
+    // 0. Block terminated or deleted accounts immediately
+    if (accountTerminatedNotice.isOpen || !currentUser) {
+      return {
+        allowed: false,
+        error: 'الحساب غير متاح أو تم حذفه من قاعدة البيانات. يرجى إدخال رقم هاتف وبريد Gmail جديدين.',
+      };
+    }
+
     // 1. Block deleted/revoked workers immediately before any write action
     if (currentUser) {
       const isWorkerSession =
@@ -3532,6 +3679,219 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }));
 
     showToast('تم تحديث إعدادات تتبع الطرود المشتركة بنجاح. اللاگيس والعمال معزولون 100%.', 'success');
+    return { success: true };
+  };
+
+  // ============================================================================
+  // MANAGER CROSS-PARTNERSHIP NETWORK (غرفة الشراكة بين المدراء)
+  // ============================================================================
+
+  // Real-time listener for partnerships involving currentWorkspace
+  useEffect(() => {
+    if (!currentWorkspace?.id || !firebaseSyncService.isAvailable()) return;
+    const unsub = firebaseSyncService.subscribeToManagerPartnerships(
+      currentWorkspace.id,
+      (partnerships) => {
+        setManagerPartnerships(partnerships);
+        try {
+          localStorage.setItem('alittihadia_manager_partnerships_v1', JSON.stringify(partnerships));
+        } catch {}
+      }
+    );
+    return () => unsub();
+  }, [currentWorkspace?.id]);
+
+  const loadRegisteredManagersNetwork = useCallback(async () => {
+    if (!firebaseSyncService.isAvailable()) return;
+    try {
+      const list = await firebaseSyncService.listAllRegisteredManagersAndStations();
+      setRegisteredManagersNetwork(list);
+    } catch (err) {
+      console.warn('Error loading registered managers network:', err);
+    }
+  }, []);
+
+  const sendPartnershipRequest = async (targetWorkspaceId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!currentWorkspace || !currentUser) return { success: false, error: 'غير مسجل الدخول' };
+    if (targetWorkspaceId === currentWorkspace.id) return { success: false, error: 'لا يمكنك إقامة شراكة مع مساحة عملك الخاصة' };
+
+    const myStations: PartnershipStationInfo[] = stations
+      .filter(s => (!s.workspace_id || s.workspace_id === currentWorkspace.id) && !s.is_demo)
+      .map(s => ({
+        id: s.id,
+        name: s.name,
+        city: s.city,
+        country: s.country,
+        phone: s.phone,
+      }));
+
+    const targetInfo = registeredManagersNetwork.find(w => w.workspaceId === targetWorkspaceId);
+    const targetWsDoc = allWorkspacesState.find(w => w.id === targetWorkspaceId);
+
+    const partnershipId = `partner_${[currentWorkspace.id, targetWorkspaceId].sort().join('_')}`;
+
+    const newPartnership: ManagerPartnership = {
+      id: partnershipId,
+      workspace_a_id: currentWorkspace.id,
+      workspace_a_name: currentWorkspace.name,
+      workspace_a_owner_name: currentUser.name || currentWorkspace.owner_name || 'مدير المحطة',
+      workspace_a_phone: currentUser.phone || currentWorkspace.owner_phone || '',
+      workspace_a_whatsapp: currentUser.whatsapp_number || currentWorkspace.owner_whatsapp || '',
+      workspace_a_email: currentUser.email || currentWorkspace.owner_email || '',
+      workspace_a_stations: myStations,
+
+      workspace_b_id: targetWorkspaceId,
+      workspace_b_name: targetInfo?.workspaceName || targetWsDoc?.name || 'شركة شريكة',
+      workspace_b_owner_name: targetInfo?.ownerName || targetWsDoc?.owner_name || 'المدير الشريك',
+      workspace_b_phone: targetInfo?.phone || targetWsDoc?.owner_phone || '',
+      workspace_b_whatsapp: targetInfo?.whatsapp || targetWsDoc?.owner_whatsapp || '',
+      workspace_b_email: targetInfo?.email || targetWsDoc?.owner_email || '',
+      workspace_b_stations: targetInfo?.stations || [],
+
+      status: 'pending',
+      initiated_by_workspace_id: currentWorkspace.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    setManagerPartnerships(prev => {
+      const next = prev.filter(p => p.id !== partnershipId).concat(newPartnership);
+      try {
+        localStorage.setItem('alittihadia_manager_partnerships_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.savePartnership(newPartnership);
+    }
+
+    showToast(`تم إرسال طلب الشراكة بنجاح إلى شركة "${newPartnership.workspace_b_name}"`, 'success');
+    return { success: true };
+  };
+
+  const respondToPartnershipRequest = async (partnershipId: string, accept: boolean): Promise<{ success: boolean; error?: string }> => {
+    if (!currentWorkspace) return { success: false, error: 'غير مسجل الدخول' };
+    const p = managerPartnerships.find(item => item.id === partnershipId);
+    if (!p) return { success: false, error: 'الشراكة غير موجودة' };
+
+    const myStations: PartnershipStationInfo[] = stations
+      .filter(s => (!s.workspace_id || s.workspace_id === currentWorkspace.id) && !s.is_demo)
+      .map(s => ({
+        id: s.id,
+        name: s.name,
+        city: s.city,
+        country: s.country,
+        phone: s.phone,
+      }));
+
+    const isA = p.workspace_a_id === currentWorkspace.id;
+    const updated: ManagerPartnership = {
+      ...p,
+      status: accept ? 'active' : 'rejected',
+      workspace_a_stations: isA ? myStations : p.workspace_a_stations,
+      workspace_b_stations: !isA ? myStations : p.workspace_b_stations,
+      updated_at: new Date().toISOString(),
+    };
+
+    setManagerPartnerships(prev => {
+      const next = prev.map(item => item.id === partnershipId ? updated : item);
+      try {
+        localStorage.setItem('alittihadia_manager_partnerships_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.savePartnership(updated);
+    }
+
+    const partnerName = isA ? p.workspace_b_name : p.workspace_a_name;
+    showToast(accept ? `🤝 تم تفعيل الشراكة الرسمية بنجاح مع "${partnerName}"!` : `تم رفض طلب الشراكة`, accept ? 'success' : 'info');
+    return { success: true };
+  };
+
+  const recordPartnershipSettlement = async (
+    partnershipId: string,
+    data: {
+      amount: number;
+      currency: 'MAD' | 'MRU';
+      payment_method: 'cash' | 'bank_transfer' | 'cash_plus' | 'wafacash' | 'other';
+      reference_number?: string;
+      notes?: string;
+    }
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!currentWorkspace || !currentUser) return { success: false, error: 'غير مسجل الدخول' };
+    const p = managerPartnerships.find(item => item.id === partnershipId);
+    if (!p) return { success: false, error: 'الشراكة غير موجودة' };
+
+    const isA = p.workspace_a_id === currentWorkspace.id;
+    const partnerWsId = isA ? p.workspace_b_id : p.workspace_a_id;
+    const partnerWsName = isA ? p.workspace_b_name : p.workspace_a_name;
+
+    const settlementId = `stl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newSettlement: PartnershipSettlement = {
+      id: settlementId,
+      partnership_id: partnershipId,
+      payer_workspace_id: currentWorkspace.id,
+      payer_workspace_name: currentWorkspace.name,
+      receiver_workspace_id: partnerWsId,
+      receiver_workspace_name: partnerWsName,
+      amount: Number(data.amount),
+      currency: data.currency,
+      payment_method: data.payment_method,
+      reference_number: data.reference_number,
+      notes: data.notes,
+      recorded_by_name: currentUser.name || 'المدير',
+      created_at: new Date().toISOString(),
+    };
+
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.recordPartnershipSettlement(partnershipId, newSettlement);
+    }
+
+    showToast(`✅ تم تسجيل دفعة تسوية مالية بمبلغ ${data.amount} ${data.currency} لصالح "${partnerWsName}" بنجاح`, 'success');
+    return { success: true };
+  };
+
+  const dispatchParcelToPartner = async (
+    parcelId: string,
+    partnerWorkspaceId: string,
+    partnerStationId: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const p = allParcelsRef.current.find(item => item.id === parcelId);
+    if (!p) return { success: false, error: 'الكولي غير موجود' };
+
+    const partnerNetworkWs = registeredManagersNetwork.find(w => w.workspaceId === partnerWorkspaceId);
+    const partnerStation = partnerNetworkWs?.stations?.find((s: PartnershipStationInfo) => s.id === partnerStationId) ||
+      stations.find((s: Station) => s.id === partnerStationId);
+
+    const partnerWsName = partnerNetworkWs?.workspaceName ||
+      allWorkspacesState.find(w => w.id === partnerWorkspaceId)?.name ||
+      'الشركة الشريكة';
+
+    const updatedParcel: Parcel = {
+      ...p,
+      partner_workspace_id: partnerWorkspaceId,
+      partner_workspace_name: partnerWsName,
+      partner_destination_station_id: partnerStationId,
+      partner_destination_station_name: partnerStation?.name || 'محطة الشريك',
+      destination_station_name: partnerStation?.name || p.destination_station_name,
+      updated_at: new Date().toISOString(),
+    };
+
+    setAllParcels(prev => prev.map(item => item.id === parcelId ? updatedParcel : item));
+    allParcelsRef.current = allParcelsRef.current.map(item => item.id === parcelId ? updatedParcel : item);
+
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.syncParcel(updatedParcel.workspace_id, updatedParcel);
+      await firebaseSyncService.syncPartnerParcel(partnerWorkspaceId, updatedParcel);
+    }
+
+    showToast(`تم توجيه الكولي [${p.tracking_code}] إلى محطة الشريك "${updatedParcel.partner_destination_station_name}" بنجاح`, 'success');
     return { success: true };
   };
 
@@ -7987,6 +8347,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toast,
         showToast,
         resetAllDataToZero,
+        managerPartnerships,
+        registeredManagersNetwork,
+        loadRegisteredManagersNetwork,
+        sendPartnershipRequest,
+        respondToPartnershipRequest,
+        recordPartnershipSettlement,
+        dispatchParcelToPartner,
+        accountTerminatedNotice,
+        dismissAccountTerminatedNotice,
       }}
     >
       {children}

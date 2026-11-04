@@ -11,6 +11,20 @@ export function initPWAAutoUpdate(): void {
     return;
   }
 
+  // In development environment, unregister any stale service workers and clear SW caches
+  // so source code edits (.tsx/.ts) are always fetched fresh from Vite
+  if ((import.meta as any).env?.DEV) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      registrations.forEach((reg) => reg.unregister());
+    }).catch(() => {});
+    if ('caches' in window) {
+      caches.keys().then((names) => {
+        names.forEach((name) => caches.delete(name));
+      }).catch(() => {});
+    }
+    return;
+  }
+
   // 1. Handle Vite dynamic import chunk loading errors
   // This occurs when a new Vercel deployment has deleted old hashed chunks
   window.addEventListener('vite:preloadError', (event) => {

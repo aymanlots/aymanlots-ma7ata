@@ -52,6 +52,19 @@ service cloud.firestore {
       allow delete: if isValidId(logId);
     }
 
+    // Partnerships between managers (Cross-company collaboration network)
+    match /partnerships/{partnershipId} {
+      allow read: if true;
+      allow create, update: if isValidId(partnershipId) && incoming().id is string;
+      allow delete: if isValidId(partnershipId);
+
+      match /settlements/{settlementId} {
+        allow read: if true;
+        allow create, update: if isValidId(settlementId) && incoming().id is string;
+        allow delete: if isValidId(settlementId);
+      }
+    }
+
     // Workspaces and their subcollections
     match /workspaces/{workspaceId} {
       allow get, list: if true;

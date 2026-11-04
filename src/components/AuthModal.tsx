@@ -28,7 +28,15 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPublicTracking }) => {
-  const { registerUser, loginWithCredentials, sendRegistrationEmailOtp, verifyRegistrationEmailOtp, t } = useApp();
+  const { 
+    registerUser, 
+    loginWithCredentials, 
+    sendRegistrationEmailOtp, 
+    verifyRegistrationEmailOtp, 
+    t,
+    accountTerminatedNotice,
+    dismissAccountTerminatedNotice 
+  } = useApp();
   const dir = 'rtl';
   const [isSignUp, setIsSignUp] = useState(false); // Default to Login directly
   const [signUpStep, setSignUpStep] = useState<'form' | 'verify_email'>('form');
@@ -390,6 +398,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
         <p className="text-[11px] font-bold text-[#E6C37A] text-center mb-3 tracking-wide">
           {t('tagline', 'للسفر ونقل البضائع والطرود والتحويلات المالية')}
         </p>
+
+        {/* Real-time Account Revocation & Deletion Banner */}
+        {accountTerminatedNotice?.isOpen && (
+          <div className="mb-4 p-3.5 rounded-2xl bg-gradient-to-br from-rose-950/95 via-red-900/70 to-black border-2 border-rose-500 shadow-xl shadow-rose-950/50 text-center">
+            <div className="flex items-center justify-center gap-2 mb-1.5 text-rose-200 font-black text-xs">
+              <ShieldCheck className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>تم توقيف أو حذف هذا الحساب من قِبل الإدارة أو Firebase</span>
+            </div>
+            <p className="text-[11px] text-rose-200/90 leading-relaxed font-semibold mb-3">
+              {accountTerminatedNotice.reason === 'deleted' 
+                ? 'تم حذف هذا الحساب نهائياً من قاعدة البيانات، وتم إيقاف الجلسة فوراً لمنع أي تعديل.'
+                : 'تم تعليق هذا الحساب أو إيقاف اشتراكه من لوحة التحكم. للبدء من جديد، يرجى إدخال Gmail ورقم هاتف جديد.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                dismissAccountTerminatedNotice();
+                setIsSignUp(true);
+                setSignUpStep('form');
+                setIsOwnerRole(true);
+                setPhone('');
+                setEmail('');
+                setPassword('');
+                setName('');
+                setError(null);
+              }}
+              className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 text-black font-black text-xs shadow-md hover:brightness-110 transition active:scale-95 flex items-center justify-center gap-2"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-black" />
+              <span>إدخال Gmail ورقم هاتف جديد للتسجيل الآن</span>
+            </button>
+          </div>
+        )}
 
         {/* TOP ROLE SELECTOR: ADMIN vs WORKER (Visible on first entry!) */}
         {signUpStep !== 'verify_email' && (

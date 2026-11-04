@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Store, 
@@ -13,6 +13,7 @@ import {
   Search,
   Users,
   Radio,
+  Handshake,
   Languages
 } from 'lucide-react';
 
@@ -48,11 +49,21 @@ export const Header: React.FC<HeaderProps> = ({
     toggleHideAmounts,
     setLanguage,
     language,
+    managerPartnerships,
     t
   } = useApp();
 
   const dir = (language === 'ar' || language === 'hass') ? 'rtl' : 'ltr';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const pendingPartnershipRequestsCount = useMemo(() => {
+    if (!currentWorkspace?.id || !managerPartnerships) return 0;
+    return managerPartnerships.filter(
+      p => p.status === 'pending' &&
+           p.initiated_by_workspace_id !== currentWorkspace.id &&
+           (p.workspace_a_id === currentWorkspace.id || p.workspace_b_id === currentWorkspace.id)
+    ).length;
+  }, [currentWorkspace?.id, managerPartnerships]);
 
   const currentStation = stations.find(s => s.id === selectedStationId);
 
@@ -79,6 +90,22 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>القائمة</span>
               </button>
 
+              {onOpenCollabRoom && userRole !== 'worker' && (
+                <button
+                  type="button"
+                  onClick={onOpenCollabRoom}
+                  className="nav-tab-btn relative flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-amber-950/80 to-[#1a0f00]/90 border border-amber-500/60 text-[11px] font-extrabold text-[#F5C84C] hover:border-[#F5C84C] transition active:scale-95 cursor-pointer shadow-sm"
+                  title="غرفة الشراكة بين المدراء والمحاسبة المشتركة"
+                >
+                  <Handshake className="w-3.5 h-3.5 text-amber-400" />
+                  <span>غرفة الشراكة</span>
+                  {pendingPartnershipRequestsCount > 0 && (
+                    <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center animate-bounce shadow">
+                      {pendingPartnershipRequestsCount}
+                    </span>
+                  )}
+                </button>
+              )}
 
               <button
                 type="button"
@@ -191,10 +218,15 @@ export const Header: React.FC<HeaderProps> = ({
                     setMobileMenuOpen(false);
                     onOpenCollabRoom();
                   }}
-                  className="btn-cancel p-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
+                  className="btn-cancel relative p-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
                 >
-                  <Radio className="w-4 h-4 text-[#F5C84C]" />
-                  <span>غرف الشراكة</span>
+                  <Handshake className="w-4 h-4 text-[#F5C84C]" />
+                  <span>غرفة الشراكة</span>
+                  {pendingPartnershipRequestsCount > 0 && (
+                    <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow">
+                      {pendingPartnershipRequestsCount}
+                    </span>
+                  )}
                 </button>
               )}
 
