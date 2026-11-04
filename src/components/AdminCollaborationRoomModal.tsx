@@ -80,11 +80,24 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
   // Mutual parcels sub-filter: 'sent' vs 'received'
   const [parcelFilterDirection, setParcelFilterDirection] = useState<'sent' | 'received'>('sent');
 
-  // Load registered managers directory when modal opens
+  // Load registered managers directory when modal opens and keep it synced in real-time with Firebase
   useEffect(() => {
     if (!isOpen) return;
     setIsRefreshing(true);
     loadRegisteredManagersNetwork().finally(() => setIsRefreshing(false));
+
+    const unsubWorkspaces = firebaseSyncService.subscribeToAllWorkspaces(() => {
+      loadRegisteredManagersNetwork();
+    });
+
+    const syncInterval = window.setInterval(() => {
+      loadRegisteredManagersNetwork();
+    }, 4500);
+
+    return () => {
+      unsubWorkspaces();
+      window.clearInterval(syncInterval);
+    };
   }, [isOpen, loadRegisteredManagersNetwork]);
 
   // Selected partnership object

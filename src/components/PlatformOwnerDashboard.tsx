@@ -136,8 +136,14 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
       setGlobalActivityLogs(logs);
     });
 
+    // Live sync every 4 seconds while Control Panel is open so direct deletions in Firebase /users or /workspaces immediately disappear
+    const syncInterval = window.setInterval(() => {
+      refreshPlatformWorkspaces();
+    }, 4000);
+
     return () => {
       unsubActivity();
+      window.clearInterval(syncInterval);
     };
   }, [isOpen, userRole, refreshPlatformWorkspaces]);
 

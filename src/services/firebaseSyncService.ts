@@ -453,6 +453,65 @@ export const firebaseSyncService = {
     }
   },
 
+  isMasterPlatformWorkspace(ws: Workspace): boolean {
+    const wsId = ws.id || '';
+    const cleanPhone = String(ws.owner_phone || '').replace(/[^0-9]/g, '');
+    const cleanWhatsapp = String(ws.owner_whatsapp || '').replace(/[^0-9]/g, '');
+    const cleanEmail = String(ws.owner_email || '').trim().toLowerCase();
+    return (
+      cleanPhone.includes('618961387') ||
+      cleanWhatsapp.includes('618961387') ||
+      cleanEmail === 'aissaaimanekhlifi@gmail.com' ||
+      wsId === 'ws-1' ||
+      wsId === 'ws-platform-owner' ||
+      ws.created_by === 'user-platform-owner'
+    );
+  },
+
+  async isOwnerUserValidInCloud(ws: Workspace): Promise<boolean> {
+    if (!this.isAvailable() || !ws?.id) return false;
+    if ((ws as any).deleted || (ws as any).is_demo) return false;
+    if (this.isMasterPlatformWorkspace(ws)) return true;
+
+    const cleanPhone = String(ws.owner_phone || '').replace(/[^0-9]/g, '');
+    const cleanEmail = String(ws.owner_email || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, '_');
+
+    const createdMs = new Date(ws.created_at || 0).getTime();
+    const isBrandNew = !isNaN(createdMs) && Date.now() - createdMs < 20000;
+
+    if (!cleanPhone && cleanEmail.length < 3) {
+      // Orphaned stub workspace without owner credentials
+      if (!isBrandNew) {
+        this.deleteWorkspaceCompletelyFromCloud(ws.id).catch(() => {});
+        return false;
+      }
+      return true;
+    }
+
+    try {
+      if (cleanPhone) {
+        const uSnap = await getDoc(doc(db, 'users', cleanPhone));
+        if (!uSnap.exists()) {
+          if (isBrandNew) return true;
+          // User was deleted from /users in Firebase -> automatically purge orphaned workspace & partnerships!
+          this.deleteWorkspaceCompletelyFromCloud(ws.id, cleanPhone).catch(() => {});
+          return false;
+        }
+        const uData = uSnap.data() as CloudUserAccount;
+        if (uData.deleted || uData.status === 'revoked') {
+          this.deleteWorkspaceCompletelyFromCloud(ws.id, cleanPhone).catch(() => {});
+          return false;
+        }
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  },
+
   async listAllWorkspacesFromCloud(): Promise<Workspace[]> {
     if (!this.isAvailable()) return [];
     try {
@@ -460,15 +519,20 @@ export const firebaseSyncService = {
       const rawWorkspaces: Workspace[] = [];
       wsSnap.forEach((d) => {
         const ws = d.data() as Workspace;
-        rawWorkspaces.push({
-          ...ws,
-          id: ws.id || d.id,
-        });
+        if (!(ws as any).deleted && !(ws as any).is_demo) {
+          rawWorkspaces.push({
+            ...ws,
+            id: ws.id || d.id,
+          });
+        }
       });
 
-      // Fetch live subcollection counts in parallel for each workspace
-      const enriched = await Promise.all(
+      // Validate owner in /users and fetch live subcollection counts in parallel
+      const enrichedResults = await Promise.all(
         rawWorkspaces.map(async (ws) => {
+          const isValidOwner = await this.isOwnerUserValidInCloud(ws);
+          if (!isValidOwner) return null;
+
           let stationsCount = ws.stations_count ?? 0;
           let parcelsCount = ws.parcels_count ?? 0;
           let tripsCount = ws.trips_count ?? 0;
@@ -500,11 +564,12 @@ export const firebaseSyncService = {
             parcels_count: parcelsCount,
             trips_count: tripsCount,
             transactions_count: txCount,
-          };
+          } as Workspace;
         })
       );
 
-      return enriched.sort(
+      const validWorkspaces = enrichedResults.filter((w): w is Workspace => w !== null);
+      return validWorkspaces.sort(
         (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
       );
     } catch (err) {
@@ -517,15 +582,25 @@ export const firebaseSyncService = {
     if (!this.isAvailable()) return () => {};
     return onSnapshot(
       collection(db, 'workspaces'),
-      (snap) => {
-        const list: Workspace[] = [];
+      async (snap) => {
+        const candidates: Workspace[] = [];
         snap.forEach((d) => {
           const ws = d.data() as Workspace;
-          list.push({
-            ...ws,
-            id: ws.id || d.id,
-          });
+          if (!(ws as any).deleted && !(ws as any).is_demo) {
+            candidates.push({
+              ...ws,
+              id: ws.id || d.id,
+            });
+          }
         });
+
+        const validated = await Promise.all(
+          candidates.map(async (ws) => {
+            const ok = await this.isOwnerUserValidInCloud(ws);
+            return ok ? ws : null;
+          })
+        );
+        const list = validated.filter((w): w is Workspace => w !== null);
         list.sort(
           (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
         );
@@ -908,6 +983,14 @@ export const firebaseSyncService = {
     });
 
     try {
+      // Never resurrect a deleted workspace via activity logging
+      if (entry.action_type !== 'REGISTER') {
+        const existingWsSnap = await getDoc(doc(db, 'workspaces', entry.workspace_id));
+        if (!existingWsSnap.exists() || (existingWsSnap.data() as any)?.deleted) {
+          return;
+        }
+      }
+
       const wsUpdate: Record<string, any> = {
         id: entry.workspace_id,
         name: entry.workspace_name || 'Sahara📦 Express',
@@ -1109,22 +1192,10 @@ export const firebaseSyncService = {
       });
     } catch {}
 
-    // 2. Mark direct user documents as revoked & deleted so both online and offline sessions are immediately terminated
-    const nowIso = new Date().toISOString();
+    // 2. Delete direct user documents from /users completely so Firebase /users is clean and online sessions immediately fire !snap.exists()
     await Promise.all(
       Array.from(userDocIdsToDelete).map((uDocId) =>
-        setDoc(
-          doc(db, 'users', uDocId),
-          sanitizeForFirestore({
-            id: uDocId,
-            status: 'revoked',
-            deleted: true,
-            password: '',
-            worker_code: '',
-            updated_at: nowIso,
-          }),
-          { merge: true }
-        ).catch(() => {})
+        deleteDoc(doc(db, 'users', uDocId)).catch(() => {})
       )
     );
 
@@ -1148,7 +1219,27 @@ export const firebaseSyncService = {
       })
     );
 
-    // 4. Delete platform_activity_logs entries for this workspace
+    // 4. Delete any partnerships involving this workspace (and their settlements) so they vanish from غرفة الشراكة
+    try {
+      const partSnap = await getDocs(collection(db, 'partnerships'));
+      const matchingPartnerships = partSnap.docs.filter((d) => {
+        const p = d.data() as ManagerPartnership;
+        return p.workspace_a_id === wsId || p.workspace_b_id === wsId;
+      });
+      await Promise.all(
+        matchingPartnerships.map(async (pDoc) => {
+          try {
+            const setSnap = await getDocs(collection(db, 'partnerships', pDoc.id, 'settlements'));
+            await Promise.all(setSnap.docs.map((sd) => deleteDoc(sd.ref)));
+          } catch {}
+          await deleteDoc(pDoc.ref).catch(() => {});
+        })
+      );
+    } catch (err) {
+      console.warn('Warning deleting partnerships for workspace:', err);
+    }
+
+    // 5. Delete platform_activity_logs entries for this workspace
     try {
       const actQuery = query(
         collection(db, 'platform_activity_logs'),
@@ -1160,7 +1251,7 @@ export const firebaseSyncService = {
       console.warn('Warning deleting platform_activity_logs for workspace:', err);
     }
 
-    // 5. Finally delete the workspace document itself
+    // 6. Finally delete the workspace document itself
     const path = `workspaces/${wsId}`;
     try {
       await deleteDoc(doc(db, 'workspaces', wsId));
@@ -1190,9 +1281,6 @@ export const firebaseSyncService = {
     const unsubs: Unsubscribe[] = [];
     const cleanPhone = phoneOrDocId.replace(/[^0-9]/g, '');
 
-    let hasSeenUserDocInCloud = false;
-    let hasSeenWsDocInCloud = false;
-
     let userState = {
       userExists: true,
       userDeleted: false,
@@ -1214,30 +1302,19 @@ export const firebaseSyncService = {
       });
     };
 
-    // 1. Listen directly to user document
+    // 1. Listen directly to user document in /users/{cleanPhone}
     if (cleanPhone) {
       try {
         const uSub = onSnapshot(
           doc(db, 'users', cleanPhone),
           (snap) => {
             if (!snap.exists()) {
-              // Only treat missing doc as deleted if it ALREADY existed in Firestore during this session
-              // (prevents false-positive kick-outs when a brand-new user is registering!)
-              if (hasSeenUserDocInCloud) {
-                userState = {
-                  userExists: false,
-                  userDeleted: true,
-                  userRevoked: true,
-                };
-              } else {
-                userState = {
-                  userExists: false,
-                  userDeleted: false,
-                  userRevoked: false,
-                };
-              }
+              userState = {
+                userExists: false,
+                userDeleted: true,
+                userRevoked: true,
+              };
             } else {
-              hasSeenUserDocInCloud = true;
               const data = snap.data() as CloudUserAccount;
               const isDel = Boolean(data.deleted);
               const isRev = data.status === 'revoked';
@@ -1259,33 +1336,21 @@ export const firebaseSyncService = {
       }
     }
 
-    // 2. Listen directly to workspace document
+    // 2. Listen directly to workspace document in /workspaces/{workspaceId}
     if (workspaceId) {
       try {
         const wSub = onSnapshot(
           doc(db, 'workspaces', workspaceId),
           (snap) => {
             if (!snap.exists()) {
-              // Only treat missing workspace doc as deleted if it ALREADY existed in Firestore during this session
-              if (hasSeenWsDocInCloud) {
-                wsState = {
-                  workspaceExists: false,
-                  workspaceDeleted: true,
-                  workspaceSuspended: false,
-                  subscriptionEndDate: undefined,
-                  subscriptionStatus: undefined,
-                };
-              } else {
-                wsState = {
-                  workspaceExists: false,
-                  workspaceDeleted: false,
-                  workspaceSuspended: false,
-                  subscriptionEndDate: undefined,
-                  subscriptionStatus: undefined,
-                };
-              }
+              wsState = {
+                workspaceExists: false,
+                workspaceDeleted: true,
+                workspaceSuspended: false,
+                subscriptionEndDate: undefined,
+                subscriptionStatus: undefined,
+              };
             } else {
-              hasSeenWsDocInCloud = true;
               const data = snap.data() as Workspace;
               const isDel = Boolean((data as any).deleted);
               const isSuspended = data.subscription_status === 'suspended';
@@ -1363,8 +1428,8 @@ export const firebaseSyncService = {
 
       await Promise.all(
         snap.docs.map(async (d) => {
-          const ws = d.data() as Workspace;
-          const wsId = ws.id || d.id;
+          const ws = { ...(d.data() as Workspace), id: (d.data() as Workspace).id || d.id };
+          const wsId = ws.id;
           if ((ws as any).deleted || ws.subscription_status === 'suspended' || (ws as any).is_demo) return;
 
           // Strictly exclude the Super Admin / Platform Owner account & demo/placeholder accounts
@@ -1372,17 +1437,16 @@ export const firebaseSyncService = {
           const cleanWhatsapp = String(ws.owner_whatsapp || '').replace(/[^0-9]/g, '');
           const cleanEmail = String(ws.owner_email || '').trim().toLowerCase();
           if (
-            cleanPhone.includes('618961387') ||
-            cleanWhatsapp.includes('618961387') ||
-            cleanEmail === 'aissaaimanekhlifi@gmail.com' ||
+            this.isMasterPlatformWorkspace(ws) ||
             cleanPhone === '0000000000' ||
-            cleanPhone === '0600000000' ||
-            wsId === 'ws-1' ||
-            wsId === 'ws-platform-owner' ||
-            ws.created_by === 'user-platform-owner'
+            cleanPhone === '0600000000'
           ) {
             return;
           }
+
+          // Verify that the manager's user account still exists in /users (if deleted from /users in Firebase, auto-clean and exclude!)
+          const isValidOwner = await this.isOwnerUserValidInCloud(ws);
+          if (!isValidOwner) return;
 
           // Fetch stations and parcels for this workspace in parallel
           let stationsList: PartnershipStationInfo[] = [];
