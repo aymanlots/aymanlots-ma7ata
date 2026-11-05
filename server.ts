@@ -25,6 +25,8 @@ import {
   generateSixDigitOtp,
   hashOtpCode,
   verifyOtpHash,
+  signOtpRecordState,
+  verifyOtpRecordStateSignature,
   sendVerificationOtpEmail,
 } from './src/lib/otpMailer.ts';
 
@@ -70,13 +72,37 @@ interface ServerOtpRecord {
 const serverOtpStore = new Map<string, ServerOtpRecord>();
 const ipRateLimitStore = new Map<string, { count: number; windowStartMs: number; lastSentMs: number }>();
 
+function pruneExpiredServerStores(nowMs: number = Date.now()) {
+  if (registrationEmailOtpStore.size > 200) {
+    for (const [k, v] of registrationEmailOtpStore.entries()) {
+      if (nowMs - v.windowStartMs > OTP_WINDOW_MS * 2 && nowMs > v.expiresAtMs) {
+        registrationEmailOtpStore.delete(k);
+      }
+    }
+  }
+  if (serverOtpStore.size > 200) {
+    for (const [k, v] of serverOtpStore.entries()) {
+      if (nowMs - v.windowStartMs > OTP_WINDOW_MS * 2 && nowMs > v.expiresAtMs) {
+        serverOtpStore.delete(k);
+      }
+    }
+  }
+  if (ipRateLimitStore.size > 500) {
+    for (const [k, v] of ipRateLimitStore.entries()) {
+      if (nowMs - v.windowStartMs > OTP_WINDOW_MS * 2) {
+        ipRateLimitStore.delete(k);
+      }
+    }
+  }
+}
+
 async function startServer() {
   const app = express();
   const portArgIndex = process.argv.indexOf('--port');
   const portFromArg = portArgIndex !== -1 ? Number(process.argv[portArgIndex + 1]) : null;
   const PORT = portFromArg || (process.env.NODE_ENV === 'production' && process.env.PORT ? Number(process.env.PORT) : 3000);
 
-  app.use(express.json({ limit: '5mb' }));
+  app.use(express.json({ limit: '2mb' }));
 
   // ============================================================================
   // REGISTRATION EMAIL OTP ENDPOINTS (6-Digit Hashed OTP + 10-Min Expiry)
@@ -94,6 +120,28 @@ async function startServer() {
       }
 
       const nowMs = Date.now();
+      pruneExpiredServerStores(nowMs);
+
+      const clientIp =
+        (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+        req.socket.remoteAddress ||
+        'unknown-ip';
+
+      // Check IP-level Rate Limit (max 3 sends per 10 minutes)
+      const ipState = ipRateLimitStore.get(clientIp);
+      if (ipState) {
+        const ipWindowExpired = nowMs - ipState.windowStartMs >= OTP_WINDOW_MS;
+        if (!ipWindowExpired && ipState.count >= OTP_MAX_SENDS_PER_WINDOW) {
+          const retryAfterSec = Math.max(1, Math.ceil((OTP_WINDOW_MS - (nowMs - ipState.windowStartMs)) / 1000));
+          return res.status(429).json({
+            success: false,
+            rateLimited: true,
+            retryAfterSeconds: retryAfterSec,
+            error: `تم تجاوز الحد المسموح لإرسال الرمز (${OTP_MAX_SENDS_PER_WINDOW} مرات كل 10 دقائق). يرجى الانتظار ${Math.ceil(retryAfterSec / 60)} دقيقة.`,
+          });
+        }
+      }
+
       const existing = registrationEmailOtpStore.get(rawEmail);
 
       // Check 60-second cooldown
@@ -152,6 +200,20 @@ async function startServer() {
       };
       registrationEmailOtpStore.set(rawEmail, newRecord);
 
+      ipRateLimitStore.set(clientIp, {
+        count: ipState && nowMs - ipState.windowStartMs < OTP_WINDOW_MS ? ipState.count + 1 : 1,
+        windowStartMs:
+          ipState && nowMs - ipState.windowStartMs < OTP_WINDOW_MS ? ipState.windowStartMs : nowMs,
+        lastSentMs: nowMs,
+      });
+
+      const stateSignature = signOtpRecordState({
+        id: rawEmail,
+        otp_hash: otpHash,
+        expires_at_ms: expiresAtMs,
+        attempts: 0,
+      });
+
       return res.status(200).json({
         success: true,
         email: rawEmail,
@@ -169,6 +231,7 @@ async function startServer() {
           send_count: newRecord.sendCount,
           window_start_ms: newRecord.windowStartMs,
           last_sent_ms: nowMs,
+          state_signature: stateSignature,
         },
       });
     } catch (err: any) {
@@ -196,7 +259,18 @@ async function startServer() {
 
       const nowMs = Date.now();
       let record = registrationEmailOtpStore.get(rawEmail);
-      if (!record && clientRecord?.otp_hash && clientRecord?.expires_at_ms) {
+      if (
+        !record &&
+        clientRecord?.otp_hash &&
+        clientRecord?.expires_at_ms &&
+        verifyOtpRecordStateSignature({
+          id: rawEmail,
+          otp_hash: String(clientRecord.otp_hash),
+          expires_at_ms: Number(clientRecord.expires_at_ms),
+          attempts: Number(clientRecord.attempts || 0),
+          signature: clientRecord.state_signature,
+        })
+      ) {
         record = {
           email: rawEmail,
           otpHash: String(clientRecord.otp_hash),
@@ -400,6 +474,13 @@ async function startServer() {
         lastSentMs: nowMs,
       });
 
+      const stateSignature = signOtpRecordState({
+        id: canonicalPhone,
+        otp_hash: otpHash,
+        expires_at_ms: expiresAtMs,
+        attempts: 0,
+      });
+
       return res.status(200).json({
         success: true,
         otpRecord: {
@@ -417,6 +498,7 @@ async function startServer() {
           used: false,
           created_at: newRecord.createdAt,
           updated_at: nowIso,
+          state_signature: stateSignature,
         },
         expiresAtMs,
         ttlSeconds: Math.floor(OTP_TTL_MS / 1000),
@@ -453,8 +535,19 @@ async function startServer() {
 
       let record = serverOtpStore.get(canonicalPhone) || (rawEmail ? serverOtpStore.get(rawEmail) : undefined);
 
-      // Reconstruct from hashed client/cloud state if serverless instance restarted
-      if (!record && clientRecord?.otp_hash && clientRecord?.expires_at_ms) {
+      // Reconstruct from hashed client/cloud state if serverless instance restarted (only if cryptographically signed)
+      if (
+        !record &&
+        clientRecord?.otp_hash &&
+        clientRecord?.expires_at_ms &&
+        verifyOtpRecordStateSignature({
+          id: canonicalPhone,
+          otp_hash: String(clientRecord.otp_hash),
+          expires_at_ms: Number(clientRecord.expires_at_ms),
+          attempts: Number(clientRecord.attempts || 0),
+          signature: clientRecord.state_signature,
+        })
+      ) {
         record = {
           id: canonicalPhone,
           phone: canonicalPhone,
@@ -586,6 +679,9 @@ async function startServer() {
 
       try {
         wsList = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+        if (wsList.length > 0 && wsList[0].ownerId && user?.id && wsList[0].ownerId !== user.id) {
+          return res.status(403).json({ error: 'Forbidden: workspace access denied' });
+        }
         stList = await db.select().from(stations).where(eq(stations.workspaceId, workspaceId));
         prList = await db
           .select()
@@ -620,12 +716,12 @@ async function startServer() {
     }
   });
 
-  // Public Tracking Lookup from Cloud SQL
+  // Public Tracking Lookup from Cloud SQL (Sanitized: masks phones & hides internal notes)
   app.get('/api/public-tracking/:code', async (req, res) => {
     try {
       const code = (req.params.code || '').trim().toUpperCase();
-      if (!code) {
-        return res.status(400).json({ error: 'Missing tracking code' });
+      if (!code || code.length > 64) {
+        return res.status(400).json({ error: 'Invalid tracking code' });
       }
       try {
         const found = await db
@@ -636,7 +732,29 @@ async function startServer() {
         if (found.length === 0) {
           return res.status(404).json({ error: 'Parcel not found' });
         }
-        return res.json({ parcel: found[0] });
+        const raw = found[0];
+        const maskPhone = (p?: string | null) => {
+          if (!p || p.length < 4) return '***';
+          return `${p.slice(0, 3)}****${p.slice(-2)}`;
+        };
+        return res.json({
+          parcel: {
+            id: raw.id,
+            trackingCode: raw.trackingCode,
+            originStationName: raw.originStationName,
+            destinationStationName: raw.destinationStationName,
+            senderName: raw.senderName,
+            senderPhone: maskPhone(raw.senderPhone),
+            receiverName: raw.receiverName,
+            receiverPhone: maskPhone(raw.receiverPhone),
+            piecesCount: raw.piecesCount,
+            weightKg: raw.weightKg,
+            status: raw.status,
+            paymentStatus: raw.paymentStatus,
+            createdAt: raw.createdAt,
+            updatedAt: raw.updatedAt,
+          },
+        });
       } catch (dbErr) {
         console.error('[DB Error]', dbErr);
         return res.status(500).json({ error: 'Database query failed' });

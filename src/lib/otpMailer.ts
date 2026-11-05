@@ -66,6 +66,46 @@ export function verifyOtpHash(inputCode: string, storedHash: string, identifier:
 }
 
 /**
+ * Signs an OTP state payload with HMAC-SHA256 so stateless fallback records cannot be forged or tampered with by clients.
+ */
+export function signOtpRecordState(params: {
+  id: string;
+  otp_hash: string;
+  expires_at_ms: number;
+  attempts: number;
+}): string {
+  const canonical = `${params.id.trim().toLowerCase()}|${params.otp_hash}|${Number(params.expires_at_ms)}|${Number(params.attempts || 0)}`;
+  return crypto.createHmac('sha256', OTP_HMAC_SECRET).update(canonical).digest('hex');
+}
+
+/**
+ * Verifies the HMAC-SHA256 signature of a client-supplied fallback OTP state record.
+ */
+export function verifyOtpRecordStateSignature(params: {
+  id: string;
+  otp_hash: string;
+  expires_at_ms: number;
+  attempts: number;
+  signature?: string;
+}): boolean {
+  if (!params.signature || !params.otp_hash || !params.expires_at_ms) return false;
+  const expected = signOtpRecordState({
+    id: params.id,
+    otp_hash: params.otp_hash,
+    expires_at_ms: params.expires_at_ms,
+    attempts: params.attempts,
+  });
+  try {
+    const a = Buffer.from(expected, 'hex');
+    const b = Buffer.from(String(params.signature), 'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Removes any emoji characters from a string to enforce a clean sender name.
  */
 function stripEmojis(text: string): string {

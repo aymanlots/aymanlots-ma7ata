@@ -64,8 +64,50 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
     isSubscriptionExpired,
     userRole,
     userAssignedStationId,
+    managerPartnerships,
+    registeredManagersNetwork,
+    loadRegisteredManagersNetwork,
     showToast,
   } = useApp();
+
+  // Collect all stations belonging to active partners in غرفة الشراكة
+  const partnerDestinationStations = React.useMemo(() => {
+    const myWsId = currentWorkspace?.id || '';
+    const list: {
+      id: string;
+      name: string;
+      city: string;
+      country?: string;
+      partnerWorkspaceId: string;
+      partnerWorkspaceName: string;
+    }[] = [];
+    const seenIds = new Set<string>();
+
+    for (const p of managerPartnerships) {
+      if (p.status !== 'active') continue;
+      const isA = p.workspace_a_id === myWsId;
+      const partnerWsId = isA ? p.workspace_b_id : p.workspace_a_id;
+      const partnerWsName = isA ? p.workspace_b_name : p.workspace_a_name;
+      const liveNet = registeredManagersNetwork.find((m) => m.workspaceId === partnerWsId);
+      const mergedStations = [
+        ...(liveNet?.stations || []),
+        ...((isA ? p.workspace_b_stations : p.workspace_a_stations) || []),
+      ];
+      for (const st of mergedStations) {
+        if (!st?.id || seenIds.has(st.id)) continue;
+        seenIds.add(st.id);
+        list.push({
+          id: st.id,
+          name: st.name,
+          city: st.city || st.name,
+          country: st.country,
+          partnerWorkspaceId: partnerWsId,
+          partnerWorkspaceName: liveNet?.workspaceName || partnerWsName || 'شريك معتمد',
+        });
+      }
+    }
+    return list;
+  }, [currentWorkspace?.id, managerPartnerships, registeredManagersNetwork]);
 
   // Registration Mode:
   // 'single': مرسل واحد -> كولي واحد -> مستلم واحد
@@ -81,6 +123,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
   const [originStationId, setOriginStationId] = useState<string>(initialOriginId);
   const [destinationStationId, setDestinationStationId] = useState<string>(
     stations.find((s) => s.id !== initialOriginId)?.id ||
+      partnerDestinationStations[0]?.id ||
       stations[1]?.id ||
       ''
   );
@@ -141,6 +184,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
   // تصفير جميع الحقول عند فتح النافذة من جديد حتى لا تبقى أسماء المرسل والمستلم السابقة
   useEffect(() => {
     if (isOpen) {
+      loadRegisteredManagersNetwork().catch(() => {});
       setSavedCustomers(getSavedCustomersList(currentWorkspace?.id));
       setRouteTariffs(getSavedRouteTariffs(currentWorkspace?.id));
 
@@ -151,7 +195,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           ? selectedStationId
           : stations[0]?.id || '';
       const destId =
-        stations.find((s) => s.id !== origId)?.id || stations[0]?.id || '';
+        stations.find((s) => s.id !== origId)?.id ||
+        partnerDestinationStations[0]?.id ||
+        stations[0]?.id ||
+        '';
 
       setOriginStationId(origId);
       setDestinationStationId(destId);
@@ -188,6 +235,26 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
     }
   }, [isOpen, currentWorkspace?.id, selectedStationId]);
 
+  // If user has 1 station and partnerDestinationStations loads asynchronously, auto-select first partner station
+  useEffect(() => {
+    if (
+      isOpen &&
+      stations.length === 1 &&
+      partnerDestinationStations.length > 0 &&
+      (!destinationStationId || destinationStationId === originStationId)
+    ) {
+      const firstPartnerStId = partnerDestinationStations[0].id;
+      setDestinationStationId(firstPartnerStId);
+      setMultiItems((prev) =>
+        prev.map((it) =>
+          !it.destinationStationId || it.destinationStationId === originStationId
+            ? { ...it, destinationStationId: firstPartnerStId }
+            : it
+        )
+      );
+    }
+  }, [isOpen, stations.length, partnerDestinationStations, destinationStationId, originStationId]);
+
   useEffect(() => {
     const st = stations.find((s) => s.id === originStationId);
     if (st) {
@@ -196,7 +263,16 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
   }, [originStationId, stations]);
 
   const originSt = stations.find((s) => s.id === originStationId);
-  const destSt = stations.find((s) => s.id === destinationStationId);
+  const selectedPartnerDest = partnerDestinationStations.find((s) => s.id === destinationStationId);
+  const destSt =
+    stations.find((s) => s.id === destinationStationId) ||
+    (selectedPartnerDest
+      ? ({
+          id: selectedPartnerDest.id,
+          name: selectedPartnerDest.name,
+          city: selectedPartnerDest.city,
+        } as any)
+      : undefined);
 
   const shippingEstimate = useMemo(() => {
     return calculateShippingEstimate({
@@ -687,14 +763,14 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           </div>
         )}
 
-        {/* Warning if fewer than 2 stations */}
-        {stations.length < 2 && (
+        {/* Warning if fewer than 2 total available stations (own + partner stations) */}
+        {stations.length + partnerDestinationStations.length < 2 && (
           <div className="bg-amber-950/70 border border-amber-500/50 p-3 rounded-2xl text-xs text-amber-200 flex items-center gap-2 font-bold shrink-0">
             <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
             <span>
               {stations.length === 0
                 ? 'يرجى فتح وتسمية محطة واحدة على الأقل قبل تسجيل الإرساليات'
-                : 'تنبيه: يتطلب تسجيل الشحنة محطة انطلاق ومحطة وصول مختلفتين. يرجى إضافة محطة ثانية عبر لوحة التحكم أو جولة الإعداد.'}
+                : 'تنبيه: لديك محطة واحدة فقط حالياً. لإرسال الكوليات يمكنك إما إضافة محطة ثانية لشركتك، أو عقد شراكة مع مدير آخر في "غرفة الشراكة" لتظهر محطاته هنا كوجهة وصول.'}
             </span>
           </div>
         )}
@@ -705,7 +781,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
             <span className="font-bold text-[#F5D799] flex items-center gap-1.5 text-xs">
               <MapPin className="w-3.5 h-3.5 text-[#F3A952]" />
-              <span>خط النقل والمحطات:</span>
+              <span>خط النقل والمحطات (الداخلية أو محطات الشركاء):</span>
             </span>
             <div className="grid grid-cols-2 gap-2">
               <div className={registrationMode === 'multi' && multiSubMode === 'multi_receivers' ? 'col-span-2' : ''}>
@@ -730,7 +806,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               {(registrationMode === 'single' || multiSubMode === 'one_receiver') && (
                 <div>
                   <label className="block text-[#C8B08A] mb-1 font-bold text-[11px]">
-                    محطة الوصول:
+                    محطة الوصول (شركتنا أو شريك):
                   </label>
                   <select
                     value={destinationStationId}
@@ -738,15 +814,42 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-[#FFF8EB] font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
                     required
                   >
-                    {stations.map((st) => (
-                      <option key={st.id} value={st.id}>
-                        {st.name} ({st.city})
-                      </option>
-                    ))}
+                    {stations.length > 0 && (
+                      <optgroup label="🏠 محطات شركتنا الداخلية">
+                        {stations.map((st) => (
+                          <option key={st.id} value={st.id}>
+                            🏠 {st.name} ({st.city})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {partnerDestinationStations.length > 0 && (
+                      <optgroup label="🤝 محطات الشركاء (غرفة الشراكة)">
+                        {partnerDestinationStations.map((pst) => (
+                          <option key={pst.id} value={pst.id}>
+                            🤝 {pst.name} ({pst.city}) — [{pst.partnerWorkspaceName}]
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
               )}
             </div>
+
+            {selectedPartnerDest && (registrationMode === 'single' || multiSubMode === 'one_receiver') && (
+              <div className="p-2.5 rounded-xl bg-purple-950/75 border border-purple-400/50 text-purple-100 text-[11px] font-bold flex items-start gap-2 animate-fadeIn">
+                <span className="text-sm shrink-0">🤝</span>
+                <span>
+                  وجهة غرفة الشراكة: سيتم توجيه هذا الكولي مباشرة إلى محطة{' '}
+                  <strong className="text-[#F5C84C]">
+                    "{selectedPartnerDest.name} ({selectedPartnerDest.city})"
+                  </strong>{' '}
+                  التابعة للشريك <strong className="text-purple-200">"{selectedPartnerDest.partnerWorkspaceName}"</strong>.
+                  (يظهر هذا الكولي فقط لعامل تلك المحطة المستقبلة وللمدير).
+                </span>
+              </div>
+            )}
           </div>
 
           {/* 2. Quick VIP / Merchant Picker (Carnet Clients & Tarifs VIP) */}
@@ -1249,11 +1352,24 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                             }
                             className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white font-bold text-xs"
                           >
-                            {stations.map((st) => (
-                              <option key={st.id} value={st.id}>
-                                {st.name} ({st.city})
-                              </option>
-                            ))}
+                            {stations.length > 0 && (
+                              <optgroup label="🏠 محطات شركتنا الداخلية">
+                                {stations.map((st) => (
+                                  <option key={st.id} value={st.id}>
+                                    🏠 {st.name} ({st.city})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {partnerDestinationStations.length > 0 && (
+                              <optgroup label="🤝 محطات الشركاء (غرفة الشراكة)">
+                                {partnerDestinationStations.map((pst) => (
+                                  <option key={pst.id} value={pst.id}>
+                                    🤝 {pst.name} ({pst.city}) — [{pst.partnerWorkspaceName}]
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                         </div>
 

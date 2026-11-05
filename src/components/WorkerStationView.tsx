@@ -60,6 +60,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     executeCurrencyExchange,
     moneyTransfers,
     payoutMoneyTransfer,
+    updateParcelStatus,
     hideAmounts,
     showToast,
   } = useApp();
@@ -79,6 +80,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   const [selectedParcelForReceipt, setSelectedParcelForReceipt] = useState<Parcel | null>(null);
   const [selectedParcelDetail, setSelectedParcelDetail] = useState<Parcel | null>(null);
   const [selectedTxDetail, setSelectedTxDetail] = useState<Transaction | null>(null);
+  const [workerParcelsTab, setWorkerParcelsTab] = useState<'incoming' | 'outgoing'>('incoming');
 
   // Collapsible sections state (collapsed by default)
   const [isUnclaimedOpen, setIsUnclaimedOpen] = useState<boolean>(false);
@@ -100,13 +102,33 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
 
   // Parcels related to this station (including partnership parcels addressed to this station)
   const stationParcels = useMemo(() => {
+    if (!currentStation?.id) return [];
     return parcels.filter(
       (p) =>
-        p.origin_station_id === currentStation?.id ||
-        p.destination_station_id === currentStation?.id ||
-        p.partner_destination_station_id === currentStation?.id
+        p.origin_station_id === currentStation.id ||
+        p.destination_station_id === currentStation.id ||
+        p.partner_destination_station_id === currentStation.id
     );
   }, [parcels, currentStation?.id]);
+
+  // Incoming parcels strictly addressed to this worker's station
+  const stationIncomingParcels = useMemo(() => {
+    if (!currentStation?.id) return [];
+    return stationParcels.filter(
+      (p) =>
+        (p.destination_station_id === currentStation.id ||
+          p.partner_destination_station_id === currentStation.id) &&
+        p.status !== 'cancelled'
+    );
+  }, [stationParcels, currentStation?.id]);
+
+  // Outgoing parcels strictly sent from this worker's station
+  const stationOutgoingParcels = useMemo(() => {
+    if (!currentStation?.id) return [];
+    return stationParcels.filter(
+      (p) => p.origin_station_id === currentStation.id && p.status !== 'cancelled'
+    );
+  }, [stationParcels, currentStation?.id]);
 
   // Unclaimed arrived parcels at this station
   const arrivedUncollectedParcels = useMemo(() => {
@@ -667,6 +689,209 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           <QrCode className="w-4 h-4 shrink-0" />
           <span>مسح كولي بالكاميرا (تحقق واش ديال المحطة أو غرفة الشراكة)</span>
         </button>
+      </div>
+
+      {/* 4.B DEDICATED WORKER STATION PARCELS (INCOMING & OUTGOING - STRICTLY FOR THIS STATION ONLY) */}
+      <div className="luxury-card rounded-[24px] p-4 sm:p-5 space-y-3.5">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Package className="w-5 h-5 text-[#F5C84C] shrink-0" />
+            <div>
+              <h3 className="text-sm sm:text-base font-black text-white">
+                كوليات محطة {currentStation.name} ({stationParcels.length})
+              </h3>
+              <p className="text-[10px] text-white/75 font-bold">
+                تظهر هنا فقط الكوليات الواردة لمحطتك أو المرسلة منها (الداخلية + غرفة الشراكة)
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onGoToParcels}
+            className="btn-cancel px-3 py-1.5 rounded-xl text-[11px] font-black cursor-pointer"
+          >
+            إدارة الكوليات ←
+          </button>
+        </div>
+
+        {/* Incoming vs Outgoing Tabs for this Worker's Station */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setWorkerParcelsTab('incoming')}
+            className={`py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer ${
+              workerParcelsTab === 'incoming' ? 'btn-gold' : 'btn-cancel'
+            }`}
+          >
+            <ArrowDownLeft className="w-4 h-4 shrink-0" />
+            <span>📥 واردة لمحطتي ({stationIncomingParcels.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setWorkerParcelsTab('outgoing')}
+            className={`py-2 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer ${
+              workerParcelsTab === 'outgoing' ? 'btn-gold' : 'btn-cancel'
+            }`}
+          >
+            <ArrowUpRight className="w-4 h-4 shrink-0" />
+            <span>📤 صادرة من محطتي ({stationOutgoingParcels.length})</span>
+          </button>
+        </div>
+
+        {(() => {
+          const activeList =
+            workerParcelsTab === 'incoming' ? stationIncomingParcels : stationOutgoingParcels;
+
+          if (activeList.length === 0) {
+            return (
+              <div className="py-6 px-4 rounded-2xl bg-black/50 border border-white/10 text-center text-xs text-white/75 font-bold">
+                {workerParcelsTab === 'incoming'
+                  ? `لا توجد كوليات واردة موجهة إلى محطة "${currentStation.name}" حالياً.`
+                  : `لا توجد كوليات صادرة من محطة "${currentStation.name}" حالياً.`}
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-0.5">
+              {activeList.slice(0, 12).map((p) => {
+                const pOwn = getParcelSourceOwnershipInfo(
+                  p,
+                  currentWorkspace?.id,
+                  currentWorkspace?.name
+                );
+                const rem = Math.max(
+                  0,
+                  Math.round(((p.amount_due || 0) - (p.amount_paid || 0)) * 100) / 100
+                );
+                const isDestForMe =
+                  p.destination_station_id === currentStation.id ||
+                  p.partner_destination_station_id === currentStation.id;
+
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setSelectedParcelDetail(p)}
+                    className={`p-3 rounded-2xl border transition cursor-pointer space-y-2 ${
+                      pOwn.isPartnership
+                        ? 'bg-purple-950/35 hover:bg-purple-950/50 border-purple-400/50'
+                        : 'bg-black/55 hover:bg-black/75 border-white/15'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            dir="ltr"
+                            className="font-mono font-black text-xs text-[#F5C84C] bg-black/70 px-2 py-0.5 rounded-lg border border-[#F5C84C]/35"
+                          >
+                            {formatTrackingCodeNumeric(p.tracking_code, p.parcel_number)}
+                          </span>
+
+                          <span
+                            className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
+                              pOwn.isPartnership
+                                ? 'bg-purple-950/90 text-purple-200 border-purple-400/60'
+                                : 'bg-emerald-950/75 text-emerald-300 border-emerald-500/40'
+                            }`}
+                          >
+                            {pOwn.shortBadgeLabel}
+                          </span>
+                        </div>
+
+                        <p className="text-xs font-extrabold text-white break-words">
+                          المستلم: {p.receiver_name} ({p.receiver_phone}) • المرسل: {p.sender_name}
+                        </p>
+
+                        <p className="text-[11px] text-white/80 font-bold">
+                          📍 من: <span className="text-[#F5C84C]">{p.origin_station_name}</span> ➔ إلى:{' '}
+                          <span className="text-emerald-300">
+                            {p.partner_destination_station_name || p.destination_station_name}
+                          </span>{' '}
+                          • المحتوى: {p.description}
+                        </p>
+                      </div>
+
+                      <div className="shrink-0 text-left space-y-1">
+                        <span
+                          dir="ltr"
+                          className="inline-block px-2.5 py-1 rounded-full gold-pill font-mono font-black text-xs"
+                        >
+                          {hideAmounts ? '••••' : (p.amount_due || 0).toLocaleString()} {p.currency}
+                        </span>
+                        <span
+                          className={`block text-[10px] font-black text-center px-2 py-0.5 rounded-md ${
+                            rem > 0
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          }`}
+                        >
+                          {rem > 0 ? `باقي: ${rem} ${p.currency}` : 'خالص ✓'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/10"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="text-[10px] font-black text-white/80">
+                        الحالة:{' '}
+                        <strong className="text-[#F5C84C]">
+                          {p.status === 'delivered'
+                            ? '✓ تم التسليم للمستلم'
+                            : p.status === 'arrived'
+                            ? '📦 فـ ستوك المحطة (جاهز للتسليم)'
+                            : p.status === 'in_transit'
+                            ? '🚚 في الطريق'
+                            : '📝 مسجل في المحطة'}
+                        </strong>
+                      </span>
+
+                      <div className="flex items-center gap-1.5">
+                        {isDestForMe && (p.status === 'in_transit' || p.status === 'registered') && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await updateParcelStatus(
+                                p.id,
+                                'arrived',
+                                `تم استلام الكولي في ستوك محطة ${currentStation.name}`
+                              );
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] cursor-pointer"
+                          >
+                            📥 تأكيد الوصول للستوك
+                          </button>
+                        )}
+
+                        {isDestForMe && p.status === 'arrived' && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedParcelDetail(p)}
+                            className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] cursor-pointer"
+                          >
+                            ✓ تسليم للمستلم
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedParcelDetail(p)}
+                          className="btn-cancel px-2.5 py-1 rounded-xl text-[11px] font-bold cursor-pointer"
+                        >
+                          التفاصيل والتذكرة
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
 
       {/* 5. COLLAPSIBLE: "آخر العمليات (عدد العمليات)" AT BOTTOM */}

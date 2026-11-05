@@ -1468,8 +1468,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!currentUser) return null;
     const assignment = stationWorkers.find(sw => sw.user_id === currentUser.id);
     const memberEntry = workspaceMembers.find(m => m.user_id === currentUser.id);
-    return assignment?.station_id || memberEntry?.station_id || visibleStations[0]?.id || null;
-  }, [currentUser, stationWorkers, workspaceMembers, visibleStations]);
+    const explicitStId =
+      assignment?.station_id ||
+      memberEntry?.station_id ||
+      (currentUser as any)?.station_id ||
+      null;
+    if (userRole === 'worker') {
+      return explicitStId || (visibleStations.length === 1 ? visibleStations[0].id : null);
+    }
+    return explicitStId || visibleStations[0]?.id || null;
+  }, [currentUser, stationWorkers, workspaceMembers, visibleStations, userRole]);
 
   useEffect(() => {
     if (userRole === 'worker' && userAssignedStationId) {
@@ -1501,7 +1509,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // If worker: strictly isolate to their assigned station in their own workspace
       if (userRole === 'worker') {
-        if (userAssignedStationId && tx.station_id !== userAssignedStationId) return false;
+        if (!userAssignedStationId || tx.station_id !== userAssignedStationId) return false;
       }
 
       return true;
@@ -1578,14 +1586,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         // منع مشاركة البيانات التجريبية مع المدراء المتعاونين نهائياً
         if (pWs !== myWsId && p.is_demo) return false;
 
-        // If worker: strictly isolate to parcels originating or arriving at their assigned station
+        // If worker: strictly isolate to parcels originating or arriving at their specific assigned station (including partnership parcels)
         if (userRole === 'worker') {
           if (pWs !== myWsId) return false;
-          if (userAssignedStationId) {
-            const isOrigin = p.origin_station_id === userAssignedStationId;
-            const isDest = p.destination_station_id === userAssignedStationId;
-            if (!isOrigin && !isDest) return false;
-          }
+          if (!userAssignedStationId) return false;
+          const isOrigin = p.origin_station_id === userAssignedStationId;
+          const isDest =
+            p.destination_station_id === userAssignedStationId ||
+            p.partner_destination_station_id === userAssignedStationId;
+          if (!isOrigin && !isDest) return false;
         }
 
         return true;
@@ -1610,7 +1619,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const myWsId = currentWorkspace.id;
     return allTrips.filter(t => {
       if (t.workspace_id !== myWsId) return false;
-      if (userRole === 'worker' && userAssignedStationId) {
+      if (userRole === 'worker') {
+        if (!userAssignedStationId) return false;
         const isOrigin = t.origin_station_id === userAssignedStationId;
         const isDest = t.destination_station_id === userAssignedStationId;
         if (!isOrigin && !isDest) return false;
@@ -4941,8 +4951,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const originSt = stations.find(s => s.id === data.origin_station_id);
-    const destSt = stations.find(s => s.id === data.destination_station_id);
+    const ownDestSt = stations.find(s => s.id === data.destination_station_id);
     const wsId = currentWorkspace?.id || 'ws-default';
+
+    // Check if the selected destination station belongs to an active partner in غرفة الشراكة
+    let partnerDestMeta: {
+      partnerWorkspaceId: string;
+      partnerWorkspaceName: string;
+      stationId: string;
+      stationName: string;
+      stationCity: string;
+    } | null = null;
+
+    if (!ownDestSt) {
+      for (const p of managerPartnerships) {
+        if (p.status !== 'active') continue;
+        const isA = p.workspace_a_id === wsId;
+        const pWsId = isA ? p.workspace_b_id : p.workspace_a_id;
+        const pWsName = isA ? p.workspace_b_name : p.workspace_a_name;
+        const netEntry = registeredManagersNetwork.find(m => m.workspaceId === pWsId);
+        const combinedStations = [
+          ...(netEntry?.stations || []),
+          ...((isA ? p.workspace_b_stations : p.workspace_a_stations) || []),
+        ];
+        const matchedSt = combinedStations.find(st => st.id === data.destination_station_id);
+        if (matchedSt) {
+          partnerDestMeta = {
+            partnerWorkspaceId: pWsId,
+            partnerWorkspaceName: netEntry?.workspaceName || pWsName || 'شركة شريكة',
+            stationId: matchedSt.id,
+            stationName: matchedSt.name,
+            stationCity: matchedSt.city || matchedSt.name,
+          };
+          break;
+        }
+      }
+    }
+
+    const destStationName = ownDestSt?.name || partnerDestMeta?.stationName || 'محطة الوصول';
+    const destStationCity = ownDestSt?.city || partnerDestMeta?.stationCity || destStationName;
 
     let parcelNumber: number;
     let tracking_code: string;
@@ -4974,12 +5021,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       origin_station_id: data.origin_station_id,
       destination_station_id: data.destination_station_id,
       origin_station_name: originSt?.name || 'محطة الانطلاق',
-      destination_station_name: destSt?.name || 'محطة الوصول',
+      destination_station_name: destStationName,
       sender_name: data.sender_name.trim(),
       sender_phone: data.sender_phone.trim(),
       receiver_name: data.receiver_name.trim(),
       receiver_phone: data.receiver_phone.trim(),
-      route: (data.route || '').trim() || `${originSt?.city} ➔ الكركرات ➔ ${destSt?.city}`,
+      route: (data.route || '').trim() || `${originSt?.city || originSt?.name || ''} ➔ الكركرات ➔ ${destStationCity}`,
       description: data.description.trim(),
       category: data.category || 'طرد بضائع',
       items_count: Number(data.items_count) || 1,
@@ -4995,13 +5042,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       condition,
       condition_notes: conditionNotes,
       payment_status: amountPaid >= amountDue ? 'paid' : (amountPaid > 0 ? 'partial' : 'unpaid'),
+      ...(partnerDestMeta
+        ? {
+            is_partnership_parcel: true,
+            partner_origin_workspace_id: wsId,
+            partner_origin_workspace_name: currentWorkspace?.name || 'شركتنا',
+            partner_workspace_id: partnerDestMeta.partnerWorkspaceId,
+            partner_workspace_name: partnerDestMeta.partnerWorkspaceName,
+            partner_destination_station_id: partnerDestMeta.stationId,
+            partner_destination_station_name: partnerDestMeta.stationName,
+          }
+        : {}),
       status_history: [
         {
           status: parcelStatus,
           timestamp: new Date().toISOString(),
           changed_by_id: currentUser.id,
           changed_by_name: currentUser.name,
-          notes: 'تسجيل الكولي في المحطة',
+          notes: partnerDestMeta
+            ? `تسجيل الكولي وإرساله عبر غرفة الشراكة إلى محطة "${partnerDestMeta.stationName}" (${partnerDestMeta.partnerWorkspaceName})`
+            : 'تسجيل الكولي في المحطة',
           condition,
           condition_notes: conditionNotes || undefined
         }
@@ -5026,6 +5086,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setAllParcels(prev => [newParcel, ...prev]);
+    allParcelsRef.current = [newParcel, ...allParcelsRef.current];
 
     if (isSupabaseConfigured()) {
       const synced = await parcelService.syncParcelToCloud(
@@ -5037,11 +5098,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    // Sync to Firebase Firestore
+    // Sync to Firebase Firestore (and to partner's specific receiving station if partnership parcel)
     if (firebaseSyncService.isAvailable()) {
       firebaseSyncService.syncParcel(newParcel.workspace_id, newParcel).catch(err => {
         console.warn('Firebase parcel sync error:', err);
       });
+      if (partnerDestMeta) {
+        firebaseSyncService
+          .syncPartnerParcel(partnerDestMeta.partnerWorkspaceId, newParcel)
+          .catch(err => {
+            console.warn('Firebase partner parcel sync error:', err);
+          });
+      }
       firebaseSyncService
         .logPlatformActivity({
           workspace_id: newParcel.workspace_id,
@@ -5066,13 +5134,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         amount: amountPaid,
         currency: newParcel.currency,
         phone_number: newParcel.sender_phone,
-        reason: `أجرة شحن الكولي [${newParcel.tracking_code}] إلى ${destSt?.city}`,
+        reason: `أجرة شحن الكولي [${newParcel.tracking_code}] إلى ${destStationCity}`,
         note: `شحن ${newParcel.items_count} طرد - ${newParcel.description}`,
         parcel_id: newParcel.id,
       });
     }
 
-    showToast(`تم تسجيل الإرسالية [${tracking_code}] بنجاح`, 'success');
+    showToast(
+      partnerDestMeta
+        ? `🤝 تم تسجيل الإرسالية [${tracking_code}] وتوجيهها إلى محطة "${partnerDestMeta.stationName}" (${partnerDestMeta.partnerWorkspaceName})`
+        : `تم تسجيل الإرسالية [${tracking_code}] بنجاح`,
+      'success'
+    );
     return { success: true, parcel: newParcel };
   };
 
@@ -5128,9 +5201,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: msg };
     }
 
-    // قيد صلاحية العامل حسب محطته فقط
+    // قيد صلاحية العامل حسب محطته فقط (شامل محطة الوجهة لكوليات الشراكة)
     if (userRole === 'worker' && userAssignedStationId) {
-      if ((status === 'arrived' || status === 'delivered') && parcel.destination_station_id !== userAssignedStationId) {
+      const isMyDestStation =
+        parcel.destination_station_id === userAssignedStationId ||
+        parcel.partner_destination_station_id === userAssignedStationId;
+      if ((status === 'arrived' || status === 'delivered') && !isMyDestStation) {
         const msg = `لا يمكنك استلام أو تسليم هذا الكولي لأنه موجه إلى محطة "${parcel.destination_station_name}"`;
         showToast(msg, 'error');
         return { success: false, error: msg };
@@ -5185,8 +5261,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const codAmount = parcel.cod_amount ?? 0;
       const isComputedFromShipping = codAmount > 0 && codAmount === Math.max(0, (parcel.amount_due || 0) - (parcel.amount_paid || 0));
       if (codAmount > 0 && !isComputedFromShipping) {
+        const destStIdForCod =
+          userRole === 'worker' && userAssignedStationId
+            ? userAssignedStationId
+            : parcel.partner_destination_station_id || parcel.destination_station_id;
         await createTransaction({
-          station_id: parcel.destination_station_id,
+          station_id: destStIdForCod,
           type: 'parcel_cod_collection',
           amount: codAmount,
           currency: parcel.currency,
@@ -5447,7 +5527,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     // Check role / station authorization: admin or worker assigned to destination station
-    if (userRole === 'worker' && userAssignedStationId && userAssignedStationId !== parcel.destination_station_id) {
+    if (
+      userRole === 'worker' &&
+      userAssignedStationId &&
+      userAssignedStationId !== parcel.destination_station_id &&
+      userAssignedStationId !== parcel.partner_destination_station_id
+    ) {
       return { success: false, error: 'يمكن فقط لعامل محطة الوجهة أو مدير مساحة العمل بدء إرجاع هذا الطرد' };
     }
 
@@ -5512,6 +5597,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (firebaseSyncService.isAvailable()) {
       firebaseSyncService.syncParcel(updatedParcel.workspace_id, updatedParcel).catch(() => {});
+      const counterpartWsId =
+        updatedParcel.partner_origin_workspace_id && updatedParcel.partner_origin_workspace_id !== updatedParcel.workspace_id
+          ? updatedParcel.partner_origin_workspace_id
+          : updatedParcel.partner_workspace_id && updatedParcel.partner_workspace_id !== updatedParcel.workspace_id
+          ? updatedParcel.partner_workspace_id
+          : null;
+      if (counterpartWsId) {
+        firebaseSyncService.syncPartnerParcelStatusBack(counterpartWsId, updatedParcel.id, updatedParcel).catch(() => {});
+      }
     }
 
     showToast(`تم تحويل الطرد [${parcel.tracking_code}] إلى مسار الإرجاع للمرسل`, 'info');
@@ -5607,6 +5701,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (firebaseSyncService.isAvailable()) {
       firebaseSyncService.syncParcel(updatedParcel.workspace_id, updatedParcel).catch(() => {});
+      const counterpartWsId =
+        updatedParcel.partner_origin_workspace_id && updatedParcel.partner_origin_workspace_id !== updatedParcel.workspace_id
+          ? updatedParcel.partner_origin_workspace_id
+          : updatedParcel.partner_workspace_id && updatedParcel.partner_workspace_id !== updatedParcel.workspace_id
+          ? updatedParcel.partner_workspace_id
+          : null;
+      if (counterpartWsId) {
+        firebaseSyncService.syncPartnerParcelStatusBack(counterpartWsId, updatedParcel.id, updatedParcel).catch(() => {});
+      }
     }
 
     // If a return fee was paid by the sender at handover, record a normal cash_in/parcel_shipping_fee voucher (no automatic refund of original payment)

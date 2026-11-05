@@ -616,11 +616,14 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                   {(['registered', 'in_transit', 'arrived', 'delivered'] as ParcelStatus[]).map(st => {
                     const isOriginStage = st === 'registered' || st === 'in_transit';
                     const isDestStage = st === 'arrived' || st === 'delivered';
+                    const isWorkerDestMatch =
+                      parcel.destination_station_id === workerStationId ||
+                      parcel.partner_destination_station_id === workerStationId;
                     const isDisabledForWorker =
                       userRole === 'worker' &&
                       Boolean(workerStationId) &&
                       ((isOriginStage && parcel.origin_station_id !== workerStationId) ||
-                        (isDestStage && parcel.destination_station_id !== workerStationId));
+                        (isDestStage && !isWorkerDestMatch));
 
                     const isDeliveryBlocked =
                       st === 'delivered' &&

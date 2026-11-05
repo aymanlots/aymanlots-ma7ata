@@ -125,17 +125,26 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
   const myCleanPhone = (currentUser?.phone || currentWorkspace?.owner_phone || '').replace(/[^0-9]/g, '');
   const myCleanEmail = (currentUser?.email || currentWorkspace?.owner_email || '').trim().toLowerCase();
 
-  // Helper to determine partner info from partnership
+  // Helper to determine partner info from partnership (merging live stations from network directory)
   const getPartnerInfo = (p: ManagerPartnership) => {
     const isA = p.workspace_a_id === myWsId;
+    const partnerWsId = isA ? p.workspace_b_id : p.workspace_a_id;
+    const liveEntry = registeredManagersNetwork.find((m) => m.workspaceId === partnerWsId);
+    const storedStations = (isA ? p.workspace_b_stations : p.workspace_a_stations) || [];
+    const mergedStationsMap = new Map<string, any>();
+    for (const st of [...(liveEntry?.stations || []), ...storedStations]) {
+      if (st?.id && !mergedStationsMap.has(st.id)) {
+        mergedStationsMap.set(st.id, st);
+      }
+    }
     return {
-      workspaceId: isA ? p.workspace_b_id : p.workspace_a_id,
-      workspaceName: isA ? p.workspace_b_name : p.workspace_a_name,
-      ownerName: isA ? p.workspace_b_owner_name : p.workspace_a_owner_name,
-      phone: isA ? p.workspace_b_phone : p.workspace_a_phone,
-      whatsapp: isA ? p.workspace_b_whatsapp : p.workspace_a_whatsapp,
-      email: isA ? p.workspace_b_email : p.workspace_a_email,
-      stations: isA ? p.workspace_b_stations : p.workspace_a_stations,
+      workspaceId: partnerWsId,
+      workspaceName: liveEntry?.workspaceName || (isA ? p.workspace_b_name : p.workspace_a_name),
+      ownerName: liveEntry?.ownerName || (isA ? p.workspace_b_owner_name : p.workspace_a_owner_name),
+      phone: liveEntry?.phone || (isA ? p.workspace_b_phone : p.workspace_a_phone),
+      whatsapp: liveEntry?.whatsapp || (isA ? p.workspace_b_whatsapp : p.workspace_a_whatsapp),
+      email: liveEntry?.email || (isA ? p.workspace_b_email : p.workspace_a_email),
+      stations: Array.from(mergedStationsMap.values()),
     };
   };
 

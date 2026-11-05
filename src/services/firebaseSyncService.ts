@@ -616,10 +616,16 @@ export const firebaseSyncService = {
     if (!this.isAvailable() || !wsId || !member.user_id) return;
     const path = `workspaces/${wsId}/members/${member.user_id}`;
     try {
+      const safeMember: Record<string, any> = { ...member };
+      delete safeMember.password;
+      if (safeMember.profile && typeof safeMember.profile === 'object') {
+        safeMember.profile = { ...safeMember.profile };
+        delete safeMember.profile.password;
+      }
       await setDoc(
         doc(db, 'workspaces', wsId, 'members', member.user_id),
         sanitizeForFirestore({
-          ...member,
+          ...safeMember,
           updated_at: new Date().toISOString(),
         }),
         { merge: true }
@@ -1725,6 +1731,13 @@ export const firebaseSyncService = {
         payment_history: updates.payment_history,
         condition: updates.condition,
         condition_notes: updates.condition_notes,
+        is_returning: updates.is_returning,
+        return_reason: updates.return_reason,
+        return_notes: updates.return_notes,
+        return_fee: updates.return_fee,
+        return_initiated_at: updates.return_initiated_at,
+        returned_to_sender_at: updates.returned_to_sender_at,
+        returned_to_sender_name: updates.returned_to_sender_name,
         updated_at: new Date().toISOString(),
       };
       Object.keys(safeUpdates).forEach((k) => {

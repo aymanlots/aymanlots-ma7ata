@@ -10,6 +10,10 @@ service cloud.firestore {
       return request.resource.data;
     }
 
+    function isReasonableDocSize() {
+      return incoming().keys().size() <= 60;
+    }
+
     // Default deny all
     match /{document=**} {
       allow read, write: if false;
@@ -27,16 +31,20 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isValidId(userId);
       allow list: if false;
-      allow create, update: if isValidId(userId) && incoming().id is string && incoming().id.size() <= 128;
+      allow create, update: if isValidId(userId)
+        && isReasonableDocSize()
+        && incoming().id is string
+        && incoming().id.size() <= 128;
       allow delete: if isValidId(userId);
     }
 
-    // 6-digit WhatsApp OTP records for password recovery (5-minute expiry & rate limit tracking)
+    // 6-digit OTP records for password recovery (rate limit tracking)
     // allow list: STRICTLY FALSE - Protected from enumeration
     match /password_reset_otps/{phone} {
       allow get: if isValidId(phone);
       allow list: if false;
       allow create, update: if isValidId(phone)
+        && isReasonableDocSize()
         && incoming().id is string
         && incoming().id.size() <= 64
         && incoming().otp_code is string
@@ -48,19 +56,28 @@ service cloud.firestore {
     // Platform-wide live activity logs (for Platform Owner monitoring)
     match /platform_activity_logs/{logId} {
       allow read: if true;
-      allow create, update: if isValidId(logId) && incoming().id is string && incoming().workspace_id is string;
+      allow create, update: if isValidId(logId)
+        && isReasonableDocSize()
+        && incoming().id is string
+        && incoming().workspace_id is string;
       allow delete: if isValidId(logId);
     }
 
     // Partnerships between managers (Cross-company collaboration network)
     match /partnerships/{partnershipId} {
       allow read: if true;
-      allow create, update: if isValidId(partnershipId) && incoming().id is string;
+      allow create, update: if isValidId(partnershipId)
+        && isReasonableDocSize()
+        && incoming().id is string
+        && incoming().workspace_a_id is string
+        && incoming().workspace_b_id is string;
       allow delete: if isValidId(partnershipId);
 
       match /settlements/{settlementId} {
         allow read: if true;
-        allow create, update: if isValidId(settlementId) && incoming().id is string;
+        allow create, update: if isValidId(settlementId)
+          && isReasonableDocSize()
+          && incoming().id is string;
         allow delete: if isValidId(settlementId);
       }
     }
@@ -68,49 +85,68 @@ service cloud.firestore {
     // Workspaces and their subcollections
     match /workspaces/{workspaceId} {
       allow get, list: if true;
-      allow create: if isValidId(workspaceId) && incoming().id is string && incoming().name is string && incoming().name.size() <= 200;
-      allow update: if isValidId(workspaceId);
+      allow create: if isValidId(workspaceId)
+        && isReasonableDocSize()
+        && incoming().id is string
+        && incoming().name is string
+        && incoming().name.size() <= 200;
+      allow update: if isValidId(workspaceId) && isReasonableDocSize();
       allow delete: if isValidId(workspaceId);
 
       // Stations
       match /stations/{stationId} {
         allow read: if true;
-        allow create, update: if isValidId(stationId) && incoming().id is string && incoming().name is string;
+        allow create, update: if isValidId(stationId)
+          && isReasonableDocSize()
+          && incoming().id is string
+          && incoming().name is string
+          && incoming().name.size() <= 150;
         allow delete: if isValidId(stationId);
       }
 
-      // Parcels (including public tracking)
+      // Parcels (including public tracking & isolated partner parcels)
       match /parcels/{parcelId} {
         allow read: if true;
-        allow create, update: if isValidId(parcelId) && incoming().id is string && incoming().tracking_code is string;
+        allow create, update: if isValidId(parcelId)
+          && isReasonableDocSize()
+          && incoming().id is string
+          && (!('tracking_code' in incoming()) || (incoming().tracking_code is string && incoming().tracking_code.size() <= 64));
         allow delete: if isValidId(parcelId);
       }
 
       // Transactions
       match /transactions/{transactionId} {
         allow read: if true;
-        allow create, update: if isValidId(transactionId) && incoming().id is string;
+        allow create, update: if isValidId(transactionId)
+          && isReasonableDocSize()
+          && incoming().id is string;
         allow delete: if isValidId(transactionId);
       }
 
       // Trips
       match /trips/{tripId} {
         allow read: if true;
-        allow create, update: if isValidId(tripId) && incoming().id is string;
+        allow create, update: if isValidId(tripId)
+          && isReasonableDocSize()
+          && incoming().id is string;
         allow delete: if isValidId(tripId);
       }
 
-      // Workspace Members (Workers & Managers)
+      // Workspace Members (Workers & Managers) — strictly forbid storing passwords in member records
       match /members/{memberId} {
         allow read: if true;
-        allow create, update: if isValidId(memberId);
+        allow create, update: if isValidId(memberId)
+          && isReasonableDocSize()
+          && !('password' in incoming());
         allow delete: if isValidId(memberId);
       }
 
       // Per-workspace activity logs
       match /activity_logs/{logId} {
         allow read: if true;
-        allow create, update: if isValidId(logId) && incoming().id is string;
+        allow create, update: if isValidId(logId)
+          && isReasonableDocSize()
+          && incoming().id is string;
         allow delete: if isValidId(logId);
       }
     }
