@@ -1646,10 +1646,10 @@ export const firebaseSyncService = {
   /**
    * Synchronizes ONLY a single dispatched partnership parcel to the partner's workspace in Firestore
    * with strict data isolation (no other parcels, cashbox, or customer records are ever shared).
+   * Preserves the real parcel tracking status (registered -> in_transit -> arrived -> delivered).
    */
   async syncPartnerParcel(partnerWorkspaceId: string, parcel: Parcel): Promise<void> {
     if (!this.isAvailable() || !partnerWorkspaceId || !parcel.id) return;
-    const path = `workspaces/${partnerWorkspaceId}/parcels/${parcel.id}`;
     try {
       const targetStationId = parcel.partner_destination_station_id || parcel.destination_station_id;
       const targetStationName = parcel.partner_destination_station_name || parcel.destination_station_name;
@@ -1665,7 +1665,9 @@ export const firebaseSyncService = {
         sender_phone: parcel.sender_phone,
         receiver_name: parcel.receiver_name,
         receiver_phone: parcel.receiver_phone,
+        route: parcel.route,
         description: parcel.description,
+        category: parcel.category,
         items_count: parcel.items_count,
         weight_kg: parcel.weight_kg,
         origin_station_id: parcel.origin_station_id,
@@ -1679,15 +1681,20 @@ export const firebaseSyncService = {
         currency: parcel.currency,
         payer: parcel.payer,
         payment_status: parcel.payment_status,
-        status: parcel.status === 'delivered' ? 'delivered' : 'arrived',
+        status: parcel.status || 'registered',
         condition: parcel.condition || 'normal',
         condition_notes: parcel.condition_notes || null,
+        current_trip_id: parcel.current_trip_id || null,
+        driver_name: parcel.driver_name || null,
+        vehicle_plate: parcel.vehicle_plate || null,
         status_history: parcel.status_history || [],
         payment_history: parcel.payment_history || [],
         created_by: parcel.created_by,
         creator_name: parcel.creator_name,
         created_at: parcel.created_at,
-        arrived_at: parcel.arrived_at || new Date().toISOString(),
+        arrived_at: parcel.arrived_at || null,
+        delivered_at: parcel.delivered_at || null,
+        delivered_to: parcel.delivered_to || null,
         updated_at: new Date().toISOString(),
         is_partnership_parcel: true,
         is_collaborator_data: true,
@@ -1711,8 +1718,8 @@ export const firebaseSyncService = {
   },
 
   /**
-   * Synchronizes status/payment updates on a partnership parcel back to the partner's copy
-   * so both managers see delivery and COD collection in real-time.
+   * Synchronizes status/trip/payment updates on a partnership parcel back to the partner's copy
+   * so both managers and their assigned station workers see trip loading, departure, arrival, and delivery in real-time.
    */
   async syncPartnerParcelStatusBack(
     targetWorkspaceId: string,
@@ -1725,6 +1732,10 @@ export const firebaseSyncService = {
         status: updates.status,
         amount_paid: updates.amount_paid,
         payment_status: updates.payment_status,
+        current_trip_id: updates.current_trip_id,
+        driver_name: updates.driver_name,
+        vehicle_plate: updates.vehicle_plate,
+        arrived_at: updates.arrived_at,
         delivered_at: updates.delivered_at,
         delivered_to: updates.delivered_to,
         status_history: updates.status_history,
@@ -1751,5 +1762,71 @@ export const firebaseSyncService = {
     } catch (err) {
       console.warn('Warning syncing partner parcel status back:', err);
     }
+  },
+
+  /**
+   * Mirrors a partnership trip (created towards a partner's station or updated upon arrival/unloading)
+   * to the counterpart partner workspace so both managers and the destination station worker can track and unload the trip.
+   */
+  async syncPartnerTrip(targetWorkspaceId: string, trip: Trip): Promise<void> {
+    if (!this.isAvailable() || !targetWorkspaceId || !trip.id) return;
+    try {
+      const partnerTripCopy: Trip = {
+        ...trip,
+        workspace_id: targetWorkspaceId,
+        destination_station_id: trip.partner_destination_station_id || trip.destination_station_id,
+        destination_station_name: trip.partner_destination_station_name || trip.destination_station_name,
+        is_partnership_trip: true,
+        is_collaborator_data: true,
+        collaborator_workspace_name: trip.partner_origin_workspace_name || 'شركة شريكة',
+        updated_at: new Date().toISOString(),
+      };
+      await setDoc(
+        doc(db, 'workspaces', targetWorkspaceId, 'trips', trip.id),
+        sanitizeForFirestore(partnerTripCopy),
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Warning syncing partner trip to Firestore:', err);
+    }
+  },
+
+  /**
+   * Public tracking lookup across cloud workspaces by tracking code or numeric code
+   * so customers can track their shipment on any device without logging in.
+   */
+  async findParcelByTrackingCodeFromCloud(
+    rawCode: string
+  ): Promise<(Partial<Parcel> & { workspace_name?: string }) | null> {
+    if (!this.isAvailable() || !rawCode) return null;
+    const clean = rawCode.trim().toUpperCase().replace(/^#/, '');
+    const digitsOnly = clean.replace(/[^0-9]/g, '');
+    const numericVal = digitsOnly ? parseInt(digitsOnly, 10) : NaN;
+
+    try {
+      const wsSnap = await getDocs(collection(db, 'workspaces'));
+      for (const wsDoc of wsSnap.docs) {
+        const wsData = wsDoc.data() as Workspace & { deleted?: boolean };
+        if (wsData.deleted) continue;
+        const pSnap = await getDocs(collection(db, 'workspaces', wsDoc.id, 'parcels'));
+        for (const pDoc of pSnap.docs) {
+          const p = pDoc.data() as Parcel;
+          const pCode = String(p.tracking_code || '').toUpperCase();
+          const pDigits = pCode.replace(/[^0-9]/g, '');
+          const matchExact = pCode === clean;
+          const matchDigits = Boolean(digitsOnly && pDigits && (pDigits === digitsOnly || pDigits.endsWith(digitsOnly)));
+          const matchNum = !isNaN(numericVal) && Number(p.parcel_number) === numericVal && clean.length <= 7;
+          if (matchExact || matchDigits || matchNum) {
+            return {
+              ...p,
+              workspace_name: wsData.custom_brand_name || wsData.name || 'Sahara📦 Express',
+            };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Cloud public tracking search warning:', err);
+    }
+    return null;
   },
 };

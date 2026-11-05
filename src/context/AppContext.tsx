@@ -412,6 +412,13 @@ interface AppContextType {
     tripId: string,
     closeReason?: string
   ) => Promise<{ success: boolean; error?: string; trip?: Trip }>;
+  loadAllMatchingParcelsToTrip: (
+    tripId: string,
+    parcelIds?: string[]
+  ) => Promise<{ success: boolean; loadedCount: number; error?: string; trip?: Trip }>;
+  receiveAllParcelsInTrip: (
+    tripId: string
+  ) => Promise<{ success: boolean; receivedCount: number; error?: string; trip?: Trip }>;
 
   // Admin Management & Custom Branding & Public Tracking
   updateWorkspaceBranding: (branding: {
@@ -1622,7 +1629,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (userRole === 'worker') {
         if (!userAssignedStationId) return false;
         const isOrigin = t.origin_station_id === userAssignedStationId;
-        const isDest = t.destination_station_id === userAssignedStationId;
+        const isDest =
+          t.destination_station_id === userAssignedStationId ||
+          t.partner_destination_station_id === userAssignedStationId;
         if (!isOrigin && !isDest) return false;
       }
       return true;
@@ -5781,7 +5790,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     }
 
-    // 2. Query Supabase public RPC if configured
+    // 2. Query Firebase Firestore across workspaces so customers on any device can track their parcel
+    if (firebaseSyncService.isAvailable()) {
+      try {
+        const cloudFound = await firebaseSyncService.findParcelByTrackingCodeFromCloud(clean);
+        if (cloudFound) {
+          return {
+            success: true,
+            parcel: {
+              ...cloudFound,
+              tracking_code: formatTrackingCodeNumeric(
+                cloudFound.tracking_code || clean,
+                cloudFound.parcel_number
+              ),
+              workspace_name: cloudFound.workspace_name || 'Sahara📦 Express',
+            },
+          };
+        }
+      } catch (err) {
+        console.warn('Firebase public tracking lookup error:', err);
+      }
+    }
+
+    // 3. Query Supabase public RPC if configured
     const supabase = getSupabaseClient();
     if (supabase && isSupabaseConfigured()) {
       try {
@@ -5894,6 +5925,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // TRIPS & DISPATCH MODULE (إدارة رحلات الشحن والتفريغ بين المحطات)
   // ============================================================================
 
+  // Helper to sync trip and parcels across both own workspace and counterpart partner workspace in Firestore
+  const syncTripAndParcelsAcrossWorkspaces = (trip?: Trip, parcelsToSync: Parcel[] = []) => {
+    if (!firebaseSyncService.isAvailable()) return;
+    const myWsId = currentWorkspace?.id || '';
+
+    if (trip) {
+      firebaseSyncService.syncTrip(trip.workspace_id || myWsId, trip).catch(() => {});
+      const partnerTripWsId =
+        trip.partner_origin_workspace_id && trip.partner_origin_workspace_id !== (trip.workspace_id || myWsId)
+          ? trip.partner_origin_workspace_id
+          : trip.partner_workspace_id && trip.partner_workspace_id !== (trip.workspace_id || myWsId)
+          ? trip.partner_workspace_id
+          : null;
+      if (partnerTripWsId) {
+        firebaseSyncService.syncPartnerTrip(partnerTripWsId, trip).catch(() => {});
+      }
+    }
+
+    for (const p of parcelsToSync) {
+      firebaseSyncService.syncParcel(p.workspace_id || myWsId, p).catch(() => {});
+      const counterpartWsId =
+        p.partner_origin_workspace_id && p.partner_origin_workspace_id !== (p.workspace_id || myWsId)
+          ? p.partner_origin_workspace_id
+          : p.partner_workspace_id && p.partner_workspace_id !== (p.workspace_id || myWsId)
+          ? p.partner_workspace_id
+          : trip?.partner_workspace_id && trip.partner_workspace_id !== (p.workspace_id || myWsId)
+          ? trip.partner_workspace_id
+          : null;
+      if (counterpartWsId) {
+        if (p.partner_origin_workspace_id === (p.workspace_id || myWsId) || !p.is_collaborator_data) {
+          firebaseSyncService.syncPartnerParcel(counterpartWsId, p).catch(() => {});
+        } else {
+          firebaseSyncService.syncPartnerParcelStatusBack(counterpartWsId, p.id, p).catch(() => {});
+        }
+      }
+    }
+  };
+
   const createTrip = async (params: {
     driverName: string;
     driverPhone?: string;
@@ -5920,8 +5989,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: msg };
     }
 
+    const wsId = currentWorkspace.id;
     const originSt = stations.find(s => s.id === params.originStationId);
-    const destSt = stations.find(s => s.id === params.destinationStationId);
+    const ownDestSt = stations.find(s => s.id === params.destinationStationId);
+
+    // Check if the selected destination station belongs to an active partner in غرفة الشراكة
+    let partnerDestMeta: {
+      partnerWorkspaceId: string;
+      partnerWorkspaceName: string;
+      stationId: string;
+      stationName: string;
+      stationCity: string;
+    } | null = null;
+
+    if (!ownDestSt) {
+      for (const p of managerPartnerships) {
+        if (p.status !== 'active') continue;
+        const isA = p.workspace_a_id === wsId;
+        const pWsId = isA ? p.workspace_b_id : p.workspace_a_id;
+        const pWsName = isA ? p.workspace_b_name : p.workspace_a_name;
+        const netEntry = registeredManagersNetwork.find(m => m.workspaceId === pWsId);
+        const combinedStations = [
+          ...(netEntry?.stations || []),
+          ...((isA ? p.workspace_b_stations : p.workspace_a_stations) || []),
+        ];
+        const matchedSt = combinedStations.find(st => st.id === params.destinationStationId);
+        if (matchedSt) {
+          partnerDestMeta = {
+            partnerWorkspaceId: pWsId,
+            partnerWorkspaceName: netEntry?.workspaceName || pWsName || 'شركة شريكة',
+            stationId: matchedSt.id,
+            stationName: matchedSt.name,
+            stationCity: matchedSt.city || matchedSt.name,
+          };
+          break;
+        }
+      }
+    }
+
+    const destStationName = ownDestSt?.name || partnerDestMeta?.stationName || 'محطة الوصول';
 
     const res = tripService.createTrip(
       {
@@ -5932,7 +6038,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         originStationId: params.originStationId,
         destinationStationId: params.destinationStationId,
         originStationName: originSt?.name,
-        destinationStationName: destSt?.name,
+        destinationStationName: destStationName,
         notes: params.notes,
         fuelExpense: params.fuelExpense,
         tollExpense: params.tollExpense,
@@ -5942,11 +6048,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deductFromCashbox: params.deductFromCashbox,
         userId: currentUser.id,
         userName: currentUser.name,
+        isPartnershipTrip: Boolean(partnerDestMeta),
+        partnerOriginWorkspaceId: partnerDestMeta ? currentWorkspace.id : undefined,
+        partnerOriginWorkspaceName: partnerDestMeta ? currentWorkspace.name : undefined,
+        partnerWorkspaceId: partnerDestMeta?.partnerWorkspaceId,
+        partnerWorkspaceName: partnerDestMeta?.partnerWorkspaceName,
+        partnerDestinationStationId: partnerDestMeta?.stationId,
+        partnerDestinationStationName: partnerDestMeta?.stationName,
         onErrorToast: (msg: string) => showToast(msg, 'error')
       },
       allTrips
     );
 
+    allTripsRef.current = res.updatedList;
     setAllTrips(res.updatedList);
     setRememberedDrivers(tripService.getRememberedDrivers());
     setRememberedPlates(tripService.getRememberedPlates());
@@ -5976,14 +6090,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
 
-    // Sync to Firebase Firestore
-    if (firebaseSyncService.isAvailable() && res.trip) {
-      firebaseSyncService.syncTrip(currentWorkspace.id, res.trip).catch(err => {
-        console.warn('Firebase trip sync error:', err);
-      });
+    // Sync to Firebase Firestore (including partner's workspace if partnership trip)
+    if (res.trip) {
+      syncTripAndParcelsAcrossWorkspaces(res.trip, []);
     }
 
-    showToast(`تم إنشاء الرحلة [${res.trip.trip_code}] بنجاح`, 'success');
+    showToast(
+      partnerDestMeta
+        ? `🤝 تم إنشاء رحلة الشراكة [${res.trip.trip_code}] نحو محطة "${partnerDestMeta.stationName}" (${partnerDestMeta.partnerWorkspaceName})`
+        : `تم إنشاء الرحلة [${res.trip.trip_code}] بنجاح`,
+      'success'
+    );
     return { success: true, trip: res.trip };
   };
 
@@ -6013,6 +6130,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
 
     if (res.success && res.trip) {
+      allTripsRef.current = res.updatedTrips;
       setAllTrips(res.updatedTrips);
 
       const totalExpenses =
@@ -6078,10 +6196,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       allParcelsRef.current = res.updatedParcels;
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
-      if (firebaseSyncService.isAvailable()) {
-        if (res.trip) firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
-        if (res.parcel) firebaseSyncService.syncParcel(res.parcel.workspace_id, res.parcel).catch(() => {});
-      }
+      syncTripAndParcelsAcrossWorkspaces(res.trip, res.parcel ? [res.parcel] : []);
     }
     return {
       success: res.success,
@@ -6089,6 +6204,83 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       warning: res.warning,
       trip: res.trip,
       parcel: res.parcel
+    };
+  };
+
+  // Batch load multiple or all matching ready parcels onto a trip in 1 click (handles hundreds/thousands of parcels smoothly)
+  const loadAllMatchingParcelsToTrip = async (
+    tripId: string,
+    parcelIds?: string[]
+  ): Promise<{ success: boolean; loadedCount: number; error?: string; trip?: Trip }> => {
+    if (!currentUser) return { success: false, loadedCount: 0, error: 'غير مسجل الدخول' };
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, loadedCount: 0, error: writeCheck.error };
+
+    const targetTrip = allTripsRef.current.find(t => t.id === tripId);
+    if (!targetTrip) return { success: false, loadedCount: 0, error: 'الرحلة غير موجودة' };
+    if (targetTrip.status !== 'loading') {
+      return { success: false, loadedCount: 0, error: 'لا يمكن شحن الكوليات بعد انطلاق الرحلة' };
+    }
+    if (userRole === 'worker' && userAssignedStationId && targetTrip.origin_station_id !== userAssignedStationId) {
+      const msg = `لا يمكنك شحن الكوليات في هذه الرحلة لأنها تنطلق من محطة "${targetTrip.origin_station_name}"`;
+      showToast(msg, 'error');
+      return { success: false, loadedCount: 0, error: msg };
+    }
+
+    const destId = targetTrip.partner_destination_station_id || targetTrip.destination_station_id;
+    const candidateParcels = allParcelsRef.current.filter(p => {
+      if (targetTrip.loaded_parcel_ids.includes(p.id)) return false;
+      if (parcelIds && parcelIds.length > 0) {
+        return parcelIds.includes(p.id);
+      }
+      if (p.status !== 'registered' && p.status !== 'return_in_transit') return false;
+      if (p.origin_station_id !== targetTrip.origin_station_id && !p.is_returning) return false;
+      const pDest = p.partner_destination_station_id || p.destination_station_id;
+      return pDest === destId || p.destination_station_id === targetTrip.destination_station_id;
+    });
+
+    if (candidateParcels.length === 0) {
+      const msg = 'لا توجد كوليات جاهزة ومطابقة لهذه الوجهة لشحنها حالياً';
+      showToast(msg, 'info');
+      return { success: false, loadedCount: 0, error: msg };
+    }
+
+    let currentTrips = allTripsRef.current;
+    let currentParcels = allParcelsRef.current;
+    const modifiedParcels: Parcel[] = [];
+    let latestTrip: Trip | undefined = targetTrip;
+
+    for (const p of candidateParcels) {
+      const step = tripService.loadParcelToTrip(
+        tripId,
+        p.id,
+        { id: currentUser.id, name: currentUser.name },
+        currentTrips,
+        currentParcels,
+        userAssignedStationId || undefined
+      );
+      if (step.success && step.trip && step.parcel) {
+        currentTrips = step.updatedTrips;
+        currentParcels = step.updatedParcels;
+        latestTrip = step.trip;
+        modifiedParcels.push(step.parcel);
+      }
+    }
+
+    allTripsRef.current = currentTrips;
+    allParcelsRef.current = currentParcels;
+    setAllTrips(currentTrips);
+    setAllParcels(currentParcels);
+
+    if (modifiedParcels.length > 0) {
+      syncTripAndParcelsAcrossWorkspaces(latestTrip, modifiedParcels);
+      showToast(`⚡ تم شحن (${modifiedParcels.length}) كولي دفعة واحدة في الرحلة [${targetTrip.trip_code}] بنجاح`, 'success');
+    }
+
+    return {
+      success: modifiedParcels.length > 0,
+      loadedCount: modifiedParcels.length,
+      trip: latestTrip,
     };
   };
 
@@ -6120,11 +6312,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       allParcelsRef.current = res.updatedParcels;
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
-      if (firebaseSyncService.isAvailable()) {
-        if (res.trip) firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
-        const updatedP = res.updatedParcels.find(p => p.id === parcelId);
-        if (updatedP) firebaseSyncService.syncParcel(updatedP.workspace_id, updatedP).catch(() => {});
-      }
+      const updatedP = res.updatedParcels.find(p => p.id === parcelId);
+      syncTripAndParcelsAcrossWorkspaces(res.trip, updatedP ? [updatedP] : []);
     }
     return { success: res.success, error: res.error, trip: res.trip };
   };
@@ -6155,12 +6344,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       allParcelsRef.current = res.updatedParcels;
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
-      if (firebaseSyncService.isAvailable() && res.trip) {
-        firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
-        for (const pid of res.trip.loaded_parcel_ids) {
-          const updatedP = res.updatedParcels.find(p => p.id === pid);
-          if (updatedP) firebaseSyncService.syncParcel(updatedP.workspace_id, updatedP).catch(() => {});
-        }
+      if (res.trip) {
+        const departedParcels = res.trip.loaded_parcel_ids
+          .map(pid => res.updatedParcels.find(p => p.id === pid))
+          .filter((p): p is Parcel => Boolean(p));
+        syncTripAndParcelsAcrossWorkspaces(res.trip, departedParcels);
       }
     }
     return { success: res.success, error: res.error, trip: res.trip };
@@ -6177,7 +6365,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
     const targetTripForReceive = allTripsRef.current.find(t => t.id === tripId);
-    if (userRole === 'worker' && userAssignedStationId && targetTripForReceive && targetTripForReceive.destination_station_id !== userAssignedStationId) {
+    if (
+      userRole === 'worker' &&
+      userAssignedStationId &&
+      targetTripForReceive &&
+      targetTripForReceive.destination_station_id !== userAssignedStationId &&
+      targetTripForReceive.partner_destination_station_id !== userAssignedStationId
+    ) {
       const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTripForReceive.destination_station_name}"`;
       showToast(msg, 'error');
       return { success: false, error: msg };
@@ -6198,10 +6392,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       allParcelsRef.current = res.updatedParcels;
       setAllTrips(res.updatedTrips);
       setAllParcels(res.updatedParcels);
-      if (firebaseSyncService.isAvailable()) {
-        if (res.trip) firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
-        if (res.parcel) firebaseSyncService.syncParcel(res.parcel.workspace_id, res.parcel).catch(() => {});
-      }
+      syncTripAndParcelsAcrossWorkspaces(res.trip, res.parcel ? [res.parcel] : []);
     }
     return {
       success: res.success,
@@ -6209,6 +6400,88 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       trip: res.trip,
       parcel: res.parcel,
       allScanned: res.allScanned
+    };
+  };
+
+  // Batch receive/unload all remaining loaded parcels of a trip into destination station stock ('arrived') in 1 click
+  const receiveAllParcelsInTrip = async (
+    tripId: string
+  ): Promise<{ success: boolean; receivedCount: number; error?: string; trip?: Trip }> => {
+    if (!currentUser) return { success: false, receivedCount: 0, error: 'غير مسجل الدخول' };
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, receivedCount: 0, error: writeCheck.error };
+
+    const targetTrip = allTripsRef.current.find(t => t.id === tripId);
+    if (!targetTrip) return { success: false, receivedCount: 0, error: 'الرحلة غير موجودة' };
+    if (
+      userRole === 'worker' &&
+      userAssignedStationId &&
+      targetTrip.destination_station_id !== userAssignedStationId &&
+      targetTrip.partner_destination_station_id !== userAssignedStationId
+    ) {
+      const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTrip.destination_station_name}"`;
+      showToast(msg, 'error');
+      return { success: false, receivedCount: 0, error: msg };
+    }
+
+    const unreceivedIds = targetTrip.loaded_parcel_ids.filter(
+      pid => !targetTrip.received_parcel_ids.includes(pid)
+    );
+
+    let currentTrips = allTripsRef.current;
+    let currentParcels = allParcelsRef.current;
+    const receivedParcels: Parcel[] = [];
+    let latestTrip: Trip | undefined = targetTrip;
+
+    for (const pid of unreceivedIds) {
+      const step = tripService.receiveParcelAtDestination(
+        tripId,
+        pid,
+        'normal',
+        undefined,
+        { id: currentUser.id, name: currentUser.name },
+        currentTrips,
+        currentParcels
+      );
+      if (step.success && step.trip && step.parcel) {
+        currentTrips = step.updatedTrips;
+        currentParcels = step.updatedParcels;
+        latestTrip = step.trip;
+        receivedParcels.push(step.parcel);
+      }
+    }
+
+    // Automatically close the trip if all parcels are now received
+    if (latestTrip && latestTrip.received_parcel_ids.length >= latestTrip.loaded_parcel_ids.length) {
+      const closeRes = tripService.closeTrip(
+        tripId,
+        { id: currentUser.id, name: currentUser.name },
+        'تم تفريغ وإدخال جميع الكوليات للستوك بنجاح',
+        currentTrips
+      );
+      if (closeRes.success && closeRes.trip) {
+        currentTrips = closeRes.updatedTrips;
+        latestTrip = closeRes.trip;
+      }
+    }
+
+    allTripsRef.current = currentTrips;
+    allParcelsRef.current = currentParcels;
+    setAllTrips(currentTrips);
+    setAllParcels(currentParcels);
+
+    if (receivedParcels.length > 0 || latestTrip) {
+      syncTripAndParcelsAcrossWorkspaces(latestTrip, receivedParcels);
+      showToast(
+        `✅ تم تفريغ وإدخال (${receivedParcels.length}) كولي إلى ستوك المحطة وإغلاق الرحلة بنجاح!`,
+        'success'
+      );
+    }
+
+    return {
+      success: true,
+      receivedCount: receivedParcels.length,
+      trip: latestTrip,
     };
   };
 
@@ -6221,7 +6494,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
     const targetTripForClose = allTripsRef.current.find(t => t.id === tripId);
-    if (userRole === 'worker' && userAssignedStationId && targetTripForClose && targetTripForClose.destination_station_id !== userAssignedStationId) {
+    if (
+      userRole === 'worker' &&
+      userAssignedStationId &&
+      targetTripForClose &&
+      targetTripForClose.destination_station_id !== userAssignedStationId &&
+      targetTripForClose.partner_destination_station_id !== userAssignedStationId
+    ) {
       const msg = `لا يمكنك إغلاق هذه الرحلة لأنها متجهة إلى محطة "${targetTripForClose.destination_station_name}"`;
       showToast(msg, 'error');
       return { success: false, error: msg };
@@ -6237,8 +6516,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (res.success) {
       allTripsRef.current = res.updatedTrips;
       setAllTrips(res.updatedTrips);
-      if (firebaseSyncService.isAvailable() && res.trip) {
-        firebaseSyncService.syncTrip(res.trip.workspace_id, res.trip).catch(() => {});
+      if (res.trip) {
+        syncTripAndParcelsAcrossWorkspaces(res.trip, []);
       }
     }
     return { success: res.success, error: res.error, trip: res.trip };
@@ -8518,6 +8797,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         departTrip,
         receiveParcelAtDestination,
         closeTrip,
+        loadAllMatchingParcelsToTrip,
+        receiveAllParcelsInTrip,
         updateWorkspaceBranding,
         fetchPublicParcelTracking,
         addBalanceAdjustment,

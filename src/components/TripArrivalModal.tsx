@@ -43,12 +43,14 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
     trips,
     parcels, 
     receiveParcelAtDestination, 
+    receiveAllParcelsInTrip,
     closeTrip, 
     showToast 
   } = useApp();
 
   const [showScanner, setShowScanner] = useState(false);
   const [manualCode, setManualCode] = useState('');
+  const [isBatchReceiving, setIsBatchReceiving] = useState(false);
   
   // State for condition assignment on arrival scan
   const [scanCondition, setScanCondition] = useState<ParcelCondition>('normal');
@@ -72,6 +74,22 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
   const receivedCount = trip.received_parcel_ids.length;
   const missingCount = Math.max(0, totalCount - receivedCount);
   const isTripFinished = missingCount === 0 && totalCount > 0;
+
+  const handleBatchReceiveAll = async () => {
+    if (missingCount <= 0) return;
+    setIsBatchReceiving(true);
+    try {
+      const res = await receiveAllParcelsInTrip(trip.id);
+      if (res.success) {
+        playSuccessBeep();
+      } else {
+        playErrorBeep();
+        showToast(res.error || 'تعذر تفريغ الكوليات دفعة واحدة', 'error');
+      }
+    } finally {
+      setIsBatchReceiving(false);
+    }
+  };
 
   const handleScanOrInput = async (scannedCode: string) => {
     if (!scannedCode.trim()) return;
@@ -310,15 +328,13 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
             {trip.status !== 'closed' && missingCount > 0 && (
               <button
                 type="button"
-                onClick={async () => {
-                  const unscanned = allLoadedParcels.filter(p => !trip.received_parcel_ids.includes(p.id));
-                  for (const p of unscanned) {
-                    await handleScanOrInput(p.tracking_code);
-                  }
-                }}
-                className="text-[10px] font-black px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition cursor-pointer"
+                disabled={isBatchReceiving}
+                onClick={handleBatchReceiveAll}
+                className="text-[10px] font-black px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition cursor-pointer shadow-sm disabled:opacity-50"
               >
-                ✓ تفريغ وإدخال الكل للستوك ({missingCount})
+                {isBatchReceiving
+                  ? 'جاري التفريغ...'
+                  : `⚡ تفريغ وإدخال الكل للستوك (${missingCount}) دفعة واحدة`}
               </button>
             )}
           </div>

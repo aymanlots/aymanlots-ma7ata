@@ -472,6 +472,15 @@ export interface Trip {
   collaborator_workspace_short_id?: string;
   is_demo?: boolean;
   pending_sync?: boolean;
+
+  // حقول رحلات الشراكة بين المدراء (غرفة الشراكة)
+  is_partnership_trip?: boolean;
+  partner_origin_workspace_id?: string;
+  partner_origin_workspace_name?: string;
+  partner_workspace_id?: string;
+  partner_workspace_name?: string;
+  partner_destination_station_id?: string;
+  partner_destination_station_name?: string;
 }
 
 // السائقون وماتريكيلات العربات المحفوظة للاختيار السريع

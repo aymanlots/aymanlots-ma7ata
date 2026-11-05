@@ -362,7 +362,7 @@ export const tripService = {
     }
   },
 
-  // إنشاء رحلة جديدة
+  // إنشاء رحلة جديدة (شاملة رحلات غرفة الشراكة بين المدراء)
   createTrip(
     params: {
       workspaceId: string;
@@ -382,6 +382,13 @@ export const tripService = {
       deductFromCashbox?: boolean;
       userId: string;
       userName: string;
+      isPartnershipTrip?: boolean;
+      partnerOriginWorkspaceId?: string;
+      partnerOriginWorkspaceName?: string;
+      partnerWorkspaceId?: string;
+      partnerWorkspaceName?: string;
+      partnerDestinationStationId?: string;
+      partnerDestinationStationName?: string;
       onErrorToast?: (msg: string) => void;
     },
     allTrips: Trip[]
@@ -423,6 +430,17 @@ export const tripService = {
       creator_name: params.userName,
       created_at: now,
       updated_at: now,
+      ...(params.isPartnershipTrip
+        ? {
+            is_partnership_trip: true,
+            partner_origin_workspace_id: params.partnerOriginWorkspaceId || params.workspaceId,
+            partner_origin_workspace_name: params.partnerOriginWorkspaceName,
+            partner_workspace_id: params.partnerWorkspaceId,
+            partner_workspace_name: params.partnerWorkspaceName,
+            partner_destination_station_id: params.partnerDestinationStationId || params.destinationStationId,
+            partner_destination_station_name: params.partnerDestinationStationName || params.destinationStationName,
+          }
+        : {}),
     };
 
     // حفظ السائق واللوحة للاختيار السريع لاحقاً (محلياً وفي السحابة)
@@ -511,7 +529,14 @@ export const tripService = {
     const cleanId = parcelIdentifier.trim().toUpperCase().replace(/^#/, '');
     const numericId = parseInt(cleanId, 10);
     const parcel = allParcels.find(p => {
-      if (p.workspace_id && trip.workspace_id && p.workspace_id !== trip.workspace_id) return false;
+      const sameOrPartnerWs =
+        !p.workspace_id ||
+        !trip.workspace_id ||
+        p.workspace_id === trip.workspace_id ||
+        p.partner_workspace_id === trip.workspace_id ||
+        p.partner_origin_workspace_id === trip.workspace_id ||
+        p.is_partnership_parcel;
+      if (!sameOrPartnerWs) return false;
       return (
         matchesTrackingCode(p, parcelIdentifier) ||
         p.tracking_code.toUpperCase() === cleanId ||
@@ -605,6 +630,17 @@ export const tripService = {
       vehicle_plate: trip.vehicle_plate,
       destination_station_id: isReturnParcel ? parcel.destination_station_id : trip.destination_station_id,
       destination_station_name: isReturnParcel ? parcel.destination_station_name : trip.destination_station_name,
+      ...(trip.is_partnership_trip && trip.partner_workspace_id
+        ? {
+            is_partnership_parcel: true,
+            partner_origin_workspace_id: parcel.partner_origin_workspace_id || trip.partner_origin_workspace_id || trip.workspace_id,
+            partner_origin_workspace_name: parcel.partner_origin_workspace_name || trip.partner_origin_workspace_name,
+            partner_workspace_id: parcel.partner_workspace_id || trip.partner_workspace_id,
+            partner_workspace_name: parcel.partner_workspace_name || trip.partner_workspace_name,
+            partner_destination_station_id: parcel.partner_destination_station_id || trip.partner_destination_station_id || trip.destination_station_id,
+            partner_destination_station_name: parcel.partner_destination_station_name || trip.partner_destination_station_name || trip.destination_station_name,
+          }
+        : {}),
       status_history: [...(parcel.status_history || []), historyEntry],
       updated_at: now
     };
@@ -832,7 +868,15 @@ export const tripService = {
     const cleanId = parcelIdentifier.trim().toUpperCase().replace(/^#/, '');
     const numericId = parseInt(cleanId, 10);
     const parcel = allParcels.find(p => {
-      if (p.workspace_id && trip.workspace_id && p.workspace_id !== trip.workspace_id) return false;
+      const sameOrPartnerWs =
+        !p.workspace_id ||
+        !trip.workspace_id ||
+        p.workspace_id === trip.workspace_id ||
+        p.partner_workspace_id === trip.workspace_id ||
+        p.partner_origin_workspace_id === trip.workspace_id ||
+        p.is_partnership_parcel ||
+        trip.loaded_parcel_ids.includes(p.id);
+      if (!sameOrPartnerWs) return false;
       return (
         matchesTrackingCode(p, parcelIdentifier) ||
         p.tracking_code.toUpperCase() === cleanId ||

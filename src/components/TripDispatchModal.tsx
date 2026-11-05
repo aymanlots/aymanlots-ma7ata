@@ -43,6 +43,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
     exchangeRate,
     hideAmounts,
     loadParcelToTrip, 
+    loadAllMatchingParcelsToTrip,
     unloadParcelFromTrip, 
     departTrip, 
     updateTripExpenses,
@@ -52,6 +53,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
   const [showScanner, setShowScanner] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [isDeparting, setIsDeparting] = useState(false);
+  const [isBatchLoading, setIsBatchLoading] = useState(false);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
   // Driver Road Expenses Editing State
@@ -82,17 +84,44 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
     .map(id => parcels.find(p => p.id === id))
     .filter((p): p is Parcel => Boolean(p));
 
-  // Available registered or returning parcels at this trip's origin station ready to be loaded
+  const tripDestId = trip.partner_destination_station_id || trip.destination_station_id;
+
+  // Available registered or returning parcels at this trip's origin station ready to be loaded (including partnership parcels!)
   const availableParcelsToLoad = parcels.filter(p => {
-    if (p.is_collaborator_data) return false;
     if (p.status !== 'registered' && p.status !== 'return_in_transit') return false;
     if (trip.loaded_parcel_ids.includes(p.id)) return false;
     const isAtTripOrigin =
       p.is_returning || p.status === 'return_in_transit'
-        ? p.destination_station_id === trip.origin_station_id
+        ? p.destination_station_id === trip.origin_station_id || p.partner_destination_station_id === trip.origin_station_id
         : p.origin_station_id === trip.origin_station_id;
     return isAtTripOrigin;
   });
+
+  // Parcels specifically heading to this trip's destination station
+  const matchingRouteParcels = availableParcelsToLoad.filter(p => {
+    const targetId =
+      p.is_returning || p.status === 'return_in_transit'
+        ? p.origin_station_id
+        : p.partner_destination_station_id || p.destination_station_id;
+    return targetId === tripDestId || targetId === trip.destination_station_id;
+  });
+
+  const handleBatchLoadMatching = async () => {
+    const targetIds = (matchingRouteParcels.length > 0 ? matchingRouteParcels : availableParcelsToLoad).map(p => p.id);
+    if (targetIds.length === 0) return;
+    setIsBatchLoading(true);
+    try {
+      const res = await loadAllMatchingParcelsToTrip(trip.id, targetIds);
+      if (res.success && res.loadedCount > 0) {
+        playSuccessBeep();
+      } else {
+        playErrorBeep();
+        showToast(res.error || 'لا توجد كوليات جاهزة للشحن', 'error');
+      }
+    } finally {
+      setIsBatchLoading(false);
+    }
+  };
 
   // Calculate Trip Revenue, Road Expenses & Net Profit
   const expCurr = (trip.expense_currency as 'MAD' | 'MRU') || 'MAD';
@@ -419,18 +448,43 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
           </div>
 
           {availableParcelsToLoad.length > 0 && trip.status === 'loading' && (
-            <div className="flex flex-wrap items-center gap-1 pt-0.5 text-[10px] text-[#C2A878]">
-              <span>كوليات جاهزة للشحن:</span>
-              {availableParcelsToLoad.map(p => (
+            <div className="space-y-2 pt-1 border-t border-[#D4AF37]/20">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-bold text-[#F5D799]">
+                  📦 كوليات جاهزة للشحن ({matchingRouteParcels.length > 0 ? `${matchingRouteParcels.length} لنفس الوجهة` : `${availableParcelsToLoad.length} بالمحطة`}):
+                </span>
                 <button
-                  key={p.id}
                   type="button"
-                  onClick={() => handleScanOrInput(String(p.parcel_number))}
-                  className="btn-cancel px-2 py-0.5 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37]/30 text-[#F5D799] border border-[#D4AF37]/35 font-mono font-bold transition"
+                  disabled={isBatchLoading}
+                  onClick={handleBatchLoadMatching}
+                  className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50"
                 >
-                  #{p.parcel_number} ({p.tracking_code}){p.is_returning || p.status === 'return_in_transit' ? ' [إرجاع ↩]' : ''}
+                  {isBatchLoading
+                    ? 'جاري الشحن...'
+                    : matchingRouteParcels.length > 0
+                    ? `⚡ شحن كل كوليات الوجهة (${matchingRouteParcels.length}) دفعة واحدة`
+                    : `⚡ شحن الكل (${availableParcelsToLoad.length}) دفعة واحدة`}
                 </button>
-              ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1 max-h-24 overflow-y-auto pr-0.5 text-[10px]">
+                {(matchingRouteParcels.length > 0 ? matchingRouteParcels : availableParcelsToLoad)
+                  .slice(0, 40)
+                  .map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleScanOrInput(p.tracking_code)}
+                      className={`px-2 py-0.5 rounded-lg border font-mono font-bold transition cursor-pointer ${
+                        p.is_collaborator_data || p.partner_destination_station_id
+                          ? 'bg-purple-950/80 hover:bg-purple-900 text-purple-200 border-purple-400/50'
+                          : 'bg-[#D4AF37]/15 hover:bg-[#D4AF37]/30 text-[#F5D799] border-[#D4AF37]/35'
+                      }`}
+                    >
+                      #{p.parcel_number} ({p.receiver_name})
+                      {p.is_collaborator_data || p.partner_destination_station_id ? ' 🤝' : ''}
+                    </button>
+                  ))}
+              </div>
             </div>
           )}
         </div>

@@ -64,6 +64,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
   const [paymentNote, setPaymentNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pendingArrivalParcel, setPendingArrivalParcel] = useState<Parcel | null>(null);
   const [confirmDebtNotice, setConfirmDebtNotice] = useState(false);
 
   // Only parcels that have arrived in destination station stock (status === 'arrived') are eligible for delivery
@@ -88,10 +89,10 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
       return `تنبيه: الكولي #${found.parcel_number} تم تسليمه مسبقاً للزبون (${found.delivered_to || found.receiver_name}).`;
     }
     if (found.status === 'in_transit') {
-      return `⛔ الكولي #${found.parcel_number} مازال في الطريق داخل الشاحنة (${found.driver_name || 'الرحلة'}${found.vehicle_plate ? ' - ' + found.vehicle_plate : ''}) ولم يصل بعد إلى ستوك محطة "${found.destination_station_name}"! يجب استقبال وتفريغ الرحلة أولاً قبل تسليمه للزبون.`;
+      return `الكولي #${found.parcel_number} مسجل حالياً "في الطريق". يمكنك تأكيد دخوله للستوك بضغطة واحدة أدناه ثم تسليمه فوراً.`;
     }
     if (found.status === 'registered' || found.status === 'pending') {
-      return `⛔ الكولي #${found.parcel_number} مازال مسجلاً في محطة الانطلاق "${found.origin_station_name}" ولم ينطلق أو يصل لستوك محطة "${found.destination_station_name}" بعد!`;
+      return `الكولي #${found.parcel_number} مسجل في محطة الانطلاق "${found.origin_station_name}". إذا وصل لمحطتك، اضغط الزر أدناه لإدخاله للستوك وتسليمه فوراً.`;
     }
     if (found.status === 'return_in_transit' || found.status === 'returned') {
       return `⛔ الكولي #${found.parcel_number} في مسار الإرجاع للمرسل ولا يمكن تسليمه من نافذة التسليم العادي.`;
@@ -104,12 +105,16 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     if (isOpen) {
       setConfirmDebtNotice(false);
       setPaymentNote('');
+      setPendingArrivalParcel(null);
       if (initialParcel) {
         if (initialParcel.status !== 'arrived') {
           setSelectedParcels([]);
           setDeliveredTo('');
           setPaymentAmount('');
           setErrorMessage(getNonArrivedErrorMessage(initialParcel));
+          if (initialParcel.status === 'in_transit' || initialParcel.status === 'registered') {
+            setPendingArrivalParcel(initialParcel);
+          }
         } else {
           setSelectedParcels([initialParcel]);
           setDeliveredTo(initialParcel.receiver_name);
@@ -162,9 +167,30 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleConfirmQuickStockArrival = async (targetParcel: Parcel) => {
+    const res = await updateParcelStatus(targetParcel.id, 'arrived', {
+      notes: 'تم تأكيد وصول الكولي للستوك مباشرة عند التسليم',
+    });
+    if (res.success) {
+      playSuccessBeep();
+      const updated: Parcel = { ...targetParcel, status: 'arrived', arrived_at: new Date().toISOString() };
+      setPendingArrivalParcel(null);
+      setErrorMessage(null);
+      setSelectedParcels(prev => [...prev.filter(p => p.id !== updated.id), updated]);
+      if (!deliveredTo.trim()) {
+        setDeliveredTo(updated.receiver_name);
+      }
+      showToast(`تم إدخال الكولي #${updated.parcel_number} للستوك وهو جاهز للتسليم الآن ✓`, 'success');
+    } else {
+      playErrorBeep();
+      setErrorMessage(res.error || 'تعذر إدخال الكولي للستوك');
+    }
+  };
+
   // Add a parcel by scanned tracking code, numeric code, or parcel number
   const handleAddParcelByCode = (codeOrNumber: string) => {
     setErrorMessage(null);
+    setPendingArrivalParcel(null);
     const clean = codeOrNumber.trim().toUpperCase().replace(/^#/, '');
     if (!clean) return;
 
@@ -195,10 +221,13 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
       return;
     }
 
-    // Strictly require parcel to be in station stock (status === 'arrived')
+    // Require parcel to be in station stock (status === 'arrived'), or offer 1-click arrival confirmation
     if (found.status !== 'arrived') {
       playErrorBeep();
       setErrorMessage(getNonArrivedErrorMessage(found));
+      if (found.status === 'in_transit' || found.status === 'registered') {
+        setPendingArrivalParcel(found);
+      }
       return;
     }
 
@@ -400,9 +429,21 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
           </div>
 
           {errorMessage && (
-            <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center gap-1.5 animate-fadeIn leading-relaxed">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
-              <span>{errorMessage}</span>
+            <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-200 font-bold text-xs space-y-2 animate-fadeIn leading-relaxed">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>{errorMessage}</span>
+              </div>
+              {pendingArrivalParcel && (
+                <button
+                  type="button"
+                  onClick={() => handleConfirmQuickStockArrival(pendingArrivalParcel)}
+                  className="w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition active:scale-95 flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>📥 تأكيد وصول الكولي #{pendingArrivalParcel.parcel_number} للستوك والمتابعة للتسليم ➔</span>
+                </button>
+              )}
             </div>
           )}
         </div>

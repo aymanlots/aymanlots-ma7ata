@@ -67,6 +67,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     userRole,
     userAssignedStationId,
     hideAmounts,
+    updateParcelStatus,
     deleteParcel,
     deleteTrip,
     showToast 
@@ -93,6 +94,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
   const [dateFilter] = useState<string>('all');
   const [conditionFilter, setConditionFilter] = useState<string>('all');
   const [ownershipFilter, setOwnershipFilter] = useState<'all' | 'own' | 'partnership'>('all');
+  const [visibleParcelsCount, setVisibleParcelsCount] = useState<number>(60);
 
   // Keep station filter in sync with global station scope (and locked for workers)
   useEffect(() => {
@@ -104,6 +106,11 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
       setStationFilter('all');
     }
   }, [selectedStationId, userRole, userAssignedStationId]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setVisibleParcelsCount(60);
+  }, [statusFilter, ownershipFilter, stationFilter, paymentFilter, searchQuery]);
 
   // Compact / Collapsible UI States (اختصارات بالسهم الصغير)
   const [isMoreToolsOpen, setIsMoreToolsOpen] = useState(false);
@@ -246,7 +253,10 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
   const stationScopedTrips = useMemo(() => {
     if (stationFilter === 'all') return trips;
     return trips.filter(
-      t => t.origin_station_id === stationFilter || t.destination_station_id === stationFilter
+      t =>
+        t.origin_station_id === stationFilter ||
+        t.destination_station_id === stationFilter ||
+        t.partner_destination_station_id === stationFilter
     );
   }, [trips, stationFilter]);
 
@@ -303,11 +313,14 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     };
   }, [stationScopedParcels, currentWorkspace?.unclaimed_days_threshold]);
 
-  // Incoming trips heading to my station (or all incoming trips when 'all' is selected)
+  // Incoming trips heading to my station (including partnership trips!)
   const incomingTrips = useMemo(() => {
     return trips.filter(t => {
       const isHeadingToStation =
-        stationFilter === 'all' ? true : t.destination_station_id === stationFilter;
+        stationFilter === 'all'
+          ? true
+          : t.destination_station_id === stationFilter ||
+            t.partner_destination_station_id === stationFilter;
       const isEnRouteOrArrived = t.status === 'departed' || t.status === 'arrived';
       return isHeadingToStation && isEnRouteOrArrived;
     });
@@ -567,91 +580,98 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* TAB 1: PARCELS LIST (الكوليات والإرساليات - مختصرة بالسهم) */}
+      {/* TAB 1: PARCELS LIST (الكوليات والإرساليات - تتبع أوتوماتيك منظم) */}
       {/* ========================================================================= */}
       {activeTab === 'parcels' && (
         <div className="space-y-2.5">
-          {/* Collapsible Stats & Alerts Bar (مختصر في سطر واحد بالسهم) */}
-          <div className="luxury-card px-3.5 py-2.5 rounded-[20px]">
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setIsStatsOpen(prev => !prev)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setIsStatsOpen(prev => !prev);
-                }
-              }}
-              className="flex items-center justify-between gap-2 cursor-pointer select-none"
-            >
-              <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                <BarChart3 className="w-4 h-4 text-[#F5C84C] shrink-0" />
-                <span className="text-xs font-black text-white">ملخص الحالات والتحصيل</span>
-                <span className="text-[10px] text-white/80 font-mono">
-                  (مسجل: <strong className="text-[#F5C84C]">{stats.registered}</strong> • طريق:{' '}
-                  <strong className="text-[#F5C84C]">{stats.inTransit}</strong> • وصلت:{' '}
-                  <strong className="text-[#2ECC71]">{stats.arrived}</strong>)
-                </span>
-              </div>
-              <ChevronDown
-                className={`w-4 h-4 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
-                  isStatsOpen ? 'rotate-180' : ''
+          {/* Interactive 4-Stage Tracking Pipeline Bar (اضغط لفلترة أي مرحلة فوراً) */}
+          <div className="luxury-card p-2.5 rounded-[20px] space-y-2">
+            <div className="grid grid-cols-5 gap-1 text-center">
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className={`p-1.5 rounded-xl border transition cursor-pointer flex flex-col items-center justify-center ${
+                  statusFilter === 'all'
+                    ? 'btn-gold shadow-md'
+                    : 'bg-black/50 border-white/10 text-white/80 hover:border-[#F5C84C]/40'
                 }`}
-              />
+              >
+                <span className="text-[9px] font-black block truncate w-full">الكل</span>
+                <span className="text-xs font-mono font-black">{stats.total}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'registered' ? 'all' : 'registered')}
+                className={`p-1.5 rounded-xl border transition cursor-pointer flex flex-col items-center justify-center ${
+                  statusFilter === 'registered'
+                    ? 'bg-[#F5C84C] text-slate-950 border-[#F5C84C] shadow-md'
+                    : 'bg-black/50 border-white/10 text-white/85 hover:border-[#F5C84C]/40'
+                }`}
+                title="المرحلة 1: مسجلة بالمحطة وجاهزة للشحن في رحلة"
+              >
+                <span className="text-[9px] font-black block truncate w-full">1. مسجلة</span>
+                <span className={`text-xs font-mono font-black ${statusFilter === 'registered' ? 'text-slate-950' : 'text-[#F5C84C]'}`}>
+                  {stats.registered}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'in_transit' ? 'all' : 'in_transit')}
+                className={`p-1.5 rounded-xl border transition cursor-pointer flex flex-col items-center justify-center ${
+                  statusFilter === 'in_transit'
+                    ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md'
+                    : 'bg-black/50 border-white/10 text-white/85 hover:border-amber-400/40'
+                }`}
+                title="المرحلة 2: في الطريق داخل الشاحنة نحو محطة الوصول"
+              >
+                <span className="text-[9px] font-black block truncate w-full">2. بالطريق</span>
+                <span className={`text-xs font-mono font-black ${statusFilter === 'in_transit' ? 'text-slate-950' : 'text-amber-300'}`}>
+                  {stats.inTransit}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'arrived' ? 'all' : 'arrived')}
+                className={`p-1.5 rounded-xl border transition cursor-pointer flex flex-col items-center justify-center ${
+                  statusFilter === 'arrived'
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md'
+                    : 'bg-black/50 border-white/10 text-white/85 hover:border-emerald-400/40'
+                }`}
+                title="المرحلة 3: وصلت فـ الستوك وجاهزة للتسليم للزبون"
+              >
+                <span className="text-[9px] font-black block truncate w-full">3. بالستوك</span>
+                <span className={`text-xs font-mono font-black ${statusFilter === 'arrived' ? 'text-slate-950' : 'text-[#2ECC71]'}`}>
+                  {stats.arrived}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'delivered' ? 'all' : 'delivered')}
+                className={`p-1.5 rounded-xl border transition cursor-pointer flex flex-col items-center justify-center ${
+                  statusFilter === 'delivered'
+                    ? 'bg-white text-slate-950 border-white shadow-md'
+                    : 'bg-black/50 border-white/10 text-white/85 hover:border-white/40'
+                }`}
+                title="المرحلة 4: تم تسليمها لصاحبها بنجاح"
+              >
+                <span className="text-[9px] font-black block truncate w-full">4. سُلِّمت</span>
+                <span className={`text-xs font-mono font-black ${statusFilter === 'delivered' ? 'text-slate-950' : 'text-white'}`}>
+                  {stats.delivered}
+                </span>
+              </button>
             </div>
 
-            {isStatsOpen && (
-              <div className="mt-2.5 pt-2.5 border-t border-white/15 space-y-2 animate-fadeIn">
-                <div className="grid grid-cols-4 gap-1.5 text-xs">
-                  <div className="bg-black/50 border border-white/10 p-2 rounded-xl text-center">
-                    <span className="text-[9px] text-white/75 font-bold block">تم التسجيل</span>
-                    <span className="text-sm font-black text-[#F5C84C]">{stats.registered}</span>
-                  </div>
-                  <div className="bg-black/50 border border-white/10 p-2 rounded-xl text-center">
-                    <span className="text-[9px] text-white/75 font-bold block">في الطريق</span>
-                    <span className="text-sm font-black text-[#F5C84C]">{stats.inTransit}</span>
-                  </div>
-                  <div className="bg-black/50 border border-white/10 p-2 rounded-xl text-center">
-                    <span className="text-[9px] text-white/75 font-bold block">وصلت المحطة</span>
-                    <span className="text-sm font-black text-[#2ECC71]">{stats.arrived}</span>
-                  </div>
-                  <div className="bg-black/50 border border-white/10 p-2 rounded-xl text-center">
-                    <span className="text-[9px] text-white/75 font-bold block">تم التسليم</span>
-                    <span className="text-sm font-black text-white">{stats.delivered}</span>
-                  </div>
+            {(stats.totalUnpaidMad > 0 || stats.totalUnpaidMru > 0) && (
+              <div className="bg-black/50 border border-[#F5C84C]/30 px-2.5 py-1.5 rounded-xl flex items-center justify-between text-[11px]">
+                <span className="font-bold text-[#F5C84C]">💰 المتبقي للتحصيل من الكوليات:</span>
+                <div className="flex items-center gap-2 font-mono font-black text-white" dir="ltr">
+                  {stats.totalUnpaidMad > 0 && <span>{hideAmounts ? '••••' : stats.totalUnpaidMad} MAD</span>}
+                  {stats.totalUnpaidMru > 0 && <span>{hideAmounts ? '••••' : stats.totalUnpaidMru} MRU</span>}
                 </div>
-
-                {(stats.totalUnpaidMad > 0 || stats.totalUnpaidMru > 0) && (
-                  <div className="bg-black/50 border border-[#F5C84C]/35 p-2.5 rounded-xl flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 text-[#F5C84C] shrink-0" />
-                      <span className="font-bold text-[#F5C84C] text-[11px]">المتبقي للتحصيل:</span>
-                    </div>
-                    <div className="flex items-center gap-2 font-mono font-black text-xs text-white" dir="ltr">
-                      {stats.totalUnpaidMad > 0 && <span>{hideAmounts ? '••••' : stats.totalUnpaidMad} MAD</span>}
-                      {stats.totalUnpaidMru > 0 && <span>{hideAmounts ? '••••' : stats.totalUnpaidMru} MRU</span>}
-                    </div>
-                  </div>
-                )}
-
-                {(stats.unclaimedList.length > 0 || stats.returning > 0) && (
-                  <div className="bg-black/50 border border-white/15 p-2.5 rounded-xl space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-white font-bold text-[11px]">
-                        <RotateCcw className="w-3.5 h-3.5 text-[#F5C84C]" />
-                        <span>تنبيهات استرجاع ({stats.unclaimedList.length} متأخرة • {stats.returning} مرجعة)</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilter(statusFilter === 'return_in_transit' ? 'all' : 'return_in_transit')}
-                        className="btn-cancel text-[10px] px-2 py-0.5 rounded-lg font-bold"
-                      >
-                        {statusFilter === 'return_in_transit' ? 'عرض الكل' : 'فلترة المرجعة'}
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -757,10 +777,10 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                     className="w-full bg-black/60 border border-white/20 rounded-xl px-2 py-1.5 text-white text-[11px] font-bold focus:outline-none focus:border-[#F5C84C]"
                   >
                     <option value="all">جميع الحالات</option>
-                    <option value="registered">تم التسجيل</option>
-                    <option value="in_transit">في الطريق</option>
-                    <option value="arrived">دخلت المحطة</option>
-                    <option value="delivered">تم التسليم</option>
+                    <option value="registered">1. مسجلة بالمحطة</option>
+                    <option value="in_transit">2. في الطريق</option>
+                    <option value="arrived">3. فـ الستوك (جاهزة للتسليم)</option>
+                    <option value="delivered">4. تم التسليم</option>
                     <option value="return_in_transit">في طريق الإرجاع للمرسل ↺</option>
                     <option value="returned">تم الإرجاع للمرسل ✓</option>
                   </select>
@@ -828,16 +848,16 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                         if (expandedParcelIds.size === filteredParcels.length) {
                           setExpandedParcelIds(new Set());
                         } else {
-                          setExpandedParcelIds(new Set(filteredParcels.map(p => p.id)));
+                          setExpandedParcelIds(new Set(filteredParcels.slice(0, visibleParcelsCount).map(p => p.id)));
                         }
                       }}
                       className="btn-cancel flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold transition"
                     >
                       <ChevronDown className="w-3.5 h-3.5" />
                       <span>
-                        {expandedParcelIds.size === filteredParcels.length
+                        {expandedParcelIds.size > 0
                           ? 'طي جميع الكوليات ▲'
-                          : 'توسيع جميع الكوليات ▼'}
+                          : 'توسيع الكوليات ▼'}
                       </span>
                     </button>
                   </div>
@@ -846,7 +866,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             )}
           </div>
 
-          {/* Parcels List (Compact Collapsible Rows) */}
+          {/* Parcels List (Compact Collapsible Rows with Direct 1-Click Next Action) */}
           {filteredParcels.length === 0 ? (
             <div className="luxury-card rounded-[22px] p-6 text-center space-y-2">
               <div className="w-11 h-11 rounded-2xl bg-black/50 border border-white/15 text-[#F5C84C] flex items-center justify-center mx-auto">
@@ -854,12 +874,12 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
               </div>
               <h3 className="text-sm font-bold text-white">لا توجد كوليات مطابقة</h3>
               <p className="text-xs text-white/75">
-                جرب تغيير شروط البحث أو اضغط على كولي جديد.
+                جرب تغيير المرحلة أو البحث، أو اضغط على كولي جديد.
               </p>
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredParcels.map(parcel => {
+              {filteredParcels.slice(0, visibleParcelsCount).map(parcel => {
                 const remaining = Math.max(0, Math.round((parcel.amount_due - parcel.amount_paid) * 100) / 100);
                 const isSettled = remaining <= 0;
                 const payerLabel = parcel.payer === 'sender' ? 'المرسل' : 'المستلم';
@@ -870,6 +890,14 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                   currentWorkspace?.id,
                   currentWorkspace?.name
                 );
+
+                const isDestForCurrentUser =
+                  userRole !== 'worker' ||
+                  parcel.destination_station_id === activeStationId ||
+                  parcel.partner_destination_station_id === activeStationId;
+
+                const isOriginForCurrentUser =
+                  userRole !== 'worker' || parcel.origin_station_id === activeStationId;
 
                 return (
                   <div 
@@ -893,7 +921,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                           toggleParcelExpand(parcel.id);
                         }
                       }}
-                      className="flex items-center justify-between gap-2 cursor-pointer select-none"
+                      className="flex items-center justify-between gap-1.5 cursor-pointer select-none"
                     >
                       {/* Right Side: Checkbox + Number + Ownership Badge + Sender -> Receiver */}
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -939,43 +967,108 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
 
                         <div className="min-w-0 flex-1 truncate">
                           <span className="font-black text-white text-xs">
-                            {parcel.sender_name}
-                          </span>
-                          <span className="text-[#F5C84C] mx-1">➔</span>
-                          <span className="font-black text-white text-xs">
                             {parcel.receiver_name}
                           </span>
-                          <span className="text-[10px] text-white/65 mr-1.5">
-                            ({parcel.destination_station_name})
+                          <span className="text-[10px] text-white/65 mr-1">
+                            ({parcel.partner_destination_station_name || parcel.destination_station_name})
                           </span>
                         </div>
                       </div>
 
-                      {/* Left Side: Payment/Price + Status + Small Arrow */}
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Left Side: Price + Direct 1-Click Next Action Button + Expand Arrow */}
+                      <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-black ${
+                          className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-black ${
                             isSettled
                               ? 'bg-[#006233]/35 text-[#2ECC71] border border-[#2ECC71]/40'
                               : 'bg-rose-950/70 text-rose-300 border border-rose-500/40'
                           }`}
                           dir="ltr"
                         >
-                          {hideAmounts ? '•••' : parcel.amount_due} {parcel.currency}{' '}
-                          {isSettled ? '✓' : '⏳'}
+                          {hideAmounts ? '•••' : parcel.amount_due} {parcel.currency}
                         </span>
 
-                        <span className="hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full font-bold bg-black/60 text-[#F5C84C] border border-[#F5C84C]/40">
-                          {statusNames[parcel.status] || parcel.status}
-                        </span>
+                        {/* DIRECT 1-CLICK STAGE PROGRESSION BUTTON */}
+                        {parcel.status === 'registered' && isOriginForCurrentUser && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Check if there is already a loading trip for this origin/destination
+                              const targetDestId = parcel.partner_destination_station_id || parcel.destination_station_id;
+                              const matchingLoadingTrip = trips.find(
+                                t =>
+                                  t.status === 'loading' &&
+                                  t.origin_station_id === parcel.origin_station_id &&
+                                  (t.destination_station_id === targetDestId ||
+                                    t.partner_destination_station_id === targetDestId)
+                              );
+                              if (matchingLoadingTrip) {
+                                setDispatchTrip(matchingLoadingTrip);
+                              } else {
+                                setIsNewTripOpen(true);
+                              }
+                            }}
+                            className="px-2 py-1 rounded-lg bg-[#F5C84C] hover:bg-[#ffe074] text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                            title="شحن الكولي في رحلة"
+                          >
+                            🚚 شحن
+                          </button>
+                        )}
 
-                        <span className="p-1 rounded-lg bg-black/50 border border-white/15 text-[#F5C84C] flex items-center justify-center">
+                        {parcel.status === 'in_transit' && isDestForCurrentUser && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (parcel.current_trip_id) {
+                                const foundTrip = trips.find(t => t.id === parcel.current_trip_id);
+                                if (foundTrip && foundTrip.status !== 'closed') {
+                                  setArrivalTrip(foundTrip);
+                                  return;
+                                }
+                              }
+                              await updateParcelStatus(parcel.id, 'arrived', {
+                                notes: 'تم تأكيد وصول الكولي وإدخاله للستوك',
+                              });
+                              showToast(`تم إدخال الكولي #${parcel.parcel_number} للستوك بنجاح ✓`, 'success');
+                            }}
+                            className="px-2 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                            title="تأكيد وصول الكولي وإدخاله للستوك"
+                          >
+                            📥 للستوك
+                          </button>
+                        )}
+
+                        {parcel.status === 'arrived' && isDestForCurrentUser && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickDeliverParcel(parcel);
+                              setIsQuickDeliverOpen(true);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                            title="تسليم الكولي للزبون الآن"
+                          >
+                            ✅ تسليم
+                          </button>
+                        )}
+
+                        {parcel.status === 'delivered' && (
+                          <span className="px-1.5 py-0.5 rounded-lg bg-white/15 text-white font-black text-[10px] border border-white/20">
+                            ✓ سُلِّم
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => toggleParcelExpand(parcel.id)}
+                          className="p-1 rounded-lg bg-black/50 border border-white/15 text-[#F5C84C] flex items-center justify-center cursor-pointer"
+                        >
                           <ChevronDown
                             className={`w-3.5 h-3.5 transition-transform duration-200 ${
                               isExpanded ? 'rotate-180' : ''
                             }`}
                           />
-                        </span>
+                        </button>
                       </div>
                     </div>
 
@@ -1041,7 +1134,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                             <MapPin className="w-3.5 h-3.5 text-[#F5C84C] shrink-0" />
                             <span>{parcel.origin_station_name}</span>
                             <span className="text-[#F5C84C]">➔</span>
-                            <span>{parcel.destination_station_name}</span>
+                            <span>{parcel.partner_destination_station_name || parcel.destination_station_name}</span>
                           </div>
                           <span className="text-[10px] text-white/80">
                             {isSettled ? '✓ خالص بالكامل' : `متبقي: ${remaining} ${parcel.currency}`} ({payerLabel})
@@ -1128,36 +1221,35 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                               <span>واتساب QR</span>
                             </button>
 
-                            {parcel.status === 'arrived' &&
-                              (userRole !== 'worker' || parcel.destination_station_id === activeStationId) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setQuickDeliverParcel(parcel);
-                                    setIsQuickDeliverOpen(true);
-                                  }}
-                                  className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] border border-emerald-500/45 text-emerald-300 transition"
-                                >
-                                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span>تسليم للزبون</span>
-                                </button>
-                              )}
+                            {parcel.status === 'arrived' && isDestForCurrentUser && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setQuickDeliverParcel(parcel);
+                                  setIsQuickDeliverOpen(true);
+                                }}
+                                className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] border border-emerald-500/45 text-emerald-300 transition"
+                              >
+                                <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>تسليم للزبون</span>
+                              </button>
+                            )}
 
-                            {(parcel.status === 'in_transit' || parcel.status === 'registered') &&
-                              (userRole !== 'worker' || parcel.destination_station_id === activeStationId) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setQuickDeliverParcel(parcel);
-                                    setIsQuickDeliverOpen(true);
-                                  }}
-                                  className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] opacity-75 border border-amber-500/40 text-amber-300 transition"
-                                  title="الكولي لم يدخل ستوك المحطة بعد"
-                                >
-                                  <Truck className="w-3.5 h-3.5 text-amber-400" />
-                                  <span>{parcel.status === 'in_transit' ? 'في الطريق (لم تصل للستوك)' : 'بمحطة الانطلاق'}</span>
-                                </button>
-                              )}
+                            {(parcel.status === 'in_transit' || parcel.status === 'registered') && isDestForCurrentUser && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await updateParcelStatus(parcel.id, 'arrived', {
+                                    notes: 'تم إدخال الكولي للستوك يدوياً',
+                                  });
+                                  showToast(`تم إدخال الكولي #${parcel.parcel_number} للستوك ✓`, 'success');
+                                }}
+                                className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] border border-amber-500/40 text-amber-300 transition"
+                              >
+                                <Inbox className="w-3.5 h-3.5 text-amber-400" />
+                                <span>إدخال للستوك الآن</span>
+                              </button>
+                            )}
 
                             <button
                               type="button"
@@ -1217,6 +1309,16 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                   </div>
                 );
               })}
+
+              {filteredParcels.length > visibleParcelsCount && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleParcelsCount(prev => prev + 100)}
+                  className="w-full py-2.5 rounded-2xl btn-cancel font-black text-xs text-[#F5C84C] cursor-pointer"
+                >
+                  + عرض 100 كولي إضافي (المتبقي: {filteredParcels.length - visibleParcelsCount})
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1262,12 +1364,20 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                 const receivedCount = trip.received_parcel_ids.length;
                 const missingCount = Math.max(0, loadedCount - receivedCount);
                 const isExpanded = expandedTripIds.has(trip.id);
+                const isTripDestForMe =
+                  userRole !== 'worker' ||
+                  trip.destination_station_id === activeStationId ||
+                  trip.partner_destination_station_id === activeStationId;
 
                 return (
                   <div
                     key={trip.id}
                     className={`luxury-card px-3 py-2.5 rounded-[18px] text-xs border transition ${
-                      isExpanded ? 'border-[#F5C84C]/55' : 'border-white/12'
+                      isExpanded
+                        ? 'border-[#F5C84C]/55'
+                        : trip.is_partnership_trip
+                        ? 'border-purple-500/45'
+                        : 'border-white/12'
                     }`}
                   >
                     {/* Compact Trip Summary Row */}
@@ -1287,6 +1397,11 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                         <span className="font-mono font-black text-[11px] text-[#F5C84C] bg-black/60 px-2 py-0.5 rounded-lg border border-[#F5C84C]/40 shrink-0">
                           {trip.trip_code}
                         </span>
+                        {trip.is_partnership_trip && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-purple-950/90 text-purple-200 border border-purple-400/60 shrink-0">
+                            🤝 شراكة
+                          </span>
+                        )}
                         <div className="flex items-center gap-1 font-bold text-white truncate">
                           <span className="truncate">{trip.origin_station_name}</span>
                           <span className="text-[#F5C84C]">➔</span>
@@ -1294,20 +1409,45 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                         <span className="text-[10px] font-mono font-black text-[#F5C84C] bg-black/50 px-2 py-0.5 rounded-lg border border-white/10">
                           📦 {loadedCount}
                         </span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${statusMeta.color}`}>
+
+                        {trip.status === 'loading' && (userRole !== 'worker' || trip.origin_station_id === activeStationId) && (
+                          <button
+                            type="button"
+                            onClick={() => setDispatchTrip(trip)}
+                            className="px-2 py-1 rounded-lg bg-[#F5C84C] text-slate-950 font-black text-[10px] cursor-pointer"
+                          >
+                            🚚 شحن
+                          </button>
+                        )}
+
+                        {(trip.status === 'departed' || trip.status === 'arrived') && isTripDestForMe && (
+                          <button
+                            type="button"
+                            onClick={() => setArrivalTrip(trip)}
+                            className="px-2 py-1 rounded-lg bg-emerald-500 text-slate-950 font-black text-[10px] cursor-pointer"
+                          >
+                            📥 تفريغ
+                          </button>
+                        )}
+
+                        <span className={`hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full font-bold border ${statusMeta.color}`}>
                           {statusMeta.label}
                         </span>
-                        <span className="p-1 rounded-lg bg-black/50 border border-white/15 text-[#F5C84C]">
+                        <button
+                          type="button"
+                          onClick={() => toggleTripExpand(trip.id)}
+                          className="p-1 rounded-lg bg-black/50 border border-white/15 text-[#F5C84C] cursor-pointer"
+                        >
                           <ChevronDown
                             className={`w-3.5 h-3.5 transition-transform duration-200 ${
                               isExpanded ? 'rotate-180' : ''
                             }`}
                           />
-                        </span>
+                        </button>
                       </div>
                     </div>
 
@@ -1365,17 +1505,16 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                                 </button>
                               )}
 
-                              {trip.status !== 'closed' &&
-                                (userRole !== 'worker' || trip.destination_station_id === activeStationId) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setArrivalTrip(trip)}
-                                    className="btn-gold flex-1 py-2 rounded-xl font-black text-[11px] transition text-center flex items-center justify-center gap-1"
-                                  >
-                                    <Inbox className="w-3.5 h-3.5" />
-                                    <span>استقبال وتفريغ</span>
-                                  </button>
-                                )}
+                              {trip.status !== 'closed' && isTripDestForMe && (
+                                <button
+                                  type="button"
+                                  onClick={() => setArrivalTrip(trip)}
+                                  className="btn-gold flex-1 py-2 rounded-xl font-black text-[11px] transition text-center flex items-center justify-center gap-1"
+                                >
+                                  <Inbox className="w-3.5 h-3.5" />
+                                  <span>استقبال وتفريغ للستوك</span>
+                                </button>
+                              )}
                             </div>
                           )}
 
@@ -1451,6 +1590,10 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                 const receivedCount = trip.received_parcel_ids.length;
                 const missingCount = Math.max(0, totalLoaded - receivedCount);
                 const isFinished = missingCount === 0 && totalLoaded > 0;
+                const isDestForMe =
+                  userRole !== 'worker' ||
+                  trip.destination_station_id === activeStationId ||
+                  trip.partner_destination_station_id === activeStationId;
 
                 return (
                   <div 
@@ -1459,28 +1602,35 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                   >
                     <div className="flex items-center justify-between pb-2 border-b border-white/15">
                       <div>
-                        <span className="font-mono font-black text-xs text-[#F5C84C] bg-black/60 px-2 py-0.5 rounded-lg border border-[#F5C84C]/40">
-                          {trip.trip_code}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-black text-xs text-[#F5C84C] bg-black/60 px-2 py-0.5 rounded-lg border border-[#F5C84C]/40">
+                            {trip.trip_code}
+                          </span>
+                          {trip.is_partnership_trip && (
+                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-purple-950/90 text-purple-200 border border-purple-400/60">
+                              🤝 رحلة شراكة
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[11px] text-white/80 mt-1">
-                          السائق: <strong className="text-white">{trip.driver_name}</strong> ({trip.vehicle_plate})
+                          من: <strong className="text-[#F5C84C]">{trip.origin_station_name}</strong> • السائق: <strong className="text-white">{trip.driver_name}</strong> ({trip.vehicle_plate})
                         </p>
                       </div>
 
-                      {(userRole !== 'worker' || trip.destination_station_id === activeStationId) && (
+                      {isDestForMe && (
                         <button
                           type="button"
                           onClick={() => setArrivalTrip(trip)}
-                          className="px-3 py-2 rounded-xl font-black text-xs transition flex items-center gap-1"
+                          className="btn-gold px-3 py-2 rounded-xl font-black text-xs transition flex items-center gap-1 cursor-pointer"
                         >
                           <Scan className="w-3.5 h-3.5" />
-                          <span>مسح الاستقبال</span>
+                          <span>تفريغ للستوك</span>
                         </button>
                       )}
                     </div>
 
                     <div className="text-[11px] text-[#F5C84C] font-bold">
-                      {isFinished ? '✓ تم مسح جميع الكوليات' : `${receivedCount} تم مسحه / ${missingCount} متبقي`}
+                      {isFinished ? '✓ تم مسح جميع الكوليات وإدخالها للستوك' : `${receivedCount} في الستوك / ${missingCount} متبقي بالشاحنة`}
                     </div>
                   </div>
                 );
