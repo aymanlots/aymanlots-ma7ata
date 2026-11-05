@@ -11,6 +11,8 @@ import {
   formatTrackingCodeNumeric,
   matchesTrackingCode,
   getParcelSourceOwnershipInfo,
+  canControlParcelDestination,
+  canAcceptOrRejectPartnerParcel,
 } from '../utils/logisticsFeatures';
 import {
   Plus,
@@ -61,6 +63,8 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     moneyTransfers,
     payoutMoneyTransfer,
     updateParcelStatus,
+    respondToPartnerParcel,
+    userRole,
     hideAmounts,
     showToast,
   } = useApp();
@@ -766,9 +770,18 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                   0,
                   Math.round(((p.amount_due || 0) - (p.amount_paid || 0)) * 100) / 100
                 );
-                const isDestForMe =
-                  p.destination_station_id === currentStation.id ||
-                  p.partner_destination_station_id === currentStation.id;
+                const isDestForMe = canControlParcelDestination(
+                  p,
+                  currentWorkspace?.id,
+                  userRole,
+                  currentStation.id
+                );
+                const canApprovePartner = canAcceptOrRejectPartnerParcel(
+                  p,
+                  currentWorkspace?.id,
+                  userRole,
+                  currentStation.id
+                );
 
                 return (
                   <div
@@ -805,8 +818,8 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                           المستلم: {p.receiver_name} ({p.receiver_phone}) • المرسل: {p.sender_name}
                         </p>
 
-                        <p className="text-[11px] text-white/80 font-bold">
-                          📍 من: <span className="text-[#F5C84C]">{p.origin_station_name}</span> ➔ إلى:{' '}
+                        <p className="text-[11px] text-white/85 font-bold">
+                          📍 من محطة: <span className="text-[#F5C84C]">{p.origin_station_name}</span> ⬅ إلى محطة:{' '}
                           <span className="text-emerald-300">
                             {p.partner_destination_station_name || p.destination_station_name}
                           </span>{' '}
@@ -834,13 +847,17 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                     </div>
 
                     <div
-                      className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/10"
+                      className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/10 flex-wrap"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <span className="text-[10px] font-black text-white/80">
                         الحالة:{' '}
                         <strong className="text-[#F5C84C]">
-                          {p.status === 'delivered'
+                          {p.partner_acceptance_status === 'pending_approval'
+                            ? '⏳ بانتظار القبول في غرفة الشراكة'
+                            : p.partner_acceptance_status === 'rejected'
+                            ? '❌ مرفوضة'
+                            : p.status === 'delivered'
                             ? '✓ تم التسليم للمستلم'
                             : p.status === 'arrived'
                             ? '📦 فـ ستوك المحطة (جاهز للتسليم)'
@@ -850,7 +867,28 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                         </strong>
                       </span>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {canApprovePartner && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => respondToPartnerParcel(p.id, 'accepted')}
+                              className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] cursor-pointer"
+                            >
+                              ✅ قبول الكولية
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                respondToPartnerParcel(p.id, 'rejected', 'رفض استلام الكولية من طرف محطة الاستلام')
+                              }
+                              className="px-2 py-1 rounded-xl bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 border border-rose-500/50 font-black text-[11px] cursor-pointer"
+                            >
+                              ❌ رفض
+                            </button>
+                          </>
+                        )}
+
                         {isDestForMe && (p.status === 'in_transit' || p.status === 'registered') && (
                           <button
                             type="button"

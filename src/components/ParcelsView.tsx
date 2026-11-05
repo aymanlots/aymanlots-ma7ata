@@ -18,6 +18,9 @@ import {
   formatTrackingCodeNumeric,
   matchesTrackingCode,
   getParcelSourceOwnershipInfo,
+  canControlParcelOrigin,
+  canControlParcelDestination,
+  canAcceptOrRejectPartnerParcel,
 } from '../utils/logisticsFeatures';
 import { 
   Package, 
@@ -68,6 +71,8 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     userAssignedStationId,
     hideAmounts,
     updateParcelStatus,
+    respondToPartnerParcel,
+    acceptAllPendingPartnerParcels,
     deleteParcel,
     deleteTrip,
     showToast 
@@ -249,6 +254,13 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     });
     return { ownCount, partnershipCount };
   }, [stationScopedParcels, currentWorkspace?.id, currentWorkspace?.name]);
+
+  // الكوليات الواردة من غرفة الشراكة التي تنتظر القبول أو الرفض من المدير المستقبل أو عامل المحطة المستقبلة
+  const pendingPartnerApprovalParcels = useMemo(() => {
+    return stationScopedParcels.filter(p =>
+      canAcceptOrRejectPartnerParcel(p, currentWorkspace?.id, userRole, activeStationId)
+    );
+  }, [stationScopedParcels, currentWorkspace?.id, userRole, activeStationId]);
 
   const stationScopedTrips = useMemo(() => {
     if (stationFilter === 'all') return trips;
@@ -866,6 +878,103 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             )}
           </div>
 
+          {/* BANNER: طلبات قبول الكوليات الواردة من غرفة الشراكة (المشكل 1) */}
+          {pendingPartnerApprovalParcels.length > 0 && (
+            <div className="luxury-card p-3.5 rounded-[20px] border-2 border-purple-400/75 bg-purple-950/60 space-y-2.5 animate-fadeIn">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-xl bg-purple-500 text-white font-black text-xs flex items-center justify-center shadow">
+                    {pendingPartnerApprovalParcels.length}
+                  </span>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black text-white">
+                      🤝 طلبات قبول كوليات واردة من غرفة الشراكة ({pendingPartnerApprovalParcels.length})
+                    </h3>
+                    <p className="text-[10px] text-purple-200 font-bold">
+                      أرسل إليك شريك كوليات نحو محطتك — يرجى مراجعتها والضغط على «قبول» أو «رفض» قبل دخولها للستوك
+                    </p>
+                  </div>
+                </div>
+
+                {pendingPartnerApprovalParcels.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      acceptAllPendingPartnerParcels(pendingPartnerApprovalParcels.map(p => p.id))
+                    }
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] transition active:scale-95 cursor-pointer shadow-md"
+                  >
+                    ⚡ قبول الكل دفعة واحدة ({pendingPartnerApprovalParcels.length})
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+                {pendingPartnerApprovalParcels.map(pp => {
+                  const numCode = formatTrackingCodeNumeric(pp.tracking_code, pp.parcel_number);
+                  return (
+                    <div
+                      key={pp.id}
+                      className="bg-black/65 border border-purple-400/45 rounded-xl p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="space-y-0.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            dir="ltr"
+                            className="font-mono font-black text-[11px] text-[#F5C84C] bg-black/80 px-2 py-0.5 rounded-lg border border-[#F5C84C]/40"
+                          >
+                            {numCode}
+                          </span>
+                          <span className="text-[10px] font-black text-purple-200 bg-purple-900/70 px-2 py-0.5 rounded-md border border-purple-400/40">
+                            الشريك المرسل: {pp.partner_origin_workspace_name || 'شريك'}
+                          </span>
+                          <span className="font-black text-white">
+                            المستلم: {pp.receiver_name} ({pp.receiver_phone})
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-white/85 font-bold flex items-center gap-1.5 flex-wrap">
+                          <span>
+                            من محطة: <strong className="text-[#F5C84C]">{pp.origin_station_name}</strong>
+                          </span>
+                          <span className="text-[#F5C84C]">⬅</span>
+                          <span>
+                            إلى محطة:{' '}
+                            <strong className="text-emerald-300">
+                              {pp.partner_destination_station_name || pp.destination_station_name}
+                            </strong>
+                          </span>
+                          <span>• المحتوى: {pp.description} ({pp.items_count || 1} طرد)</span>
+                          <span dir="ltr" className="font-mono text-[#F5C84C]">
+                            • {pp.amount_due} {pp.currency}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => respondToPartnerParcel(pp.id, 'accepted')}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] transition active:scale-95 cursor-pointer"
+                        >
+                          ✅ قبول الكولية
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            respondToPartnerParcel(pp.id, 'rejected', 'تم رفض الكولية من طرف محطة الاستلام')
+                          }
+                          className="px-2.5 py-1.5 rounded-xl bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 border border-rose-500/50 font-black text-[11px] transition active:scale-95 cursor-pointer"
+                        >
+                          ❌ رفض
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Parcels List (Compact Collapsible Rows with Direct 1-Click Next Action) */}
           {filteredParcels.length === 0 ? (
             <div className="luxury-card rounded-[22px] p-6 text-center space-y-2">
@@ -891,13 +1000,28 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                   currentWorkspace?.name
                 );
 
-                const isDestForCurrentUser =
-                  userRole !== 'worker' ||
-                  parcel.destination_station_id === activeStationId ||
-                  parcel.partner_destination_station_id === activeStationId;
+                const isDestForCurrentUser = canControlParcelDestination(
+                  parcel,
+                  currentWorkspace?.id,
+                  userRole,
+                  activeStationId
+                );
 
-                const isOriginForCurrentUser =
-                  userRole !== 'worker' || parcel.origin_station_id === activeStationId;
+                const isOriginForCurrentUser = canControlParcelOrigin(
+                  parcel,
+                  currentWorkspace?.id,
+                  userRole,
+                  activeStationId
+                );
+
+                const canApprovePartner = canAcceptOrRejectPartnerParcel(
+                  parcel,
+                  currentWorkspace?.id,
+                  userRole,
+                  activeStationId
+                );
+
+                const isOutgoingPartnerParcel = ownershipInfo.direction === 'outgoing_partner';
 
                 return (
                   <div 
@@ -923,7 +1047,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                       }}
                       className="flex items-center justify-between gap-1.5 cursor-pointer select-none"
                     >
-                      {/* Right Side: Checkbox + Number + Ownership Badge + Sender -> Receiver */}
+                      {/* Right Side: Checkbox + Number + Ownership Badge + Explicit Route & Receiver */}
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         <button
                           type="button"
@@ -969,8 +1093,11 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                           <span className="font-black text-white text-xs">
                             {parcel.receiver_name}
                           </span>
-                          <span className="text-[10px] text-white/65 mr-1">
-                            ({parcel.partner_destination_station_name || parcel.destination_station_name})
+                          <span className="text-[10px] text-white/80 mr-1 font-bold">
+                            (من محطة: <span className="text-[#F5C84C]">{parcel.origin_station_name}</span> ⬅ إلى محطة:{' '}
+                            <span className="text-emerald-300">
+                              {parcel.partner_destination_station_name || parcel.destination_station_name}
+                            </span>)
                           </span>
                         </div>
                       </div>
@@ -988,12 +1115,49 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                           {hideAmounts ? '•••' : parcel.amount_due} {parcel.currency}
                         </span>
 
+                        {/* PARTNER APPROVAL BUTTONS IF PENDING INCOMING PARTNER PARCEL */}
+                        {canApprovePartner && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => respondToPartnerParcel(parcel.id, 'accepted')}
+                              className="px-2 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                              title="قبول الكولية الواردة من الشريك"
+                            >
+                              ✅ قبول
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                respondToPartnerParcel(parcel.id, 'rejected', 'رفض استلام الكولية من طرف محطة الاستلام')
+                              }
+                              className="px-1.5 py-1 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 border border-rose-500/50 font-black text-[10px] transition active:scale-95 cursor-pointer"
+                              title="رفض الكولية الواردة من الشريك"
+                            >
+                              ❌ رفض
+                            </button>
+                          </>
+                        )}
+
+                        {parcel.partner_acceptance_status === 'rejected' && (
+                          <span className="px-1.5 py-0.5 rounded-lg bg-rose-950/80 text-rose-300 font-black text-[9px] border border-rose-500/50">
+                            ❌ مرفوضة
+                          </span>
+                        )}
+
+                        {isOutgoingPartnerParcel && parcel.partner_acceptance_status === 'pending_approval' && (
+                          <span className="px-1.5 py-0.5 rounded-lg bg-amber-950/80 text-amber-300 font-black text-[9px] border border-amber-500/50">
+                            ⏳ بانتظار قبول الشريك
+                          </span>
+                        )}
+
                         {/* DIRECT 1-CLICK STAGE PROGRESSION BUTTON */}
-                        {parcel.status === 'registered' && isOriginForCurrentUser && (
+                        {parcel.status === 'registered' &&
+                          isOriginForCurrentUser &&
+                          parcel.partner_acceptance_status !== 'rejected' && (
                           <button
                             type="button"
                             onClick={() => {
-                              // Check if there is already a loading trip for this origin/destination
                               const targetDestId = parcel.partner_destination_station_id || parcel.destination_station_id;
                               const matchingLoadingTrip = trips.find(
                                 t =>
@@ -1051,6 +1215,18 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                             ✅ تسليم
                           </button>
                         )}
+
+                        {/* Read-only indicator for the Sender of a Partnership Parcel (المشكل 2) */}
+                        {isOutgoingPartnerParcel &&
+                          parcel.partner_acceptance_status === 'accepted' &&
+                          parcel.status !== 'delivered' && (
+                            <span
+                              className="px-1.5 py-0.5 rounded-lg bg-purple-950/80 text-purple-200 font-black text-[9px] border border-purple-400/50"
+                              title="المدير والعامل في محطة الاستلام هما المسؤولان عن تأكيد الوصول والتسليم"
+                            >
+                              {parcel.status === 'arrived' ? '📦 وصلت عند الشريك' : '✓ قبلها الشريك'}
+                            </span>
+                          )}
 
                         {parcel.status === 'delivered' && (
                           <span className="px-1.5 py-0.5 rounded-lg bg-white/15 text-white font-black text-[10px] border border-white/20">
@@ -1128,18 +1304,38 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                           </div>
                         )}
 
-                        {/* Route and Stations */}
-                        <div className="flex items-center justify-between text-white text-[11px] bg-black/40 px-2.5 py-1.5 rounded-xl border border-white/10">
-                          <div className="flex items-center gap-1 font-bold">
+                        {/* Route and Stations — Explicit من محطة ... إلى محطة (المشكل 3) */}
+                        <div className="flex items-center justify-between flex-wrap gap-2 text-white text-[11px] bg-black/40 px-2.5 py-2 rounded-xl border border-white/10">
+                          <div className="flex items-center gap-1.5 font-black flex-wrap">
                             <MapPin className="w-3.5 h-3.5 text-[#F5C84C] shrink-0" />
-                            <span>{parcel.origin_station_name}</span>
-                            <span className="text-[#F5C84C]">➔</span>
-                            <span>{parcel.partner_destination_station_name || parcel.destination_station_name}</span>
+                            <span className="bg-black/60 px-2 py-0.5 rounded-lg border border-[#F5C84C]/35 text-[#F5C84C]">
+                              من محطة: {parcel.origin_station_name}
+                            </span>
+                            <span className="text-[#F5C84C] font-black">⬅</span>
+                            <span className="bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-500/40 text-emerald-300">
+                              إلى محطة: {parcel.partner_destination_station_name || parcel.destination_station_name}
+                            </span>
                           </div>
-                          <span className="text-[10px] text-white/80">
+                          <span className="text-[10px] text-white/80 font-bold">
                             {isSettled ? '✓ خالص بالكامل' : `متبقي: ${remaining} ${parcel.currency}`} ({payerLabel})
                           </span>
                         </div>
+
+                        {/* Sender Read-Only Notice for Outgoing Partnership Parcels (المشكل 2) */}
+                        {isOutgoingPartnerParcel && (
+                          <div className="bg-purple-950/60 border border-purple-400/50 rounded-xl px-2.5 py-2 text-[11px] text-purple-100 font-bold flex items-center justify-between gap-2">
+                            <span>
+                              🔒 أنت الطرف المرسل — المدير والعامل في محطة الاستلام ({parcel.partner_destination_station_name || parcel.destination_station_name}) هما المسؤولان عن تأكيد الوصول والتسليم.
+                            </span>
+                            <span className="px-2 py-0.5 rounded-lg bg-black/60 border border-purple-400/40 text-[10px] font-black shrink-0">
+                              {parcel.partner_acceptance_status === 'pending_approval'
+                                ? '⏳ بانتظار قبول الشريك'
+                                : parcel.partner_acceptance_status === 'rejected'
+                                ? '❌ مرفوضة من الشريك'
+                                : '✓ مقبولة عند الشريك'}
+                            </span>
+                          </div>
+                        )}
 
                         {/* Sender & Receiver with WhatsApp link */}
                         <div className="space-y-1.5 bg-black/50 p-2.5 rounded-xl border border-white/15">
@@ -1364,10 +1560,20 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                 const receivedCount = trip.received_parcel_ids.length;
                 const missingCount = Math.max(0, loadedCount - receivedCount);
                 const isExpanded = expandedTripIds.has(trip.id);
+                const isSenderOfPartnerTrip = Boolean(
+                  trip.partner_workspace_id &&
+                    trip.partner_workspace_id !== currentWorkspace?.id &&
+                    !trip.is_collaborator_data
+                );
+                const isTripOriginForMe =
+                  !trip.is_collaborator_data &&
+                  (!trip.partner_origin_workspace_id || trip.partner_origin_workspace_id === currentWorkspace?.id) &&
+                  (userRole !== 'worker' || trip.origin_station_id === activeStationId);
                 const isTripDestForMe =
-                  userRole !== 'worker' ||
-                  trip.destination_station_id === activeStationId ||
-                  trip.partner_destination_station_id === activeStationId;
+                  !isSenderOfPartnerTrip &&
+                  (userRole !== 'worker' ||
+                    trip.destination_station_id === activeStationId ||
+                    trip.partner_destination_station_id === activeStationId);
 
                 return (
                   <div
@@ -1402,10 +1608,10 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                             🤝 شراكة
                           </span>
                         )}
-                        <div className="flex items-center gap-1 font-bold text-white truncate">
-                          <span className="truncate">{trip.origin_station_name}</span>
-                          <span className="text-[#F5C84C]">➔</span>
-                          <span className="truncate">{trip.destination_station_name}</span>
+                        <div className="flex items-center gap-1 font-bold text-white truncate text-[11px]">
+                          <span className="truncate text-[#F5C84C]">من محطة: {trip.origin_station_name}</span>
+                          <span className="text-[#F5C84C]">⬅</span>
+                          <span className="truncate text-emerald-300">إلى محطة: {trip.destination_station_name}</span>
                         </div>
                       </div>
 
@@ -1414,7 +1620,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                           📦 {loadedCount}
                         </span>
 
-                        {trip.status === 'loading' && (userRole !== 'worker' || trip.origin_station_id === activeStationId) && (
+                        {trip.status === 'loading' && isTripOriginForMe && (
                           <button
                             type="button"
                             onClick={() => setDispatchTrip(trip)}
@@ -1590,10 +1796,16 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                 const receivedCount = trip.received_parcel_ids.length;
                 const missingCount = Math.max(0, totalLoaded - receivedCount);
                 const isFinished = missingCount === 0 && totalLoaded > 0;
+                const isSenderOfPartnerTrip = Boolean(
+                  trip.partner_workspace_id &&
+                    trip.partner_workspace_id !== currentWorkspace?.id &&
+                    !trip.is_collaborator_data
+                );
                 const isDestForMe =
-                  userRole !== 'worker' ||
-                  trip.destination_station_id === activeStationId ||
-                  trip.partner_destination_station_id === activeStationId;
+                  !isSenderOfPartnerTrip &&
+                  (userRole !== 'worker' ||
+                    trip.destination_station_id === activeStationId ||
+                    trip.partner_destination_station_id === activeStationId);
 
                 return (
                   <div 

@@ -426,6 +426,8 @@ export interface Parcel {
   partner_workspace_name?: string;
   partner_destination_station_id?: string;
   partner_destination_station_name?: string;
+  partner_acceptance_status?: 'pending_approval' | 'accepted' | 'rejected';
+  partner_rejection_reason?: string | null;
   partner_cod_amount?: number;
   partner_settled?: boolean;
   partner_settlement_id?: string;

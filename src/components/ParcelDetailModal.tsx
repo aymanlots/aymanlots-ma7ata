@@ -11,6 +11,9 @@ import {
   formatTrackingCodeNumeric,
   getPublicTrackingLink,
   getParcelSourceOwnershipInfo,
+  canControlParcelOrigin,
+  canControlParcelDestination,
+  canAcceptOrRejectPartnerParcel,
 } from '../utils/logisticsFeatures';
 import { 
   X, 
@@ -57,6 +60,7 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
     parcels,
     hideAmounts,
     updateParcelStatus, 
+    respondToPartnerParcel,
     recordParcelPayment,
     initiateParcelReturn,
     handoverReturnedParcelToSender,
@@ -311,6 +315,39 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
             {ownershipInfo.isPartnership ? '🤝 شراكة' : '🏠 محطتنا'}
           </span>
         </div>
+
+        {/* Partner Parcel Approval Box (المشكل 1) */}
+        {canAcceptOrRejectPartnerParcel(parcel, currentWorkspace?.id, userRole, workerStationId) && (
+          <div className="bg-purple-950/90 border-2 border-[#F5C84C] rounded-2xl p-3 space-y-2 shrink-0">
+            <div className="text-xs font-black text-[#F5C84C]">
+              🔔 طلب قبول كولية واردة من الشريك ({parcel.partner_origin_workspace_name || 'شريك'}):
+            </div>
+            <p className="text-[11px] text-white/90 font-bold">
+              من محطة: <strong className="text-[#F5C84C]">{parcel.origin_station_name}</strong> ⬅ إلى محطة:{' '}
+              <strong className="text-emerald-300">
+                {parcel.partner_destination_station_name || parcel.destination_station_name}
+              </strong>
+            </p>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => respondToPartnerParcel(parcel.id, 'accepted')}
+                className="py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs cursor-pointer"
+              >
+                ✅ قبول الكولية في محطتنا
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  respondToPartnerParcel(parcel.id, 'rejected', 'تم رفض استلام الكولية من طرف محطة الاستلام')
+                }
+                className="py-2 px-3 rounded-xl bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 border border-rose-500/50 font-black text-xs cursor-pointer"
+              >
+                ❌ رفض الكولية
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Numeric Code Quick Copy + WhatsApp Bar */}
         <div className="bg-black/60 border border-[#F5C84C]/45 rounded-2xl p-2.5 flex items-center justify-between gap-2 shrink-0">
@@ -612,18 +649,30 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
               <form onSubmit={handleInitiateStatusChange} className="bg-[#1a0f00]/80 p-3.5 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
                 <span className="font-bold text-[#F5D799] block">تحديث حالة التتبع الآن:</span>
                 
+                {ownershipInfo.direction === 'outgoing_partner' && (
+                  <div className="p-2.5 rounded-xl bg-purple-950/80 border border-purple-400/55 text-purple-100 text-[11px] font-bold leading-relaxed">
+                    🔒 أنت الطرف المرسل لهذه الكولية عبر غرفة الشراكة إلى محطة «{parcel.partner_destination_station_name || parcel.destination_station_name}». المدير المستقبل والعامل في محطة الوصول هما الوحيدان المخولان بتأكيد الوصول للستوك أو التسليم للزبون.
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-2">
                   {(['registered', 'in_transit', 'arrived', 'delivered'] as ParcelStatus[]).map(st => {
                     const isOriginStage = st === 'registered' || st === 'in_transit';
                     const isDestStage = st === 'arrived' || st === 'delivered';
-                    const isWorkerDestMatch =
-                      parcel.destination_station_id === workerStationId ||
-                      parcel.partner_destination_station_id === workerStationId;
-                    const isDisabledForWorker =
-                      userRole === 'worker' &&
-                      Boolean(workerStationId) &&
-                      ((isOriginStage && parcel.origin_station_id !== workerStationId) ||
-                        (isDestStage && !isWorkerDestMatch));
+                    const canOrigin = canControlParcelOrigin(
+                      parcel,
+                      currentWorkspace?.id,
+                      userRole,
+                      workerStationId
+                    );
+                    const canDest = canControlParcelDestination(
+                      parcel,
+                      currentWorkspace?.id,
+                      userRole,
+                      workerStationId
+                    );
+                    const isBlockedByPermission =
+                      (isOriginStage && !canOrigin) || (isDestStage && !canDest);
 
                     const isDeliveryBlocked =
                       st === 'delivered' &&
@@ -634,9 +683,11 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                       <button
                         key={st}
                         type="button"
-                        disabled={isDisabledForWorker || isDeliveryBlocked}
+                        disabled={isBlockedByPermission || isDeliveryBlocked}
                         title={
-                          isDeliveryBlocked
+                          isBlockedByPermission
+                            ? 'هذه المرحلة خاصة بمحطة الاستلام / الشريك المستقبل فقط'
+                            : isDeliveryBlocked
                             ? 'لا يمكن تسليم الكولي للزبون إلا بعد وصوله وتأكيد دخوله لستوك المحطة (وصلت إلى محطة الوجهة)'
                             : undefined
                         }

@@ -48,6 +48,8 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
     respondToPartnershipRequest,
     recordPartnershipSettlement,
     dispatchParcelToPartner,
+    respondToPartnerParcel,
+    acceptAllPendingPartnerParcels,
     showToast,
   } = useApp();
 
@@ -987,42 +989,121 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                         </button>
                       </div>
 
+                      {parcelFilterDirection === 'received' &&
+                        receivedParcels.some((p) => p.partner_acceptance_status === 'pending_approval') && (
+                          <div className="bg-amber-950/80 border border-[#F5C84C] rounded-xl p-2.5 flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-black text-[#F5C84C]">
+                              ⏳ كوليات واردة من هذا الشريك بانتظار قبولك ({receivedParcels.filter((p) => p.partner_acceptance_status === 'pending_approval').length})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => acceptAllPendingPartnerParcels()}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[10px] shrink-0 cursor-pointer"
+                            >
+                              ⚡ قبول الكل
+                            </button>
+                          </div>
+                        )}
+
                       {(parcelFilterDirection === 'sent' ? sentParcels : receivedParcels).length ===
                       0 ? (
                         <div className="p-4 text-center text-[#C8B08A] text-[11px]">
                           لا توجد كوليات مسجلة في هذا الاتجاه بعد.
                         </div>
                       ) : (
-                        <div className="space-y-1.5">
+                        <div className="space-y-2">
                           {(parcelFilterDirection === 'sent' ? sentParcels : receivedParcels).map(
-                            (p) => (
-                              <div
-                                key={p.id}
-                                className="bg-black/50 p-2.5 rounded-xl border border-[#D4AF37]/25 flex items-center justify-between gap-2"
-                              >
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono text-[#F5C84C] font-black text-xs">
-                                      [{p.tracking_code}]
-                                    </span>
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#F5D799] font-bold">
-                                      {p.status === 'delivered' ? '✓ تم التسليم' : p.status}
-                                    </span>
+                            (p) => {
+                              const isPendingApproval = p.partner_acceptance_status === 'pending_approval';
+                              const isRejected = p.partner_acceptance_status === 'rejected';
+                              return (
+                                <div
+                                  key={p.id}
+                                  className={`bg-black/50 p-2.5 rounded-xl border space-y-2 ${
+                                    isPendingApproval
+                                      ? 'border-[#F5C84C]'
+                                      : isRejected
+                                      ? 'border-rose-500/50 opacity-75'
+                                      : 'border-[#D4AF37]/25'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-mono text-[#F5C84C] font-black text-xs">
+                                          [{p.tracking_code}]
+                                        </span>
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#F5D799] font-bold">
+                                          {p.status === 'delivered'
+                                            ? '✓ تم التسليم للزبون'
+                                            : p.status === 'arrived'
+                                            ? '📦 وصلت للمحطة'
+                                            : p.status === 'in_transit'
+                                            ? '🚚 في الطريق'
+                                            : 'مسجلة'}
+                                        </span>
+                                        {isPendingApproval && (
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-[#F5C84C] border border-[#F5C84C]/40 font-black">
+                                            ⏳ بانتظار القبول
+                                          </span>
+                                        )}
+                                        {p.partner_acceptance_status === 'accepted' && (
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-black">
+                                            ✓ مقبولة
+                                          </span>
+                                        )}
+                                        {isRejected && (
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-black">
+                                            ❌ مرفوضة
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-[10px] text-[#E6C37A] truncate mt-1">
+                                        المرسل: {p.sender_name} ⬅ المستلم: {p.receiver_name} ({p.receiver_phone})
+                                      </p>
+                                      <p className="text-[10px] text-white/80 font-bold mt-0.5">
+                                        من محطة: <span className="text-[#F5D799]">{p.origin_station_name || 'الانطلاق'}</span> ⬅ إلى محطة: <span className="text-emerald-300">{p.destination_station_name || 'الوجهة'}</span>
+                                      </p>
+                                    </div>
+                                    <div className="text-left font-mono shrink-0">
+                                      <span className="text-emerald-400 font-black text-xs block">
+                                        {p.cod_amount || p.amount_due} {p.currency}
+                                      </span>
+                                      <span className="text-[9px] text-[#C8B08A] block">
+                                        {new Date(p.created_at).toLocaleDateString('ar-MA')}
+                                      </span>
+                                    </div>
                                   </div>
-                                  <p className="text-[10px] text-[#E6C37A] truncate mt-0.5">
-                                    {p.sender_name} ➔ {p.receiver_name} ({p.receiver_phone})
-                                  </p>
+
+                                  {/* If incoming parcel from partner is pending approval, show Accept / Reject */}
+                                  {parcelFilterDirection === 'received' && isPendingApproval && (
+                                    <div className="flex items-center gap-2 pt-1.5 border-t border-white/10">
+                                      <button
+                                        type="button"
+                                        onClick={() => respondToPartnerParcel(p.id, 'accepted')}
+                                        className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] transition cursor-pointer"
+                                      >
+                                        ✅ قبول الكولية في محطتنا
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => respondToPartnerParcel(p.id, 'rejected', 'رفض من غرفة الشراكة')}
+                                        className="py-1.5 px-2.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold text-[11px] transition cursor-pointer"
+                                      >
+                                        ❌ رفض
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {/* Read-only notice for sender */}
+                                  {parcelFilterDirection === 'sent' && (
+                                    <div className="text-[9px] text-[#C8B08A] border-t border-white/10 pt-1">
+                                      🔒 تأكيد الوصول والتسليم للزبون يتحكم فيه الشريك المستقبل وعامل محطته فقط.
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="text-left font-mono shrink-0">
-                                  <span className="text-emerald-400 font-black text-xs block">
-                                    {p.cod_amount || p.amount_due} {p.currency}
-                                  </span>
-                                  <span className="text-[9px] text-[#C8B08A] block">
-                                    {new Date(p.created_at).toLocaleDateString('ar-MA')}
-                                  </span>
-                                </div>
-                              </div>
-                            )
+                              );
+                            }
                           )}
                         </div>
                       )}

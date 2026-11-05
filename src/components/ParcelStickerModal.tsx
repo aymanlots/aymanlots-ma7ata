@@ -241,11 +241,16 @@ export function getSenderKey(parcel: Pick<Parcel, 'sender_phone' | 'sender_name'
   return cleanPhone || cleanName;
 }
 
+type ExpandedStickerParcel = Parcel & {
+  _pieceIndex?: number;
+  _totalPieces?: number;
+};
+
 /**
  * بناء كود HTML الداخلي للملصق الحراري المقسوم إلى 3 أجزاء باللونين الأسود والأبيض فقط
  */
 function buildSingleStickerHtml(
-  parcel: Parcel,
+  parcel: ExpandedStickerParcel,
   qrCodeDataUrl: string,
   options: StickerPrintOptions,
   dimensionsMm: { widthMm: number; heightMm: number },
@@ -261,7 +266,10 @@ function buildSingleStickerHtml(
 
   const originStationText = formatStationLabel(parcel.origin_station_name);
   const destStationText = formatStationLabel(parcel.destination_station_name);
-  const routeLineText = `من ${originStationText} إلى ${destStationText}`;
+  const routeLineText = `من محطة: ${originStationText} ⬅ إلى محطة: ${destStationText}`;
+
+  const totalPieces = parcel._totalPieces || Math.max(1, Number(parcel.items_count) || 1);
+  const pieceIndex = parcel._pieceIndex || 1;
 
   const senderFontSize = getNameFontSizePt(parcel.sender_name);
   const receiverFontSize = getNameFontSizePt(parcel.receiver_name);
@@ -333,7 +341,7 @@ function buildSingleStickerHtml(
           ${
             options.showStationBranding !== false
               ? `<div style="width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.4mm;">
-                  ${logoSrc ? `<img src="${escapeHtml(logoSrc)}" alt="${escapeHtml(agencyName)}" style="width:42px;height:42px;border-radius:50% !important;object-fit:cover;background:transparent !important;display:block;" />` : ''}
+                  ${logoSrc ? `<img src="${escapeHtml(logoSrc)}" alt="${escapeHtml(agencyName)}" style="width:40px;height:40px;border-radius:50% !important;object-fit:cover;background:transparent !important;display:block;" />` : ''}
                   <div style="font-size:8.5pt;font-weight:900;line-height:1.1;text-align:center;color:#000000;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                     ${escapeHtml(agencyName)}
                   </div>
@@ -349,6 +357,13 @@ function buildSingleStickerHtml(
           }
 
           <div style="display:flex;flex-direction:column;gap:0.6mm;font-size:8.5pt;line-height:1.15;font-weight:700;color:#000000;">
+            ${
+              totalPieces > 1
+                ? `<div style="border:1.5px solid #000000;background:#000000;color:#ffffff;padding:0.4mm 1mm;font-size:8pt;font-weight:900;text-align:center;white-space:nowrap;">
+                    📦 طرد ${pieceIndex} من ${totalPieces}
+                  </div>`
+                : ''
+            }
             ${
               parcel.is_partnership_parcel ||
               parcel.is_collaborator_data ||
@@ -914,13 +929,22 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
     };
   }, [isOpen, selectedParcels]);
 
-  // قائمة الملصقات النهائية الموسعة بعد ضرب كل كولي محدد في عدد النسخ (copiesPerParcel)
+  // قائمة الملصقات النهائية الموسعة:
+  // إذا كان الكولي يحتوي على عدة طرود (items_count > 1، مثلاً 5 طرود لنفس المستلم)،
+  // يتم استخراج 5 تيكيتات مرقمة (طرد 1 من 5 ... طرد 5 من 5) تلقائياً ليلصق العامل كل تيكيتة على طرد!
   const expandedStickers = useMemo(() => {
-    const result: Parcel[] = [];
+    const result: ExpandedStickerParcel[] = [];
     const copies = Math.max(1, Math.min(200, copiesPerParcel));
     for (const p of selectedParcels) {
-      for (let c = 0; c < copies; c++) {
-        result.push(p);
+      const piecesCount = Math.max(1, Math.min(100, Number(p.items_count) || 1));
+      for (let pieceIdx = 1; pieceIdx <= piecesCount; pieceIdx++) {
+        for (let c = 0; c < copies; c++) {
+          result.push({
+            ...p,
+            _pieceIndex: pieceIdx,
+            _totalPieces: piecesCount,
+          });
+        }
       }
     }
     return result;

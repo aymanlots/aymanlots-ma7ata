@@ -406,6 +406,21 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
     setMultiItems((prev) => [...prev, createEmptyDraftItem(destinationStationId)]);
   };
 
+  const handleSetBulkCount = (rawCount: number) => {
+    const targetCount = Math.max(1, Math.min(50, Math.floor(rawCount) || 1));
+    setMultiItems((prev) => {
+      if (prev.length === targetCount) return prev;
+      if (prev.length > targetCount) {
+        return prev.slice(0, targetCount);
+      }
+      const added: MultiParcelItemDraft[] = [];
+      for (let i = prev.length; i < targetCount; i++) {
+        added.push(createEmptyDraftItem(destinationStationId));
+      }
+      return [...prev, ...added];
+    });
+  };
+
   const handleRemoveMultiItem = (id: string) => {
     if (multiItems.length <= 1) return;
     setMultiItems((prev) => prev.filter((item) => item.id !== id));
@@ -778,15 +793,15 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
         {/* Form Body - Scrollable */}
         <form onSubmit={handleSubmit} className="space-y-3 overflow-y-auto pr-1 text-xs flex-1">
           {/* 1. Stations Selection (From / To) */}
-          <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
+          <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
             <span className="font-bold text-[#F5D799] flex items-center gap-1.5 text-xs">
               <MapPin className="w-3.5 h-3.5 text-[#F3A952]" />
-              <span>خط النقل والمحطات (الداخلية أو محطات الشركاء):</span>
+              <span>1. تحديد المسار (من محطة ⬅ إلى محطة):</span>
             </span>
             <div className="grid grid-cols-2 gap-2">
-              <div className={registrationMode === 'multi' && multiSubMode === 'multi_receivers' ? 'col-span-2' : ''}>
-                <label className="block text-[#C8B08A] mb-1 font-bold text-[11px]">
-                  محطة الانطلاق (تودع فيها البضاعة):
+              <div>
+                <label className="block text-[#F5C84C] mb-1 font-black text-[11px]">
+                  من محطة (الانطلاق):
                 </label>
                 <select
                   value={originStationId}
@@ -803,50 +818,71 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 </select>
               </div>
 
-              {(registrationMode === 'single' || multiSubMode === 'one_receiver') && (
-                <div>
-                  <label className="block text-[#C8B08A] mb-1 font-bold text-[11px]">
-                    محطة الوصول (شركتنا أو شريك):
-                  </label>
-                  <select
-                    value={destinationStationId}
-                    onChange={(e) => setDestinationStationId(e.target.value)}
-                    className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-[#FFF8EB] font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
-                    required
-                  >
-                    {stations.length > 0 && (
-                      <optgroup label="🏠 محطات شركتنا الداخلية">
-                        {stations.map((st) => (
-                          <option key={st.id} value={st.id}>
-                            🏠 {st.name} ({st.city})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {partnerDestinationStations.length > 0 && (
-                      <optgroup label="🤝 محطات الشركاء (غرفة الشراكة)">
-                        {partnerDestinationStations.map((pst) => (
-                          <option key={pst.id} value={pst.id}>
-                            🤝 {pst.name} ({pst.city}) — [{pst.partnerWorkspaceName}]
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                </div>
-              )}
+              <div>
+                <label className="block text-emerald-400 mb-1 font-black text-[11px]">
+                  إلى محطة (الوجهة):
+                </label>
+                <select
+                  value={destinationStationId}
+                  onChange={(e) => {
+                    const newDest = e.target.value;
+                    setDestinationStationId(newDest);
+                    setMultiItems((prev) =>
+                      prev.map((it) => ({ ...it, destinationStationId: newDest }))
+                    );
+                  }}
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-[#FFF8EB] font-bold text-xs focus:outline-none focus:border-[#D4AF37]"
+                  required
+                >
+                  {stations.length > 0 && (
+                    <optgroup label="🏠 محطات شركتنا الداخلية">
+                      {stations.map((st) => (
+                        <option key={st.id} value={st.id}>
+                          🏠 {st.name} ({st.city})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {partnerDestinationStations.length > 0 && (
+                    <optgroup label="🤝 محطات الشركاء (غرفة الشراكة)">
+                      {partnerDestinationStations.map((pst) => (
+                        <option key={pst.id} value={pst.id}>
+                          🤝 {pst.name} ({pst.city}) — [{pst.partnerWorkspaceName}]
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
             </div>
 
-            {selectedPartnerDest && (registrationMode === 'single' || multiSubMode === 'one_receiver') && (
+            {/* Clear Explicit Route Banner */}
+            <div className="bg-black/60 border border-[#D4AF37]/35 rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-[11px]">
+              <span className="font-bold text-white/90">
+                من محطة:{' '}
+                <strong className="text-[#F5C84C]">
+                  {originSt ? `${originSt.name} (${originSt.city})` : 'الانطلاق'}
+                </strong>
+              </span>
+              <span className="text-[#F5C84C] font-black">⬅</span>
+              <span className="font-bold text-white/90">
+                إلى محطة:{' '}
+                <strong className="text-emerald-400">
+                  {destSt ? `${destSt.name} (${destSt.city})` : 'الوجهة'}
+                </strong>
+              </span>
+            </div>
+
+            {selectedPartnerDest && (
               <div className="p-2.5 rounded-xl bg-purple-950/75 border border-purple-400/50 text-purple-100 text-[11px] font-bold flex items-start gap-2 animate-fadeIn">
                 <span className="text-sm shrink-0">🤝</span>
                 <span>
-                  وجهة غرفة الشراكة: سيتم توجيه هذا الكولي مباشرة إلى محطة{' '}
+                  وجهة غرفة الشراكة: سيتم إرسال طلب قبول هذا الكولي إلى محطة{' '}
                   <strong className="text-[#F5C84C]">
                     "{selectedPartnerDest.name} ({selectedPartnerDest.city})"
                   </strong>{' '}
                   التابعة للشريك <strong className="text-purple-200">"{selectedPartnerDest.partnerWorkspaceName}"</strong>.
-                  (يظهر هذا الكولي فقط لعامل تلك المحطة المستقبلة وللمدير).
+                  (يظهر الكولي لعامل تلك المحطة المستقبلة وللمدير للقبول والتسليم).
                 </span>
               </div>
             )}
@@ -897,12 +933,12 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           )}
 
           {/* 3. Sender Information (Shared for both Single & Multi modes) */}
-          <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
+          <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-bold text-[#F5D799] block text-xs">
                 {registrationMode === 'multi'
-                  ? '👤 بيانات المرسل (صاحب الإرساليات):'
-                  : '👤 بيانات المرسل:'}
+                  ? '2. بيانات المرسل وعدد الكوليات اللي عندو:'
+                  : '2. بيانات المرسل:'}
               </span>
               {selectedVipSender && (
                 <span className="px-2 py-0.5 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/40 text-[#F5C84C] text-[9px] font-black">
@@ -912,7 +948,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">الاسم الكامل *</label>
+                <label className="block text-[#C8B08A] mb-1 text-[11px]">اسم المرسل *</label>
                 <input
                   type="text"
                   placeholder="اسم مرسل البضاعة"
@@ -923,7 +959,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">رقم الهاتف / واتساب *</label>
+                <label className="block text-[#C8B08A] mb-1 text-[11px]">رقم هاتف المرسل *</label>
                 <input
                   type="tel"
                   placeholder="0600000000"
@@ -935,6 +971,47 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 />
               </div>
             </div>
+
+            {/* When in Multi mode: Prominent "شحال عندو من كولية" selector right inside Sender card */}
+            {registrationMode === 'multi' && (
+              <div className="pt-2 border-t border-white/10 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <label className="block text-[#F5C84C] font-black text-xs">
+                      📦 شحال عندو من كولية؟ (عدد الكوليات):
+                    </label>
+                    <span className="text-[10px] text-[#C8B08A]">
+                      اكتب العدد أو اختره وسيفتح لك الخانات مرتبة مرقمة (#1، #2، #3...)
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={multiItems.length}
+                    onChange={(e) => handleSetBulkCount(parseInt(e.target.value, 10) || 1)}
+                    className="w-20 bg-[#120a00] border-2 border-[#F5C84C] rounded-xl px-2.5 py-1.5 text-center text-[#F5C84C] font-mono font-black text-sm focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] text-white/70 font-bold">اختيار سريع للعدد:</span>
+                  {[2, 3, 4, 5, 6, 8, 10].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handleSetBulkCount(num)}
+                      className={`px-2.5 py-1 rounded-lg font-mono font-black text-xs transition cursor-pointer ${
+                        multiItems.length === num
+                          ? 'bg-[#F5C84C] text-[#1a0f00] shadow'
+                          : 'bg-black/50 text-[#F5D799] border border-[#D4AF37]/35 hover:border-[#F5C84C]'
+                      }`}
+                    >
+                      {num} كوليات
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Receiver Info (Shown at top if Single Mode OR Multi-Parcel to One Receiver) */}
@@ -942,12 +1019,12 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
               <span className="font-bold text-[#E6C37A] block text-xs">
                 {registrationMode === 'multi'
-                  ? '🎯 بيانات المستلم الموحد (يتسلم جميع الكوليات أسفله):'
-                  : '🎯 بيانات المستلم:'}
+                  ? '3. بيانات المستلم الموحد (يتسلم جميع الكوليات أسفله):'
+                  : '3. بيانات المستلم:'}
               </span>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[#C8B08A] mb-1 text-[11px]">الاسم الكامل *</label>
+                  <label className="block text-[#C8B08A] mb-1 text-[11px]">اسم المستلم *</label>
                   <input
                     type="text"
                     placeholder="اسم المستلم في الوجهة"
@@ -958,7 +1035,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-[#C8B08A] mb-1 text-[11px]">رقم الهاتف / واتساب *</label>
+                  <label className="block text-[#C8B08A] mb-1 text-[11px]">رقم هاتف المستلم *</label>
                   <input
                     type="tel"
                     placeholder="2220000000"
@@ -980,14 +1057,16 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <>
               {/* 4. Goods Description, Quantity, Weight & Auto Tariff Calculator */}
               <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
-                <span className="font-bold text-[#F5D799] block text-xs">مواصفات البضاعة والوزن:</span>
+                <span className="font-bold text-[#F5D799] block text-xs">
+                  4. شنو فالكولية وعدد الطرود:
+                </span>
 
                 <div>
                   <label className="block text-[#C8B08A] mb-1 text-[11px]">
-                    وصف حر لمحتوى الطرد أو البضاعة *
+                    شنو فالكولية؟ (وصف البضاعة) *
                   </label>
                   <textarea
-                    placeholder="اكتب بالتفصيل نوع البضاعة، الماركة، أو أي تفاصيل تميز الكولي..."
+                    placeholder="اكتب نوع البضاعة أو المحتوى (مثلاً: كرتونة ملابس، قطع غيار، أمانة...)"
                     rows={2}
                     required
                     value={description}
@@ -997,6 +1076,36 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[#F5C84C] mb-1 text-[11px] font-black">
+                      شحال من كولية/طرد لنفس المستلم؟ *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      required
+                      value={itemsCount}
+                      onChange={(e) => setItemsCount(e.target.value)}
+                      className="w-full bg-[#120a00] border-2 border-[#F5C84C]/70 rounded-xl px-3 py-1.5 text-[#F5C84C] font-mono font-black text-sm focus:outline-none focus:border-[#F5C84C]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px] font-bold flex items-center gap-1">
+                      <Scale className="w-3 h-3 text-[#F5C84C]" />
+                      <span>الوزن (kg) اختياري:</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="مثال: 15"
+                      value={weightKg}
+                      onChange={(e) => setWeightKg(e.target.value)}
+                      className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-1.5 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#F5C84C]"
+                    />
+                  </div>
+
                   <div className="col-span-2">
                     <label className="block text-[#C8B08A] mb-1 text-[11px]">تصنيف البضاعة:</label>
                     <select
@@ -1011,34 +1120,18 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                       ))}
                     </select>
                   </div>
-
-                  <div>
-                    <label className="block text-[#C8B08A] mb-1 text-[11px]">عدد الطرود *</label>
-                    <input
-                      type="number"
-                      min="1"
-                      required
-                      value={itemsCount}
-                      onChange={(e) => setItemsCount(e.target.value)}
-                      className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-1.5 text-white font-mono text-xs focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[#F5C84C] mb-1 text-[11px] font-black flex items-center gap-1">
-                      <Scale className="w-3 h-3" />
-                      <span>الوزن بالكيلوغرام (kg):</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      placeholder="مثال: 15"
-                      value={weightKg}
-                      onChange={(e) => setWeightKg(e.target.value)}
-                      className="w-full bg-[#120a00] border border-[#F5C84C]/60 rounded-xl px-3 py-1.5 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#F5C84C]"
-                    />
-                  </div>
                 </div>
+
+                {/* Notice when itemsCount > 1: Auto-print multiple stickers! */}
+                {(parseInt(itemsCount, 10) || 1) > 1 && (
+                  <div className="p-2.5 rounded-xl bg-[#F5C84C]/15 border border-[#F5C84C] text-[#F5D799] text-[11px] font-bold leading-relaxed animate-fadeIn">
+                    🖨️ <strong className="text-[#F5C84C] font-black">تعدد التيكيتات التلقائي:</strong>{' '}
+                    بما أن عدد الطرود هو <strong className="text-white font-mono">({itemsCount})</strong>، سيقوم التطبيق تلقائياً باستخراج{' '}
+                    <strong className="text-[#F5C84C] font-black">{itemsCount} ديال التيكيتات (ملصقات)</strong>{' '}
+                    مرقمة (<span className="font-mono">طرد 1 من {itemsCount}</span> ... إلى{' '}
+                    <span className="font-mono">طرد {itemsCount} من {itemsCount}</span>) بنفس المعلومات والباركود باش تلصق كل تيكيتة على كولية!
+                  </div>
+                )}
 
                 {/* Automatic Tariff Calculator Box */}
                 <div className="bg-black/60 p-2.5 rounded-xl border border-[#F5C84C]/40 space-y-2">
@@ -1046,7 +1139,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     <div className="flex items-center gap-1.5">
                       <Calculator className="w-3.5 h-3.5 text-[#F5C84C]" />
                       <span className="font-black text-[11px] text-[#F5C84C]">
-                        حاسبة التسعيرة التلقائية ({originSt?.city || 'الانطلاق'} ➔ {destSt?.city || 'الوصول'}):
+                        حاسبة التسعيرة التلقائية (من {originSt?.city || 'الانطلاق'} ⬅ إلى {destSt?.city || 'الوصول'}):
                       </span>
                     </div>
                     <button
@@ -1091,7 +1184,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   {showTariffEditor && (
                     <div className="pt-2 border-t border-white/15 space-y-2 animate-fadeIn">
                       <span className="text-[10px] text-[#F5C84C] font-bold block">
-                        تعديل تسعيرة الخط ({originSt?.city} ➔ {destSt?.city}):
+                        تعديل تسعيرة الخط (من {originSt?.city} ⬅ إلى {destSt?.city}):
                       </span>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
@@ -1134,7 +1227,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-[#F5D799] flex items-center gap-1.5 text-xs">
                     <DollarSign className="w-3.5 h-3.5 text-[#F3A952]" />
-                    <span>المستحقات المالية وطريقة الأداء:</span>
+                    <span>5. الثمن وخالص ولا ماشي خالص:</span>
                   </span>
                   <button
                     type="button"
@@ -1149,7 +1242,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[#C8B08A] mb-1 text-[11px]">المبلغ الإجمالي *</label>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">الثمن الإجمالي *</label>
                     <input
                       type="number"
                       step="0.01"
@@ -1180,7 +1273,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   </div>
 
                   <div className="col-span-2">
-                    <label className="block text-[#C8B08A] mb-1 text-[11px]">الطرف الملزم بالأداء *</label>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">واش خالص ولا يخلص المستلم؟ *</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -1189,7 +1282,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           payer === 'sender' ? 'btn-gold' : 'btn-cancel'
                         }`}
                       >
-                        المرسل
+                        ✓ خالص (أدى المرسل)
                       </button>
                       <button
                         type="button"
@@ -1198,7 +1291,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           payer === 'receiver' ? 'btn-gold' : 'btn-cancel'
                         }`}
                       >
-                        المستلم
+                        ⏳ غير خالص (يؤدي المستلم)
                       </button>
                     </div>
                   </div>
@@ -1229,7 +1322,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         remaining > 0 ? 'text-rose-400' : 'text-[#F5D799]'
                       }`}
                     >
-                      {remaining} {currency} {remaining === 0 ? '(خالص)' : '(متبقي)'}
+                      {remaining} {currency} {remaining === 0 ? '(خالص ✓)' : '(متبقي على المستلم)'}
                     </span>
                   </div>
                 </div>
@@ -1287,27 +1380,27 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             </>
           ) : (
             /* =================================================================== */
-            /* MULTI-PARCEL BODY (بزاف ديال الكوليات من نفس المرسل) */
+            /* MULTI-PARCEL BODY (بزاف ديال الكوليات من نفس المرسل - منظم وواضح) */
             /* =================================================================== */
             <div className="space-y-2.5">
-              <div className="flex items-center justify-between bg-black/55 px-3 py-2 rounded-2xl border border-[#F5C84C]/40">
+              <div className="flex items-center justify-between bg-black/65 px-3 py-2.5 rounded-2xl border border-[#F5C84C]/50">
                 <div>
                   <span className="font-black text-[#F5C84C] text-xs block">
-                    قائمة الكوليات ({multiItems.length} كولي)
+                    📋 خانات الكوليات المرقمة ({multiItems.length} كوليات)
                   </span>
-                  <span className="text-[10px] text-white/70">
+                  <span className="text-[10px] text-white/80">
                     {multiSubMode === 'one_receiver'
-                      ? 'جميع الكوليات أسفله مرسلة لنفس المستلم أعلاه'
-                      : 'حدد لكل كولي المستلم الخاص به ومحطة الوصول'}
+                      ? 'عمر غير شنو فالكولية والثمن لكل كولية (نفس المستلم أعلاه)'
+                      : 'عمر لكل كولية: اسم المستلم + هاتفه + شنو فالكولية + الثمن'}
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={handleAddMultiItem}
-                  className="btn-gold px-3 py-1.5 rounded-xl font-black text-[11px] flex items-center gap-1"
+                  className="btn-gold px-3 py-1.5 rounded-xl font-black text-[11px] flex items-center gap-1 shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>إضافة كولي آخر</span>
+                  <span>+ زيد كولية</span>
                 </button>
               </div>
 
@@ -1319,13 +1412,18 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 return (
                   <div
                     key={item.id}
-                    className="bg-[#1a0f00]/90 p-3 rounded-2xl border border-[#D4AF37]/55 space-y-2.5 relative"
+                    className="bg-[#1a0f00]/95 p-3 rounded-2xl border-2 border-[#D4AF37]/60 space-y-2.5 relative shadow-md"
                   >
-                    <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
-                      <span className="font-black text-[#F5C84C] text-xs flex items-center gap-1.5">
-                        <Package className="w-3.5 h-3.5" />
-                        <span>الكولي رقم #{idx + 1}</span>
-                      </span>
+                    {/* Clean Numbered Header */}
+                    <div className="flex items-center justify-between border-b border-[#D4AF37]/30 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-lg bg-[#F5C84C] text-[#1a0f00] font-mono font-black text-xs flex items-center justify-center">
+                          #{idx + 1}
+                        </span>
+                        <span className="font-black text-[#F5D799] text-xs">
+                          الكولية رقم {idx + 1} من {multiItems.length}
+                        </span>
+                      </div>
                       {multiItems.length > 1 && (
                         <button
                           type="button"
@@ -1338,207 +1436,132 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                       )}
                     </div>
 
-                    {/* Per-item Destination & Receiver if multi_receivers */}
+                    {/* Receiver Name & Phone (Only if multi_receivers) */}
                     {multiSubMode === 'multi_receivers' && (
-                      <div className="bg-black/45 p-2.5 rounded-xl border border-white/10 space-y-2">
+                      <div className="grid grid-cols-2 gap-2 bg-black/45 p-2.5 rounded-xl border border-[#D4AF37]/30">
                         <div>
-                          <label className="block text-[#C8B08A] mb-1 text-[10px] font-bold">
-                            محطة الوصول لهذا الكولي *:
+                          <label className="block text-[#F5C84C] mb-1 text-[10px] font-black">
+                            👤 اسم المستلم #{idx + 1} *
                           </label>
-                          <select
-                            value={item.destinationStationId}
+                          <input
+                            type="text"
+                            required
+                            placeholder="اسم المستلم"
+                            value={item.receiverName}
                             onChange={(e) =>
-                              updateMultiItem(item.id, { destinationStationId: e.target.value })
+                              updateMultiItem(item.id, { receiverName: e.target.value })
                             }
-                            className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white font-bold text-xs"
-                          >
-                            {stations.length > 0 && (
-                              <optgroup label="🏠 محطات شركتنا الداخلية">
-                                {stations.map((st) => (
-                                  <option key={st.id} value={st.id}>
-                                    🏠 {st.name} ({st.city})
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                            {partnerDestinationStations.length > 0 && (
-                              <optgroup label="🤝 محطات الشركاء (غرفة الشراكة)">
-                                {partnerDestinationStations.map((pst) => (
-                                  <option key={pst.id} value={pst.id}>
-                                    🤝 {pst.name} ({pst.city}) — [{pst.partnerWorkspaceName}]
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                          </select>
+                            className="w-full bg-[#120a00] border border-[#D4AF37]/45 rounded-xl px-2.5 py-1.5 text-white text-xs focus:border-[#F5C84C] focus:outline-none"
+                          />
                         </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-[#C8B08A] mb-1 text-[10px]">
-                              اسم المستلم *
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              placeholder="اسم المستلم"
-                              value={item.receiverName}
-                              onChange={(e) =>
-                                updateMultiItem(item.id, { receiverName: e.target.value })
-                              }
-                              className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white text-xs"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[#C8B08A] mb-1 text-[10px]">
-                              هاتف المستلم *
-                            </label>
-                            <input
-                              type="tel"
-                              required
-                              dir="ltr"
-                              placeholder="2220000000"
-                              value={item.receiverPhone}
-                              onChange={(e) =>
-                                updateMultiItem(item.id, { receiverPhone: e.target.value })
-                              }
-                              className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white font-mono text-xs"
-                            />
-                          </div>
+                        <div>
+                          <label className="block text-[#F5C84C] mb-1 text-[10px] font-black">
+                            📞 رقم هاتف المستلم #{idx + 1} *
+                          </label>
+                          <input
+                            type="tel"
+                            required
+                            dir="ltr"
+                            placeholder="0600000000"
+                            value={item.receiverPhone}
+                            onChange={(e) =>
+                              updateMultiItem(item.id, { receiverPhone: e.target.value })
+                            }
+                            className="w-full bg-[#120a00] border border-[#D4AF37]/45 rounded-xl px-2.5 py-1.5 text-white font-mono text-xs focus:border-[#F5C84C] focus:outline-none"
+                          />
                         </div>
                       </div>
                     )}
 
-                    {/* Description & Qty/Weight */}
-                    <div className="grid grid-cols-2 gap-2">
+                    {/* What's inside the parcel (Description) + Packages Count */}
+                    <div className="grid grid-cols-3 gap-2">
                       <div className="col-span-2">
-                        <label className="block text-[#C8B08A] mb-1 text-[10px]">
-                          وصف محتوى الكولي #{idx + 1} *
+                        <label className="block text-[#E6C37A] mb-1 text-[10px] font-bold">
+                          📦 شنو فالكولية #{idx + 1} (الوصف) *
                         </label>
                         <input
                           type="text"
                           required
-                          placeholder="نوع البضاعة أو المحتوى..."
+                          placeholder="مثلاً: كرتونة سلعة، ملابس، أمانة..."
                           value={item.description}
                           onChange={(e) =>
                             updateMultiItem(item.id, { description: e.target.value })
                           }
-                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white text-xs"
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/45 rounded-xl px-2.5 py-1.5 text-white text-xs focus:border-[#F5C84C] focus:outline-none"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[#C8B08A] mb-1 text-[10px]">عدد الطرود</label>
+                        <label className="block text-[#C8B08A] mb-1 text-[10px] font-bold">
+                          عدد الطرود
+                        </label>
                         <input
                           type="number"
                           min="1"
+                          max="100"
                           value={item.itemsCount}
                           onChange={(e) =>
                             updateMultiItem(item.id, { itemsCount: e.target.value })
                           }
-                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white font-mono text-xs"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[#F5C84C] mb-1 text-[10px] font-bold">
-                          الوزن (kg) اختياري
-                        </label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          placeholder="مثال: 10"
-                          value={item.weightKg}
-                          onChange={(e) =>
-                            updateMultiItem(item.id, { weightKg: e.target.value })
-                          }
-                          className="w-full bg-[#120a00] border border-[#F5C84C]/50 rounded-xl px-2.5 py-1.5 text-white font-mono text-xs"
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/45 rounded-xl px-2.5 py-1.5 text-white font-mono font-bold text-xs text-center"
                         />
                       </div>
                     </div>
 
-                    {/* Financial per item */}
-                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-white/10">
+                    {/* Price & Paid / Unpaid toggle in one clean row */}
+                    <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-white/10">
                       <div>
-                        <label className="block text-[#C8B08A] mb-1 text-[10px]">
-                          الواجب ({currency})
+                        <label className="block text-[#E6C37A] mb-1 text-[10px] font-bold">
+                          💰 الثمن ({currency}) *
                         </label>
                         <input
                           type="number"
                           min="0"
                           step="0.01"
+                          placeholder="مثلاً: 100"
                           value={item.amountDue}
                           onChange={(e) =>
                             updateMultiItem(item.id, { amountDue: e.target.value })
                           }
-                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2 py-1.5 text-white font-mono font-bold text-xs"
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/45 rounded-xl px-2.5 py-1.5 text-white font-mono font-black text-xs"
                         />
                       </div>
+
                       <div>
-                        <label className="block text-[#C8B08A] mb-1 text-[10px]">الدافع</label>
-                        <select
-                          value={item.payer}
-                          onChange={(e) =>
-                            updateMultiItem(item.id, { payer: e.target.value as ParcelPayer })
-                          }
-                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2 py-1.5 text-white font-bold text-xs"
-                        >
-                          <option value="sender">المرسل</option>
-                          <option value="receiver">المستلم</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[#C8B08A] mb-1 text-[10px]">
-                          المدفوع الآن
+                        <label className="block text-[#E6C37A] mb-1 text-[10px] font-bold">
+                          حالة الخلاص:
                         </label>
-                        <input
-                          type="number"
-                          min="0"
-                          max={item.amountDue}
-                          step="0.01"
-                          value={item.amountPaid}
-                          onChange={(e) =>
-                            updateMultiItem(item.id, { amountPaid: e.target.value })
-                          }
-                          className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-2 py-1.5 text-white font-mono font-bold text-xs"
-                        />
+                        <div className="grid grid-cols-2 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateMultiItem(item.id, { payer: 'sender' })}
+                            className={`py-1.5 px-1.5 rounded-lg text-[10px] font-black transition cursor-pointer ${
+                              item.payer === 'sender'
+                                ? 'bg-emerald-500 text-black'
+                                : 'bg-black/50 text-white/70 border border-white/15'
+                            }`}
+                          >
+                            ✓ خالص
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateMultiItem(item.id, { payer: 'receiver' })}
+                            className={`py-1.5 px-1.5 rounded-lg text-[10px] font-black transition cursor-pointer ${
+                              item.payer === 'receiver'
+                                ? 'bg-amber-500 text-black'
+                                : 'bg-black/50 text-white/70 border border-white/15'
+                            }`}
+                          >
+                            ⏳ المستلم يخلص
+                          </button>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-[10px] pt-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateMultiItem(item.id, {
-                              condition: item.condition === 'normal' ? 'abnormal' : 'normal',
-                            })
-                          }
-                          className={`px-2 py-0.5 rounded-lg font-bold border ${
-                            item.condition === 'abnormal'
-                              ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                              : 'bg-black/40 border-white/15 text-white/70'
-                          }`}
-                        >
-                          {item.condition === 'abnormal' ? '⚠️ قابل للكسر' : '✓ سليم وعادي'}
-                        </button>
+                    {(parseInt(item.itemsCount, 10) || 1) > 1 && (
+                      <div className="text-[10px] text-[#F5C84C] bg-[#F5C84C]/10 border border-[#F5C84C]/30 rounded-lg px-2 py-1 font-bold">
+                        🖨️ غادي يخرجو {item.itemsCount} ديال التيكيتات مرقمة (1/{item.itemsCount} إلى {item.itemsCount}/{item.itemsCount}) لهاد الكولية.
                       </div>
-                      <span className={itemRem > 0 ? 'text-rose-300 font-mono font-bold' : 'text-emerald-300 font-mono font-bold'}>
-                        {itemRem > 0 ? `الباقي: ${itemRem} ${currency}` : `خالص ✓`}
-                      </span>
-                    </div>
-
-                    {item.condition === 'abnormal' && (
-                      <input
-                        type="text"
-                        required
-                        placeholder="ملاحظة الكسر أو العناية الخاصة..."
-                        value={item.conditionNotes}
-                        onChange={(e) =>
-                          updateMultiItem(item.id, { conditionNotes: e.target.value })
-                        }
-                        className="w-full bg-[#120a00] border border-amber-400/50 rounded-xl px-2.5 py-1.5 text-white text-xs"
-                      />
                     )}
                   </div>
                 );
@@ -1552,8 +1575,8 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 <Plus className="w-4 h-4" />
                 <span>
                   {multiSubMode === 'one_receiver'
-                    ? '+ إضافة كولي آخر لنفس المستلم'
-                    : '+ إضافة كولي آخر لمستلم جديد'}
+                    ? '+ إضافة كولية أخرى لنفس المستلم'
+                    : '+ إضافة كولية أخرى لمستلم جديد'}
                 </span>
               </button>
 
@@ -1561,10 +1584,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               <div className="bg-black/65 p-3 rounded-2xl border border-[#F5C84C]/40 flex items-center justify-between">
                 <div>
                   <span className="text-[11px] font-black text-[#F5C84C] block">
-                    ملخص الدفعة ({multiItems.length} كوليات):
+                    ملخص الإرسالية المتعددة ({multiItems.length} كوليات):
                   </span>
                   <span className="text-[10px] text-white/75 font-mono">
-                    المؤدى الآن: {multiTotalPaid} {currency} | الباقي:{' '}
+                    المدفوع الآن: {multiTotalPaid} {currency} | الباقي على المستلمين:{' '}
                     {Math.max(0, multiTotalDue - multiTotalPaid)} {currency}
                   </span>
                 </div>

@@ -1705,6 +1705,8 @@ export const firebaseSyncService = {
         partner_workspace_name: parcel.partner_workspace_name,
         partner_destination_station_id: targetStationId,
         partner_destination_station_name: targetStationName,
+        partner_acceptance_status: parcel.partner_acceptance_status || 'pending_approval',
+        partner_rejection_reason: parcel.partner_rejection_reason || null,
       };
 
       await setDoc(
@@ -1749,6 +1751,8 @@ export const firebaseSyncService = {
         return_initiated_at: updates.return_initiated_at,
         returned_to_sender_at: updates.returned_to_sender_at,
         returned_to_sender_name: updates.returned_to_sender_name,
+        partner_acceptance_status: updates.partner_acceptance_status,
+        partner_rejection_reason: updates.partner_rejection_reason,
         updated_at: new Date().toISOString(),
       };
       Object.keys(safeUpdates).forEach((k) => {

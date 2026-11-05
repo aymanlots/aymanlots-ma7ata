@@ -48,7 +48,14 @@ import { tripService, mapSupabaseRowToTrip } from '../services/tripService';
 import { cashService, mapSupabaseRowToTransaction } from '../services/cashService';
 import { storageService, generateUUID, isValidUUID } from '../services/storageService';
 import { firebaseSyncService } from '../services/firebaseSyncService';
-import { matchesTrackingCode, extractTrackingQueryCode, formatTrackingCodeNumeric } from '../utils/logisticsFeatures';
+import {
+  matchesTrackingCode,
+  extractTrackingQueryCode,
+  formatTrackingCodeNumeric,
+  canControlParcelOrigin,
+  canControlParcelDestination,
+  canAcceptOrRejectPartnerParcel,
+} from '../utils/logisticsFeatures';
 import { auth as firebaseAuth, googleProvider } from '../lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { 
@@ -243,6 +250,14 @@ interface AppContextType {
     notes?: string;
   }) => Promise<{ success: boolean; error?: string }>;
   dispatchParcelToPartner: (parcelId: string, partnerWorkspaceId: string, partnerStationId: string) => Promise<{ success: boolean; error?: string }>;
+  respondToPartnerParcel: (
+    parcelId: string,
+    decision: 'accepted' | 'rejected',
+    reason?: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  acceptAllPendingPartnerParcels: (
+    parcelIds?: string[]
+  ) => Promise<{ success: boolean; acceptedCount: number; error?: string }>;
 
   // Account Terminated Real-time Watchdog Notice
   accountTerminatedNotice: { isOpen: boolean; reason: 'deleted' | 'suspended'; message: string };
@@ -3994,6 +4009,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       partner_destination_station_id: partnerStationId,
       partner_destination_station_name: partnerStation?.name || 'محطة الشريك',
       destination_station_name: partnerStation?.name || p.destination_station_name,
+      partner_acceptance_status: 'pending_approval',
+      partner_rejection_reason: null,
       updated_at: new Date().toISOString(),
     };
 
@@ -4005,8 +4022,141 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       await firebaseSyncService.syncPartnerParcel(partnerWorkspaceId, updatedParcel);
     }
 
-    showToast(`تم توجيه الكولي [${p.tracking_code}] إلى محطة الشريك "${updatedParcel.partner_destination_station_name}" بنجاح`, 'success');
+    showToast(`تم إرسال طلب قبول الكولي [${p.tracking_code}] إلى محطة الشريك "${updatedParcel.partner_destination_station_name}"`, 'success');
     return { success: true };
+  };
+
+  const respondToPartnerParcel = async (
+    parcelId: string,
+    decision: 'accepted' | 'rejected',
+    reason?: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser || !currentWorkspace) {
+      return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const parcel = allParcelsRef.current.find(p => p.id === parcelId);
+    if (!parcel) return { success: false, error: 'الكولية غير موجودة' };
+
+    if (!canAcceptOrRejectPartnerParcel(parcel, currentWorkspace.id, userRole, userAssignedStationId)) {
+      const msg =
+        userRole === 'worker'
+          ? `لا يمكنك قبول أو رفض هذه الكولية لأنها موجهة إلى محطة "${parcel.destination_station_name}" فقط`
+          : 'لا تملك صلاحية البت في طلب هذه الكولية';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    const nowIso = new Date().toISOString();
+    const rejectionNote =
+      decision === 'rejected'
+        ? reason?.trim() || 'تم رفض استلام الكولية من طرف محطة الشريك المستقبلة'
+        : null;
+
+    const historyEntry: ParcelStatusHistoryEntry = {
+      status: parcel.status,
+      timestamp: nowIso,
+      changed_by_id: currentUser.id,
+      changed_by_name: currentUser.name,
+      notes:
+        decision === 'accepted'
+          ? `✅ تم قبول الكولية الواردة من الشريك (${parcel.partner_origin_workspace_name || 'الشريك'}) في محطة "${parcel.destination_station_name}" بواسطة ${currentUser.name}`
+          : `❌ تم رفض الكولية الواردة من الشريك في محطة "${parcel.destination_station_name}" — السبب: ${rejectionNote}`,
+    };
+
+    const updated: Parcel = {
+      ...parcel,
+      partner_acceptance_status: decision,
+      partner_rejection_reason: rejectionNote,
+      status_history: [...(parcel.status_history || []), historyEntry],
+      updated_at: nowIso,
+    };
+
+    const nextList = allParcelsRef.current.map(p => (p.id === parcelId ? updated : p));
+    allParcelsRef.current = nextList;
+    setAllParcels(nextList);
+
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.syncParcel(currentWorkspace.id, updated).catch(() => {});
+      const originWsId = updated.partner_origin_workspace_id;
+      if (originWsId && originWsId !== currentWorkspace.id) {
+        await firebaseSyncService
+          .syncPartnerParcelStatusBack(originWsId, updated.id, updated)
+          .catch(() => {});
+      }
+    }
+
+    showToast(
+      decision === 'accepted'
+        ? `✅ تم قبول الكولية [${parcel.tracking_code}] بنجاح في محطة "${parcel.destination_station_name}"`
+        : `❌ تم رفض الكولية [${parcel.tracking_code}] وإشعار المدير المرسل`,
+      decision === 'accepted' ? 'success' : 'info'
+    );
+    return { success: true };
+  };
+
+  const acceptAllPendingPartnerParcels = async (
+    parcelIds?: string[]
+  ): Promise<{ success: boolean; acceptedCount: number; error?: string }> => {
+    if (!currentUser || !currentWorkspace) {
+      return { success: false, acceptedCount: 0, error: 'يرجى تسجيل الدخول أولاً' };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, acceptedCount: 0, error: writeCheck.error };
+
+    const pendingTargets = allParcelsRef.current.filter(p => {
+      if (parcelIds && parcelIds.length > 0 && !parcelIds.includes(p.id)) return false;
+      return canAcceptOrRejectPartnerParcel(p, currentWorkspace.id, userRole, userAssignedStationId);
+    });
+
+    if (pendingTargets.length === 0) {
+      return { success: false, acceptedCount: 0, error: 'لا توجد كوليات معلقة بانتظار القبول حالياً' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const targetIds = new Set(pendingTargets.map(p => p.id));
+    const updatedItems: Parcel[] = [];
+
+    const nextList = allParcelsRef.current.map(p => {
+      if (!targetIds.has(p.id)) return p;
+      const historyEntry: ParcelStatusHistoryEntry = {
+        status: p.status,
+        timestamp: nowIso,
+        changed_by_id: currentUser.id,
+        changed_by_name: currentUser.name,
+        notes: `✅ تم قبول الكولية الواردة من الشريك (${p.partner_origin_workspace_name || 'الشريك'}) في محطة "${p.destination_station_name}" بواسطة ${currentUser.name}`,
+      };
+      const updated: Parcel = {
+        ...p,
+        partner_acceptance_status: 'accepted',
+        partner_rejection_reason: null,
+        status_history: [...(p.status_history || []), historyEntry],
+        updated_at: nowIso,
+      };
+      updatedItems.push(updated);
+      return updated;
+    });
+
+    allParcelsRef.current = nextList;
+    setAllParcels(nextList);
+
+    if (firebaseSyncService.isAvailable()) {
+      await Promise.all(
+        updatedItems.map(async u => {
+          await firebaseSyncService.syncParcel(currentWorkspace.id, u).catch(() => {});
+          if (u.partner_origin_workspace_id && u.partner_origin_workspace_id !== currentWorkspace.id) {
+            await firebaseSyncService
+              .syncPartnerParcelStatusBack(u.partner_origin_workspace_id, u.id, u)
+              .catch(() => {});
+          }
+        })
+      );
+    }
+
+    showToast(`✅ تم قبول (${updatedItems.length}) كولية واردة من غرفة الشراكة بنجاح`, 'success');
+    return { success: true, acceptedCount: updatedItems.length };
   };
 
   // Check if any data records exist in workspace
@@ -5060,6 +5210,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             partner_workspace_name: partnerDestMeta.partnerWorkspaceName,
             partner_destination_station_id: partnerDestMeta.stationId,
             partner_destination_station_name: partnerDestMeta.stationName,
+            partner_acceptance_status: 'pending_approval' as const,
+            partner_rejection_reason: null,
           }
         : {}),
       status_history: [
@@ -5210,18 +5362,51 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: msg };
     }
 
-    // قيد صلاحية العامل حسب محطته فقط (شامل محطة الوجهة لكوليات الشراكة)
-    if (userRole === 'worker' && userAssignedStationId) {
-      const isMyDestStation =
-        parcel.destination_station_id === userAssignedStationId ||
-        parcel.partner_destination_station_id === userAssignedStationId;
-      if ((status === 'arrived' || status === 'delivered') && !isMyDestStation) {
-        const msg = `لا يمكنك استلام أو تسليم هذا الكولي لأنه موجه إلى محطة "${parcel.destination_station_name}"`;
+    // قيد صارم لصلاحية التحكم في الوصول والتسليم (المشكل 1 + المشكل 2 + المشكل 4):
+    // 1. إذا كانت الكولية مرسلة لشريك آخر في غرفة الشراكة، المرسل لا يملك الحق في تأكيد وصولها أو تسليمها نهائياً!
+    // 2. إذا كانت واردة من شريك، يجب قبولها أولاً قبل إدخالها للستوك أو تسليمها.
+    // 3. العامل لا يتحكم إلا في محطته المخصصة فقط.
+    if (status === 'arrived' || status === 'delivered') {
+      if (parcel.partner_acceptance_status === 'rejected') {
+        const msg = `هذه الكولية مرفوضة في غرفة الشراكة ولا يمكن إدخالها للستوك أو تسليمها.`;
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
-      if (status === 'in_transit' && parcel.origin_station_id !== userAssignedStationId) {
-        const msg = `لا يمكنك إطلاق هذا الكولي لأنه صادر من محطة "${parcel.origin_station_name}"`;
+      if (parcel.partner_acceptance_status === 'pending_approval') {
+        const isOutgoingToPartner = Boolean(
+          parcel.partner_workspace_id &&
+            parcel.partner_workspace_id !== currentWorkspace?.id &&
+            !parcel.is_collaborator_data
+        );
+        const msg = isOutgoingToPartner
+          ? `هذه الكولية بانتظار موافقة وقبول المدير الشريك (${parcel.partner_workspace_name || 'الشريك'}) في محطة "${parcel.destination_station_name}". الشريك المستقبل هو الوحيد المخول بتأكيد الوصول والتسليم.`
+          : `يرجى أولاً الضغط على «قبول الكولية» في طلبات غرفة الشراكة قبل إدخالها للستوك أو تسليمها!`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+
+      if (!canControlParcelDestination(parcel, currentWorkspace?.id, userRole, userAssignedStationId)) {
+        const isOutgoingToPartner = Boolean(
+          parcel.partner_workspace_id &&
+            parcel.partner_workspace_id !== currentWorkspace?.id &&
+            !parcel.is_collaborator_data
+        );
+        const msg = isOutgoingToPartner
+          ? `لا يمكنك تأكيد الوصول أو التسليم لهذه الكولية لأنك أرسلتها عبر غرفة الشراكة إلى "${parcel.destination_station_name}" (${parcel.partner_workspace_name || 'الشريك'}). المدير والعامل في محطة الاستلام هما الوحيدان المخولان بتأكيد الوصول والتسليم!`
+          : `لا يمكنك استلام أو تسليم هذا الكولي لأنه موجه إلى محطة "${parcel.destination_station_name}" فقط`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
+
+    if (status === 'in_transit') {
+      if (parcel.partner_acceptance_status === 'rejected') {
+        const msg = `لا يمكن شحن هذه الكولية لأن الشريك في محطة "${parcel.destination_station_name}" رفض استلامها.`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (!canControlParcelOrigin(parcel, currentWorkspace?.id, userRole, userAssignedStationId)) {
+        const msg = `لا يمكنك إطلاق هذا الكولي لأنه صادر من محطة "${parcel.origin_station_name}" فقط`;
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
@@ -6365,16 +6550,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
     const targetTripForReceive = allTripsRef.current.find(t => t.id === tripId);
-    if (
-      userRole === 'worker' &&
-      userAssignedStationId &&
-      targetTripForReceive &&
-      targetTripForReceive.destination_station_id !== userAssignedStationId &&
-      targetTripForReceive.partner_destination_station_id !== userAssignedStationId
-    ) {
-      const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTripForReceive.destination_station_name}"`;
-      showToast(msg, 'error');
-      return { success: false, error: msg };
+    if (targetTripForReceive) {
+      const isSenderOfPartnerTrip = Boolean(
+        targetTripForReceive.partner_workspace_id &&
+          targetTripForReceive.partner_workspace_id !== currentWorkspace?.id &&
+          !targetTripForReceive.is_collaborator_data
+      );
+      if (isSenderOfPartnerTrip) {
+        const msg = `لا يمكنك استقبال أو تفريغ هذه الرحلة لأنك الطرف المرسل! المدير أو العامل في محطة الوصول "${targetTripForReceive.destination_station_name}" (${targetTripForReceive.partner_workspace_name || 'الشريك'}) هو الوحيد المخول بتفريغها وتأكيد وصولها.`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (
+        userRole === 'worker' &&
+        userAssignedStationId &&
+        targetTripForReceive.destination_station_id !== userAssignedStationId &&
+        targetTripForReceive.partner_destination_station_id !== userAssignedStationId
+      ) {
+        const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTripForReceive.destination_station_name}" فقط`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
     }
 
     const res = tripService.receiveParcelAtDestination(
@@ -6388,11 +6584,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (msg: string) => showToast(msg, 'error')
     );
     if (res.success) {
+      const updatedParcelsWithAccept = res.updatedParcels.map(p =>
+        res.parcel && p.id === res.parcel.id && p.partner_acceptance_status === 'pending_approval'
+          ? { ...p, partner_acceptance_status: 'accepted' as const }
+          : p
+      );
+      const syncedParcel =
+        res.parcel && res.parcel.partner_acceptance_status === 'pending_approval'
+          ? { ...res.parcel, partner_acceptance_status: 'accepted' as const }
+          : res.parcel;
       allTripsRef.current = res.updatedTrips;
-      allParcelsRef.current = res.updatedParcels;
+      allParcelsRef.current = updatedParcelsWithAccept;
       setAllTrips(res.updatedTrips);
-      setAllParcels(res.updatedParcels);
-      syncTripAndParcelsAcrossWorkspaces(res.trip, res.parcel ? [res.parcel] : []);
+      setAllParcels(updatedParcelsWithAccept);
+      syncTripAndParcelsAcrossWorkspaces(res.trip, syncedParcel ? [syncedParcel] : []);
     }
     return {
       success: res.success,
@@ -6413,13 +6618,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const targetTrip = allTripsRef.current.find(t => t.id === tripId);
     if (!targetTrip) return { success: false, receivedCount: 0, error: 'الرحلة غير موجودة' };
+    const isSenderOfPartnerTrip = Boolean(
+      targetTrip.partner_workspace_id &&
+        targetTrip.partner_workspace_id !== currentWorkspace?.id &&
+        !targetTrip.is_collaborator_data
+    );
+    if (isSenderOfPartnerTrip) {
+      const msg = `لا يمكنك استقبال أو تفريغ هذه الرحلة لأنك الطرف المرسل! المدير أو العامل في محطة الوصول "${targetTrip.destination_station_name}" (${targetTrip.partner_workspace_name || 'الشريك'}) هو الوحيد المخول بتفريغها وتأكيد وصولها.`;
+      showToast(msg, 'error');
+      return { success: false, receivedCount: 0, error: msg };
+    }
     if (
       userRole === 'worker' &&
       userAssignedStationId &&
       targetTrip.destination_station_id !== userAssignedStationId &&
       targetTrip.partner_destination_station_id !== userAssignedStationId
     ) {
-      const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTrip.destination_station_name}"`;
+      const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTrip.destination_station_name}" فقط`;
       showToast(msg, 'error');
       return { success: false, receivedCount: 0, error: msg };
     }
@@ -6444,10 +6659,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         currentParcels
       );
       if (step.success && step.trip && step.parcel) {
+        const finalParcel: Parcel =
+          step.parcel.partner_acceptance_status === 'pending_approval'
+            ? { ...step.parcel, partner_acceptance_status: 'accepted' }
+            : step.parcel;
         currentTrips = step.updatedTrips;
-        currentParcels = step.updatedParcels;
+        currentParcels = step.updatedParcels.map(item => (item.id === finalParcel.id ? finalParcel : item));
         latestTrip = step.trip;
-        receivedParcels.push(step.parcel);
+        receivedParcels.push(finalParcel);
       }
     }
 
@@ -8852,6 +9071,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         respondToPartnershipRequest,
         recordPartnershipSettlement,
         dispatchParcelToPartner,
+        respondToPartnerParcel,
+        acceptAllPendingPartnerParcels,
         accountTerminatedNotice,
         dismissAccountTerminatedNotice,
       }}

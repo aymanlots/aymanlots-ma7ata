@@ -176,6 +176,117 @@ export function getParcelSourceOwnershipInfo(
   };
 }
 
+/**
+ * يتحقق مما إذا كان المستخدم الحالي (مدير أو عامل محطة الاستلام) يملك صلاحية قبول أو رفض كولية واردة من شريك
+ */
+export function canAcceptOrRejectPartnerParcel(
+  parcel: Parcel,
+  currentWorkspaceId?: string | null,
+  userRole?: string,
+  userAssignedStationId?: string | null
+): boolean {
+  if (parcel.partner_acceptance_status !== 'pending_approval') return false;
+  const myWsId = currentWorkspaceId || '';
+  const isIncomingFromPartner =
+    Boolean(parcel.partner_origin_workspace_id && parcel.partner_origin_workspace_id !== myWsId) ||
+    Boolean(parcel.is_collaborator_data && parcel.partner_workspace_id === myWsId);
+  if (!isIncomingFromPartner) return false;
+
+  if (userRole === 'worker') {
+    if (!userAssignedStationId) return false;
+    return (
+      parcel.destination_station_id === userAssignedStationId ||
+      parcel.partner_destination_station_id === userAssignedStationId
+    );
+  }
+  return true;
+}
+
+/**
+ * يتحقق مما إذا كان المستخدم الحالي يتحكم في محطة الانطلاق (شحن الكولي وإطلاقه في الطريق)
+ * المرسل فقط (أو عامل محطة الانطلاق) يتحكم في الإرسال، بينما المستقبل لا يتحكم في الإطلاق.
+ */
+export function canControlParcelOrigin(
+  parcel: Parcel,
+  currentWorkspaceId?: string | null,
+  userRole?: string,
+  userAssignedStationId?: string | null
+): boolean {
+  const myWsId = currentWorkspaceId || '';
+  const isIncomingFromPartner =
+    Boolean(parcel.partner_origin_workspace_id && parcel.partner_origin_workspace_id !== myWsId) ||
+    Boolean(parcel.is_collaborator_data && parcel.partner_origin_workspace_id !== myWsId);
+
+  // المستقبل في غرفة الشراكة لا يطلق الكولي من محطة الانطلاق
+  if (isIncomingFromPartner) return false;
+
+  if (userRole === 'worker') {
+    if (!userAssignedStationId) return false;
+    return parcel.origin_station_id === userAssignedStationId;
+  }
+
+  return !myWsId || !parcel.workspace_id || parcel.workspace_id === myWsId;
+}
+
+/**
+ * يتحقق بصرامة مما إذا كان المستخدم الحالي يملك الحق في تأكيد وصول الكولي للمحطة (arrived) أو تسليمه للزبون (delivered).
+ * - في كوليات غرفة الشراكة المرسلة لمدير آخر: المدير المرسل وعامله لا يملكون الحق في تأكيد الوصول أو التسليم نهائياً! فقط المدير المستقبل وعامل محطة الوصول بعد قبول الكولية.
+ * - في الكوليات الداخلية: عامل محطة الانطلاق لا يملك الحق في تأكيد الوصول أو التسليم في محطة الوصول؛ فقط عامل محطة الوصول أو المدير.
+ */
+export function canControlParcelDestination(
+  parcel: Parcel,
+  currentWorkspaceId?: string | null,
+  userRole?: string,
+  userAssignedStationId?: string | null
+): boolean {
+  const myWsId = currentWorkspaceId || '';
+
+  const isOutgoingToPartner = Boolean(
+    parcel.partner_workspace_id &&
+      parcel.partner_workspace_id !== myWsId &&
+      (!parcel.partner_origin_workspace_id || parcel.partner_origin_workspace_id === myWsId) &&
+      !parcel.is_collaborator_data
+  );
+
+  // إذا كنت أنا من أرسل الكولية لشريك آخر في غرفة الشراكة: أنا أرسلتها فقط، والشريك المستقبل هو الوحيد المسؤول عن الوصول والتسليم!
+  if (isOutgoingToPartner) {
+    return false;
+  }
+
+  const isIncomingFromPartner =
+    Boolean(parcel.partner_origin_workspace_id && parcel.partner_origin_workspace_id !== myWsId) ||
+    Boolean(parcel.is_collaborator_data);
+
+  if (isIncomingFromPartner) {
+    // لا يمكن إدخالها للستوك أو تسليمها قبل قبولها أولاً
+    if (
+      parcel.partner_acceptance_status === 'pending_approval' ||
+      parcel.partner_acceptance_status === 'rejected'
+    ) {
+      return false;
+    }
+    if (userRole === 'worker') {
+      if (!userAssignedStationId) return false;
+      return (
+        parcel.destination_station_id === userAssignedStationId ||
+        parcel.partner_destination_station_id === userAssignedStationId
+      );
+    }
+    return true;
+  }
+
+  // كولية داخلية بين محطات نفس المدير
+  if (userRole === 'worker') {
+    if (!userAssignedStationId) return false;
+    return (
+      parcel.destination_station_id === userAssignedStationId ||
+      parcel.partner_destination_station_id === userAssignedStationId
+    );
+  }
+
+  return !myWsId || !parcel.workspace_id || parcel.workspace_id === myWsId;
+}
+
 export function getPublicTrackingLink(trackingCode: string, parcelNumber?: number): string {
   const numericCode = formatTrackingCodeNumeric(trackingCode, parcelNumber);
   if (typeof window === 'undefined') return numericCode;

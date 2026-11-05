@@ -24,7 +24,8 @@ import {
   formatTrackingCodeNumeric, 
   formatDateTimeStandard, 
   matchesTrackingCode,
-  getParcelSourceOwnershipInfo
+  getParcelSourceOwnershipInfo,
+  canControlParcelDestination,
 } from '../utils/logisticsFeatures';
 
 interface QuickDeliverModalProps {
@@ -67,11 +68,14 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
   const [pendingArrivalParcel, setPendingArrivalParcel] = useState<Parcel | null>(null);
   const [confirmDebtNotice, setConfirmDebtNotice] = useState(false);
 
-  // Only parcels that have arrived in destination station stock (status === 'arrived') are eligible for delivery
+  // Only parcels that have arrived in destination station stock (status === 'arrived') AND belong to this destination station/partner are eligible for delivery
   const arrivedStockParcels = useMemo(() => {
     const activeStation = workerStationId || (selectedStationId && selectedStationId !== 'all' ? selectedStationId : '');
     return parcels.filter(p => {
       if (p.status !== 'arrived') return false;
+      if (!canControlParcelDestination(p, currentWorkspace?.id, userRole, activeStation)) {
+        return false;
+      }
       if (
         activeStation &&
         p.destination_station_id !== activeStation &&
@@ -82,7 +86,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
       if (selectedParcels.some(sel => sel.id === p.id)) return false;
       return true;
     });
-  }, [parcels, workerStationId, selectedStationId, selectedParcels]);
+  }, [parcels, currentWorkspace?.id, userRole, workerStationId, selectedStationId, selectedParcels]);
 
   const getNonArrivedErrorMessage = (found: Parcel): string => {
     if (found.status === 'delivered') {
@@ -202,15 +206,21 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
       return;
     }
 
-    // Role check: Worker station destination check
-    if (
-      userRole === 'worker' &&
-      workerStationId &&
-      found.destination_station_id !== workerStationId &&
-      found.partner_destination_station_id !== workerStationId
-    ) {
+    // Strict destination & partner check (المشكل 2 + المشكل 4)
+    if (!canControlParcelDestination(found, currentWorkspace?.id, userRole, workerStationId)) {
       playErrorBeep();
-      setErrorMessage(`غير مسموح: الكولي #${found.parcel_number} متجه إلى محطة (${found.destination_station_name}) ولا يمكنك تسليمه من محطتك.`);
+      const isOutgoingPartner = Boolean(
+        found.partner_workspace_id &&
+          found.partner_workspace_id !== currentWorkspace?.id &&
+          !found.is_collaborator_data
+      );
+      setErrorMessage(
+        isOutgoingPartner
+          ? `غير مسموح: أنت أرسلت الكولي #${found.parcel_number} عبر غرفة الشراكة إلى محطة "${found.destination_station_name}" (${found.partner_workspace_name || 'الشريك'}). المدير والعامل في محطة الاستلام هما الوحيدان المخولان بتأكيد الوصول والتسليم.`
+          : found.partner_acceptance_status === 'pending_approval'
+          ? `يرجى أولاً قبول الكولي #${found.parcel_number} في طلبات غرفة الشراكة قبل تسليمه.`
+          : `غير مسموح: الكولي #${found.parcel_number} متجه إلى محطة (${found.destination_station_name}) ولا يمكنك تسليمه من محطتك.`
+      );
       return;
     }
 
