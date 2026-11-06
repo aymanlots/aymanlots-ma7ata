@@ -29,6 +29,7 @@ import {
   Trash2,
   CheckCircle2
 } from 'lucide-react';
+import { HelpPopover } from './HelpPopover';
 
 interface LedgerViewProps {
   onOpenNewVoucher: (initialType?: TransactionType) => void;
@@ -364,13 +365,17 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
       <div className="luxury-card rounded-[22px] p-3.5 space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <Coins className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h2 className="text-xs sm:text-sm font-black text-white truncate">
-              دفتر الصناديق والقيود المالية
+            <Coins className="w-5 h-5 text-[#F5C84C] shrink-0" />
+            <h2 className="text-base sm:text-lg font-black text-white truncate">
+              💰 الصناديق (لاكيس)
             </h2>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/60 text-[#F5C84C] border border-[#F5C84C]/40 font-black shrink-0">
-              {filteredTransactions.length} سند
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/60 text-[#F5C84C] border border-[#F5C84C]/40 font-mono font-black shrink-0">
+              {filteredTransactions.length}
             </span>
+            <HelpPopover
+              title="دفتر الصناديق (لاكيس)"
+              text="إيداع وسحب السيولة النقدية، إرسال واستقبال الحوالات بين المحطات، وصرف العملات (MAD ⇄ MRU)."
+            />
           </div>
 
           <button
@@ -379,7 +384,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
             className="btn-cancel px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1 shrink-0 cursor-pointer"
             title="إظهار أو إخفاء الأدوات المالية الإضافية"
           >
-            <span>أدوات مالية</span>
+            <span>⚡ أدوات</span>
             <ChevronDown
               className={`w-3.5 h-3.5 text-[#F5C84C] transition-transform duration-200 ${
                 isMoreToolsOpen ? 'rotate-180' : ''
@@ -393,28 +398,26 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
           <button
             type="button"
             onClick={() => onOpenNewVoucher('cash_in')}
-            className="btn-gold flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-[11px] font-black transition active:scale-95 cursor-pointer"
+            className="btn-gold flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
           >
-            <span className="text-sm font-black leading-none">+</span>
-            <span className="truncate">زيادة فلوس فلاكيس</span>
+            <span>➕ إيداع</span>
           </button>
 
           <button
             type="button"
             onClick={() => onOpenNewVoucher('cash_out')}
-            className="btn-delete flex items-center justify-center gap-1 py-2 px-2 rounded-xl text-[11px] font-black transition active:scale-95 cursor-pointer"
+            className="btn-delete flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
           >
-            <span className="text-sm font-black leading-none">−</span>
-            <span className="truncate">سحب فلوس من لاكيس</span>
+            <span>➖ سحب</span>
           </button>
 
           <button
             type="button"
             onClick={() => setShowMoneyTransferModal(true)}
-            className="btn-cancel flex items-center justify-center gap-1 px-2 py-2 rounded-xl text-[11px] font-black transition active:scale-95 cursor-pointer border border-[#F5C84C]/45 text-[#F5C84C]"
+            className="btn-cancel flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer border border-[#F5C84C]/45 text-[#F5C84C]"
           >
             <ArrowRightLeft className="w-3.5 h-3.5 text-[#F5C84C] shrink-0" />
-            <span className="truncate">إرسال / استقبال حوالة</span>
+            <span className="truncate">💸 حوالة</span>
           </button>
 
           <button
@@ -426,12 +429,12 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
               }
               setShowConverter(prev => !prev);
             }}
-            className={`flex items-center justify-center gap-1 px-2 py-2 rounded-xl text-[11px] font-black transition active:scale-95 cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer ${
               showConverter ? 'btn-gold' : 'btn-cancel'
             }`}
           >
             <ArrowRightLeft className="w-3.5 h-3.5 text-[#2ECC71] shrink-0" />
-            <span className="truncate">صرف العملة (MAD ⇄ MRU)</span>
+            <span className="truncate">💱 صرف عملة</span>
           </button>
         </div>
 
@@ -444,7 +447,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
               className="btn-cancel flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5 text-[#F5C84C]" />
-              <span>التقرير المالي اليومي</span>
+              <span>📊 التقرير اليومي</span>
             </button>
 
             <button
@@ -453,7 +456,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
               className="btn-gold flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
             >
               <ArrowRightLeft className="w-3.5 h-3.5" />
-              <span>إرسال / استقبال حوالة بين المحطات</span>
+              <span>💸 حوالات المحطات</span>
             </button>
 
             {onOpenCustomerAccounts && (
@@ -463,7 +466,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
                 className="btn-cancel flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
               >
                 <Users className="w-3.5 h-3.5 text-[#F5C84C]" />
-                <span>حسابات الزبناء والكريدي</span>
+                <span>👥 الكريدي والزبناء</span>
               </button>
             )}
 
@@ -474,7 +477,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
                 className="btn-cancel flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-400" />
-                <span>تصدير PDF</span>
+                <span>📄 PDF</span>
               </button>
             )}
 

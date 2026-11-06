@@ -33,6 +33,7 @@ import { exportService } from '../services/exportService';
 import { PWAInstallButton } from './PWAInstallButton';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { HelpPopover } from './HelpPopover';
 
 interface SettingsViewProps {
   onOpenSQLModal: () => void;
@@ -369,15 +370,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* 3. Worker Personal Profile Editor (Name and Phone only - visible to manager) */}
         <div className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#F5C84C]/40">
-          <div className="flex items-center gap-2.5 border-b border-white/15 pb-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0">
-              <Pencil className="w-4 h-4 stroke-[2.5]" />
-            </div>
-            <div>
-              <h3 className="text-xs font-black text-white">تعديل بياناتي الشخصية (الاسم ورقم الهاتف)</h3>
-              <p className="text-[10px] text-white/70">
-                تحديث اسمك ورقم هاتفك وسيظهران فوراً للمدير في قائمة فريق المحطة
-              </p>
+          <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0">
+                <Pencil className="w-4 h-4 stroke-[2.5]" />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-black text-white">✏️ بياناتي الشخصية</h3>
+                <HelpPopover text="تحديث اسمك ورقم هاتفك وسيظهران فوراً للمدير في قائمة فريق المحطة." />
+              </div>
             </div>
           </div>
 
@@ -425,16 +426,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               />
             </div>
 
-            <div className="bg-[#F5C84C]/10 border border-[#F5C84C]/30 rounded-xl p-2.5 text-[10px] text-[#F5C84C] font-bold flex items-center gap-1.5">
-              <span>💡 ملاحظة: عند حفظ الاسم ورقم الهاتف، يتم تحديث بياناتك فوراً وتظهر في شاشة المدير تحت قائمة أعضاء المحطة.</span>
-            </div>
-
             <button
               type="submit"
               disabled={isSavingWorkerProfile}
               className="w-full py-2.5 rounded-xl bg-[#F5C84C] hover:bg-[#F5C84C]/90 text-[#111111] font-black text-xs transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md"
             >
-              {isSavingWorkerProfile ? 'جاري حفظ البيانات...' : 'حفظ بياناتي الشخصية ✓'}
+              {isSavingWorkerProfile ? '⏳ جاري الحفظ...' : '✅ حفظ بياناتي'}
             </button>
           </form>
         </div>
@@ -478,8 +475,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Settings className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-black text-white">إعدادات النظام ومساحة العمل</h2>
-              <p className="text-[11px] text-white/80 font-medium">
+              <h2 className="text-base sm:text-lg font-black text-white">⚙️ الإعدادات</h2>
+              <p className="text-[11px] text-white/80 font-bold">
                 {!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
                   ? 'Sahara📦 Express'
                   : currentWorkspace.name}
@@ -497,12 +494,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               : 'bg-rose-950/60 text-rose-300 border-rose-500/40 animate-pulse'
           }`}>
             {isOnline ? <Wifi className="w-3 h-3 text-[#2ECC71]" /> : <WifiOff className="w-3 h-3" />}
-            <span>{isOnline ? 'متصل بالإنترنت' : 'وضع غير متصل (أوفلاين)'}</span>
+            <span>{isOnline ? 'متصل' : 'أوفلاين'}</span>
           </div>
 
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border bg-[#D4AF37]/20 text-[#F5C84C] border-[#D4AF37]/50 shadow-sm">
             <ShieldCheck className="w-3 h-3 text-[#F5C84C]" />
-            <span>قاعدة بيانات Firebase السحابية: متصلة ونشطة ⚡</span>
+            <span>☁️ سحابة نشطة ⚡</span>
           </div>
         </div>
 
@@ -510,7 +507,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="pt-2 border-t border-white/15 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs font-black flex-wrap">
             <Clock className={`w-4 h-4 ${isSubscriptionExpired ? 'text-rose-400' : 'text-[#F5C84C]'}`} />
-            <span className="text-white/85">مدة الاشتراك (30 يوماً):</span>
+            <span className="text-white/85">⏳ الاشتراك:</span>
             <span className={`px-2 py-0.5 rounded-lg font-mono text-[11px] border ${
               isSubscriptionExpired
                 ? 'bg-rose-950/80 text-rose-300 border-rose-500/40'
@@ -518,7 +515,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 ? 'bg-amber-950/80 text-[#F5C84C] border-[#F5C84C]/50'
                 : 'bg-[#F5C84C]/20 text-[#F5C84C] border-[#F5C84C]/40'
             }`}>
-              {isSubscriptionExpired ? 'منتهي (متوقف عن الإضافة والإرسال)' : `متبقي ${subscriptionRemainingLabel}`}
+              {isSubscriptionExpired ? 'منتهي' : subscriptionRemainingLabel}
             </span>
           </div>
 
@@ -528,7 +525,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="px-3 py-1 rounded-xl bg-[#F5C84C] text-[#111111] text-[11px] font-black transition active:scale-95 cursor-pointer flex items-center gap-1"
           >
             <Crown className="w-3.5 h-3.5" />
-            <span>تفاصيل الباقات والتجديد</span>
+            <span>الباقات</span>
           </button>
         </div>
       </div>
@@ -542,33 +539,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="w-9 h-9 rounded-xl bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] flex items-center justify-center shrink-0">
                 <Crown className="w-5 h-5" />
               </div>
-              <div>
-                <h3 className="text-xs sm:text-sm font-black text-white">
-                  باقات الاشتراك المعتمدة والفترة التجريبية
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm sm:text-base font-black text-white">
+                  👑 الباقات والاشتراك
                 </h3>
-                <p className="text-[10px] text-[#E6C37A] font-bold">
-                  الفترة التجريبية 30 يوماً مفتوحة بجميع الخصائص مع تذكير قبل 3 أيام
-                </p>
+                <HelpPopover
+                  title="الفترة التجريبية والباقات"
+                  text="تستفيد خلال الـ 30 يوماً التجريبية من جميع الخصائص مجاناً مع تذكير قبل 3 أيام. عند الانتهاء يمكنك اختيار الباك الأول (99 درهم: محطتين وعامل لكل محطة) أو الباك الثاني (199 درهم: غير محدود + شعار خاص)."
+                />
               </div>
             </div>
             <span className="px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px] font-black shrink-0">
-              {isPlan2TwoStations ? 'مفعل: الباك الأول (99 DH)' : 'مفعل: الباك الثاني / التجريبي (199 DH)'}
+              {isPlan2TwoStations ? '✓ 99 DH' : '✓ 199 DH / تجريبي'}
             </span>
-          </div>
-
-          {/* شريط الفترة التجريبية 30 يوماً */}
-          <div className="p-3 rounded-xl bg-gradient-to-l from-emerald-950/70 via-black/70 to-amber-950/50 border border-[#F5C84C]/40 space-y-1">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="text-[11px] font-black text-[#F5C84C]">
-                🎁 الفترة التجريبية: 30 يوماً مجاناً (مفتوحة بجميع الخصائص)
-              </span>
-              <span className="text-[10px] font-black text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-lg border border-emerald-500/30">
-                🔔 تذكير تلقائي قبل 3 أيام
-              </span>
-            </div>
-            <p className="text-[10px] text-white/85 leading-relaxed">
-              تستفيد خلال الـ 30 يوماً من جميع الخصائص كاملة. وعند انتهاء الـ 30 يوماً يتوقف حساب الأدمين والعامل عن إضافة أو إرسال أو استقبال أي كولي أو سند مالي حتى التجديد.
-            </p>
           </div>
 
           {/* بطاقتا الباك الأول (99 درهم) والباك الثاني (199 درهم) */}
@@ -722,11 +705,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="w-10 h-10 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0 shadow-md">
                 <Store className="w-5 h-5" />
               </div>
-              <div>
-                <h3 className="text-xs font-black text-white">إدارة المحطات وتعديل الأسماء ({stations.length})</h3>
-                <p className="text-[10px] text-white/75">
-                  تعديل اسم الوكالة أو أسماء المحطات، العملات، وإضافة أو حذف محطة
-                </p>
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm sm:text-base font-black text-white">🏪 المحطات ({stations.length})</h3>
+                <HelpPopover text="إضافة أو تعديل أسماء المحطات، العملات (MAD / MRU)، أو حذف محطة." />
               </div>
             </div>
             <ChevronDown
@@ -1103,20 +1084,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="w-10 h-10 rounded-xl bg-[#006233]/30 border border-[#006233]/50 text-[#2ECC71] flex items-center justify-center shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h3 className="text-xs font-black text-white">
-                  من يمكنه رؤية بياناتي؟ (التحكم بالخصوصية)
-                </h3>
-                {pendingJoinRequestsCount > 0 && (
-                  <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-rose-600 text-white animate-pulse">
-                    {pendingJoinRequestsCount} طلب معلق
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] text-white/75 mt-0.5">
-                إدارة المعرف القصير، طلبات انضمام العمال، والخصوصية
-              </p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h3 className="text-sm sm:text-base font-black text-white">
+                🛡️ الخصوصية والأمان
+              </h3>
+              <HelpPopover text="إدارة المعرف القصير، طلبات انضمام العمال، وحماية بيانات محطتك من التسريب." />
+              {pendingJoinRequestsCount > 0 && (
+                <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-rose-600 text-white animate-pulse">
+                  {pendingJoinRequestsCount} طلب
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -1136,10 +1113,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           }}
           className="flex items-center justify-between gap-2 cursor-pointer select-none"
         >
-          <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             <MessageCircle className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <span>رقم الهاتف والواتساب وبريد Gmail المعتمد للحساب</span>
-          </h3>
+            <h3 className="text-sm sm:text-base font-black text-white">📞 الهاتف و Gmail</h3>
+            <HelpPopover text="رقم الهاتف، الواتساب، وبريد Gmail المعتمدة لتسجيل الدخول واستعادة كلمة المرور." />
+          </div>
           <ChevronDown
             className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
               openContactSection ? 'rotate-180' : ''
@@ -1149,9 +1127,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {openContactSection && (
           <div className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs">
-            <p className="text-[11px] text-white/80 leading-relaxed">
-              هذه البيانات (رقم الهاتف، الواتساب، وبريد Gmail) هي المعتمدة لتسجيل الدخول واستعادة كلمة المرور. عند تغيير رقم هاتفك أو بريد Gmail الخاص بك، سيتم إرسال رسالة تأكيد لتوثيق التحديث وحماية حسابك.
-            </p>
 
             {contactSuccessSummary && (
               <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs font-bold flex items-start gap-2">
@@ -1366,10 +1341,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           }}
           className="flex items-center justify-between gap-2 cursor-pointer select-none"
         >
-          <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             <User className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <span>فريق العمل المعتمد ({workspaceMembers.length})</span>
-          </h3>
+            <h3 className="text-sm sm:text-base font-black text-white">👥 العمال ({workspaceMembers.length})</h3>
+            <HelpPopover text="إضافة عمال جدد، توليد كود الدخول المباشر لكل عامل، وتعيين المحطة الخاصة به." />
+          </div>
           <ChevronDown
             className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
               openTeamSection ? 'rotate-180' : ''
@@ -1830,12 +1806,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         >
           <div className="flex items-center gap-1.5 flex-wrap">
             <Store className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h3 className="text-xs sm:text-sm font-black text-white">
-              تخصيص صورة الشعار والاسم في الملصقات وبونات الـ PDF
+            <h3 className="text-sm sm:text-base font-black text-white">
+              🏷️ شعار التيكيت والـ PDF
             </h3>
-            <span className="px-2 py-0.5 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] text-[9px] font-black">
-              👑 الملصقات + PDF
-            </span>
+            <HelpPopover text="تخصيص اسم وشعار وكالتك ليظهرا في الملصقات الحرارية (10×10) وجميع بونات الـ PDF." />
           </div>
           <ChevronDown
             className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
@@ -2048,10 +2022,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           }}
           className="flex items-center justify-between gap-2 cursor-pointer select-none"
         >
-          <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             <Download className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <span>تصدير ونسخ بيانات مساحة العمل (3)</span>
-          </h3>
+            <h3 className="text-sm sm:text-base font-black text-white">📥 التصدير والنسخ (PDF)</h3>
+          </div>
           <ChevronDown
             className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
               openExportSection ? 'rotate-180' : ''
@@ -2169,15 +2143,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 9. مسح البيانات وإرجاع التطبيق جديد (Admin Only) */}
       {(userRole === 'owner' || userRole === 'platform_owner') && (
         <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0">
-              <Trash2 className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-xs font-black text-white">مسح البيانات (إرجاع التطبيق جديداً)</h3>
-              <p className="text-[10px] text-white/75 mt-0.5">
-                مسح كافة البيانات والتجارب وإرجاع التطبيق فارغاً من الصفر (مع خيار تحميل نسخة احتياطية أولاً إذا أردت)
-              </p>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-4 h-4" />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-black text-white">🗑️ مسح البيانات</h3>
+                <HelpPopover text="مسح كافة البيانات والتجارب وإرجاع التطبيق فارغاً من الصفر (مع خيار تحميل نسخة احتياطية PDF أولاً)." />
+              </div>
             </div>
           </div>
 
@@ -2187,7 +2161,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="btn-delete w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>مسح البيانات</span>
+            <span>🗑️ مسح البيانات</span>
           </button>
         </div>
       )}

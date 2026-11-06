@@ -27,6 +27,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
+import { HelpPopover } from './HelpPopover';
 
 interface NewParcelModalProps {
   isOpen: boolean;
@@ -688,16 +689,17 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#D4AF37]/25 pb-2.5 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-[#F5B05B] to-[#D4882A] text-[#1a0f00] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#F5B05B] to-[#D4882A] text-[#1a0f00] flex items-center justify-center shadow-md">
               <Package className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-sm font-black text-[#F5D799]">
-                تسجيل كولي جديد (إرسالية بضائع)
+            <div className="flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-black text-[#F5D799]">
+                📦 تسجيل كولي جديد
               </h2>
-              <p className="text-[10px] text-[#E6C37A] font-bold">
-                كولي فردي أو عدة كوليات لنفس الزبون + تذكرة حرارية QR
-              </p>
+              <HelpPopover
+                title="تسجيل الكوليات"
+                text="يمكنك تسجيل كولي فردي أو عدة كوليات دفعة واحدة لنفس المرسل، مع طباعة تذكرة حرارية QR تلقائياً."
+              />
             </div>
           </div>
           <button
@@ -716,54 +718,51 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <button
               type="button"
               onClick={() => setRegistrationMode('single')}
-              className={`py-2 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 transition ${
+              className={`py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition ${
                 registrationMode === 'single' ? 'btn-gold shadow-md' : 'btn-cancel'
               }`}
             >
               <Package className="w-3.5 h-3.5 shrink-0" />
-              <span>كولي واحد (مرسل ➔ مستلم)</span>
+              <span>📦 كولي واحد</span>
             </button>
             <button
               type="button"
               onClick={() => setRegistrationMode('multi')}
-              className={`py-2 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 transition ${
+              className={`py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition ${
                 registrationMode === 'multi' ? 'btn-gold shadow-md' : 'btn-cancel'
               }`}
             >
               <Layers className="w-3.5 h-3.5 shrink-0" />
-              <span>بزاف ديال الكوليات (مرسل واحد)</span>
+              <span>📚 بزاف ديال الكوليات</span>
             </button>
           </div>
 
           {registrationMode === 'multi' && (
             <div className="pt-1.5 border-t border-white/10 space-y-1.5 animate-fadeIn">
-              <span className="text-[10px] font-black text-[#F5C84C] block">
-                اختر نوع الإرسال المتعدد لهذا الزبون:
-              </span>
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setMultiSubMode('one_receiver')}
-                  className={`py-1.5 px-2 rounded-xl text-[10px] font-black flex items-center justify-center gap-1 transition ${
+                  className={`py-1.5 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 transition ${
                     multiSubMode === 'one_receiver'
                       ? 'bg-[#F5C84C]/25 border border-[#F5C84C] text-[#F5C84C]'
                       : 'bg-black/40 border border-white/15 text-white/75'
                   }`}
                 >
                   <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span>بزاف ديال الكوليات لمستلم واحد</span>
+                  <span>👤 مستلم واحد</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setMultiSubMode('multi_receivers')}
-                  className={`py-1.5 px-2 rounded-xl text-[10px] font-black flex items-center justify-center gap-1 transition ${
+                  className={`py-1.5 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 transition ${
                     multiSubMode === 'multi_receivers'
                       ? 'bg-[#F5C84C]/25 border border-[#F5C84C] text-[#F5C84C]'
                       : 'bg-black/40 border border-white/15 text-white/75'
                   }`}
                 >
                   <Users className="w-3.5 h-3.5 shrink-0" />
-                  <span>بزاف ديال الكوليات لعدة مستلمين</span>
+                  <span>👥 عدة مستلمين</span>
                 </button>
               </div>
             </div>
@@ -794,14 +793,27 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-3 overflow-y-auto pr-1 text-xs flex-1">
           {/* 1. Stations Selection (From / To) */}
           <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
-            <span className="font-bold text-[#F5D799] flex items-center gap-1.5 text-xs">
-              <MapPin className="w-3.5 h-3.5 text-[#F3A952]" />
-              <span>1. تحديد المسار (من محطة ⬅ إلى محطة):</span>
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="font-black text-[#F5D799] flex items-center gap-1.5 text-xs">
+                <MapPin className="w-3.5 h-3.5 text-[#F3A952]" />
+                <span>📍 المحطات (من ⬅ إلى)</span>
+              </span>
+              {selectedPartnerDest && (
+                <div className="flex items-center gap-1.5">
+                  <span className="px-2 py-0.5 rounded-full bg-purple-950/80 border border-purple-400/50 text-purple-200 text-[10px] font-black">
+                    🤝 {selectedPartnerDest.partnerWorkspaceName}
+                  </span>
+                  <HelpPopover
+                    title="وجهة غرفة الشراكة"
+                    text={`سيتم إرسال طلب قبول هذا الكولي إلى محطة "${selectedPartnerDest.name} (${selectedPartnerDest.city})" التابعة للشريك "${selectedPartnerDest.partnerWorkspaceName}".`}
+                  />
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-[#F5C84C] mb-1 font-black text-[11px]">
-                  من محطة (الانطلاق):
+                  🛫 من محطة:
                 </label>
                 <select
                   value={originStationId}
@@ -820,7 +832,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
               <div>
                 <label className="block text-emerald-400 mb-1 font-black text-[11px]">
-                  إلى محطة (الوجهة):
+                  🛬 إلى محطة:
                 </label>
                 <select
                   value={destinationStationId}
@@ -835,7 +847,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   required
                 >
                   {stations.length > 0 && (
-                    <optgroup label="🏠 محطات شركتنا الداخلية">
+                    <optgroup label="🏠 محطاتنا">
                       {stations.map((st) => (
                         <option key={st.id} value={st.id}>
                           🏠 {st.name} ({st.city})
@@ -844,7 +856,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     </optgroup>
                   )}
                   {partnerDestinationStations.length > 0 && (
-                    <optgroup label="🤝 محطات الشركاء (غرفة الشراكة)">
+                    <optgroup label="🤝 محطات الشركاء">
                       {partnerDestinationStations.map((pst) => (
                         <option key={pst.id} value={pst.id}>
                           🤝 {pst.name} ({pst.city}) — [{pst.partnerWorkspaceName}]
@@ -857,7 +869,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             </div>
 
             {/* Clear Explicit Route Banner */}
-            <div className="bg-black/60 border border-[#D4AF37]/35 rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-[11px]">
+            <div className="bg-black/60 border border-[#D4AF37]/35 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2 text-[11px]">
               <span className="font-bold text-white/90">
                 من محطة:{' '}
                 <strong className="text-[#F5C84C]">
@@ -872,20 +884,6 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 </strong>
               </span>
             </div>
-
-            {selectedPartnerDest && (
-              <div className="p-2.5 rounded-xl bg-purple-950/75 border border-purple-400/50 text-purple-100 text-[11px] font-bold flex items-start gap-2 animate-fadeIn">
-                <span className="text-sm shrink-0">🤝</span>
-                <span>
-                  وجهة غرفة الشراكة: سيتم إرسال طلب قبول هذا الكولي إلى محطة{' '}
-                  <strong className="text-[#F5C84C]">
-                    "{selectedPartnerDest.name} ({selectedPartnerDest.city})"
-                  </strong>{' '}
-                  التابعة للشريك <strong className="text-purple-200">"{selectedPartnerDest.partnerWorkspaceName}"</strong>.
-                  (يظهر الكولي لعامل تلك المحطة المستقبلة وللمدير للقبول والتسليم).
-                </span>
-              </div>
-            )}
           </div>
 
           {/* 2. Quick VIP / Merchant Picker (Carnet Clients & Tarifs VIP) */}
@@ -935,23 +933,21 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           {/* 3. Sender Information (Shared for both Single & Multi modes) */}
           <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-[#F5D799] block text-xs">
-                {registrationMode === 'multi'
-                  ? '2. بيانات المرسل وعدد الكوليات اللي عندو:'
-                  : '2. بيانات المرسل:'}
+              <span className="font-black text-[#F5D799] block text-xs">
+                📤 المرسل
               </span>
               {selectedVipSender && (
                 <span className="px-2 py-0.5 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/40 text-[#F5C84C] text-[9px] font-black">
-                  ⭐ تعريفة تاجر VIP مفعلة
+                  ⭐ VIP
                 </span>
               )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">اسم المرسل *</label>
+                <label className="block text-[#C8B08A] mb-1 text-[11px]">👤 الاسم *</label>
                 <input
                   type="text"
-                  placeholder="اسم مرسل البضاعة"
+                  placeholder="اسم المرسل"
                   required
                   value={senderName}
                   onChange={(e) => setSenderName(e.target.value)}
@@ -959,7 +955,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-[#C8B08A] mb-1 text-[11px]">رقم هاتف المرسل *</label>
+                <label className="block text-[#C8B08A] mb-1 text-[11px]">📞 الهاتف *</label>
                 <input
                   type="tel"
                   placeholder="0600000000"
@@ -976,13 +972,14 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             {registrationMode === 'multi' && (
               <div className="pt-2 border-t border-white/10 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <label className="block text-[#F5C84C] font-black text-xs">
-                      📦 شحال عندو من كولية؟ (عدد الكوليات):
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[#F5C84C] font-black text-xs">
+                      🔢 شحال من كولية؟
                     </label>
-                    <span className="text-[10px] text-[#C8B08A]">
-                      اكتب العدد أو اختره وسيفتح لك الخانات مرتبة مرقمة (#1، #2، #3...)
-                    </span>
+                    <HelpPopover
+                      title="عدد الكوليات"
+                      text="اكتب العدد أو اختره وسيفتح لك الخانات مرتبة مرقمة (#1، #2، #3...) لتعبئة كل كولية بوحدها."
+                    />
                   </div>
                   <input
                     type="number"
@@ -994,7 +991,6 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   />
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] text-white/70 font-bold">اختيار سريع للعدد:</span>
                   {[2, 3, 4, 5, 6, 8, 10].map((num) => (
                     <button
                       key={num}
@@ -1006,7 +1002,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           : 'bg-black/50 text-[#F5D799] border border-[#D4AF37]/35 hover:border-[#F5C84C]'
                       }`}
                     >
-                      {num} كوليات
+                      {num}
                     </button>
                   ))}
                 </div>
@@ -1017,17 +1013,15 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           {/* Receiver Info (Shown at top if Single Mode OR Multi-Parcel to One Receiver) */}
           {(registrationMode === 'single' || multiSubMode === 'one_receiver') && (
             <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
-              <span className="font-bold text-[#E6C37A] block text-xs">
-                {registrationMode === 'multi'
-                  ? '3. بيانات المستلم الموحد (يتسلم جميع الكوليات أسفله):'
-                  : '3. بيانات المستلم:'}
+              <span className="font-black text-[#E6C37A] block text-xs">
+                📥 المستلم
               </span>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[#C8B08A] mb-1 text-[11px]">اسم المستلم *</label>
+                  <label className="block text-[#C8B08A] mb-1 text-[11px]">👤 الاسم *</label>
                   <input
                     type="text"
-                    placeholder="اسم المستلم في الوجهة"
+                    placeholder="اسم المستلم"
                     required
                     value={receiverName}
                     onChange={(e) => setReceiverName(e.target.value)}
@@ -1035,10 +1029,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-[#C8B08A] mb-1 text-[11px]">رقم هاتف المستلم *</label>
+                  <label className="block text-[#C8B08A] mb-1 text-[11px]">📞 الهاتف *</label>
                   <input
                     type="tel"
-                    placeholder="2220000000"
+                    placeholder="0600000000"
                     required
                     value={receiverPhone}
                     onChange={(e) => setReceiverPhone(e.target.value)}
@@ -1057,16 +1051,16 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <>
               {/* 4. Goods Description, Quantity, Weight & Auto Tariff Calculator */}
               <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
-                <span className="font-bold text-[#F5D799] block text-xs">
-                  4. شنو فالكولية وعدد الطرود:
+                <span className="font-black text-[#F5D799] block text-xs">
+                  📦 السلعة والطرود
                 </span>
 
                 <div>
                   <label className="block text-[#C8B08A] mb-1 text-[11px]">
-                    شنو فالكولية؟ (وصف البضاعة) *
+                    📝 الوصف *
                   </label>
                   <textarea
-                    placeholder="اكتب نوع البضاعة أو المحتوى (مثلاً: كرتونة ملابس، قطع غيار، أمانة...)"
+                    placeholder="مثلاً: كرتونة ملابس، قطع غيار، أمانة..."
                     rows={2}
                     required
                     value={description}
@@ -1077,9 +1071,15 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[#F5C84C] mb-1 text-[11px] font-black">
-                      شحال من كولية/طرد لنفس المستلم؟ *
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[#F5C84C] text-[11px] font-black">
+                        🔢 عدد الطرود *
+                      </label>
+                      <HelpPopover
+                        title="تعدد التيكيتات التلقائي"
+                        text={`إذا كان العدد أكثر من 1 (مثلاً ${itemsCount || 2})، سيطبع التطبيق تلقائياً تيكيتة مرقمة لكل طرد (طرد 1 من ${itemsCount || 2}...) بنفس الباركود.`}
+                      />
+                    </div>
                     <input
                       type="number"
                       min="1"
@@ -1094,12 +1094,12 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   <div>
                     <label className="block text-[#C8B08A] mb-1 text-[11px] font-bold flex items-center gap-1">
                       <Scale className="w-3 h-3 text-[#F5C84C]" />
-                      <span>الوزن (kg) اختياري:</span>
+                      <span>⚖️ الوزن (kg)</span>
                     </label>
                     <input
                       type="number"
                       step="0.1"
-                      placeholder="مثال: 15"
+                      placeholder="15"
                       value={weightKg}
                       onChange={(e) => setWeightKg(e.target.value)}
                       className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-1.5 text-white font-mono font-bold text-xs focus:outline-none focus:border-[#F5C84C]"
@@ -1107,7 +1107,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   </div>
 
                   <div className="col-span-2">
-                    <label className="block text-[#C8B08A] mb-1 text-[11px]">تصنيف البضاعة:</label>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">🏷️ التصنيف:</label>
                     <select
                       value={category}
                       onChange={(e) => setCategory(e.target.value)}
@@ -1122,14 +1122,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   </div>
                 </div>
 
-                {/* Notice when itemsCount > 1: Auto-print multiple stickers! */}
+                {/* Compact badge when itemsCount > 1 */}
                 {(parseInt(itemsCount, 10) || 1) > 1 && (
-                  <div className="p-2.5 rounded-xl bg-[#F5C84C]/15 border border-[#F5C84C] text-[#F5D799] text-[11px] font-bold leading-relaxed animate-fadeIn">
-                    🖨️ <strong className="text-[#F5C84C] font-black">تعدد التيكيتات التلقائي:</strong>{' '}
-                    بما أن عدد الطرود هو <strong className="text-white font-mono">({itemsCount})</strong>، سيقوم التطبيق تلقائياً باستخراج{' '}
-                    <strong className="text-[#F5C84C] font-black">{itemsCount} ديال التيكيتات (ملصقات)</strong>{' '}
-                    مرقمة (<span className="font-mono">طرد 1 من {itemsCount}</span> ... إلى{' '}
-                    <span className="font-mono">طرد {itemsCount} من {itemsCount}</span>) بنفس المعلومات والباركود باش تلصق كل تيكيتة على كولية!
+                  <div className="px-2.5 py-1.5 rounded-xl bg-[#F5C84C]/15 border border-[#F5C84C] text-[#F5C84C] text-[11px] font-black flex items-center justify-between animate-fadeIn">
+                    <span>🖨️ {itemsCount} تيكيتات مرقمة (1/{itemsCount} ⬅ {itemsCount}/{itemsCount})</span>
                   </div>
                 )}
 
@@ -1139,7 +1135,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     <div className="flex items-center gap-1.5">
                       <Calculator className="w-3.5 h-3.5 text-[#F5C84C]" />
                       <span className="font-black text-[11px] text-[#F5C84C]">
-                        حاسبة التسعيرة التلقائية (من {originSt?.city || 'الانطلاق'} ⬅ إلى {destSt?.city || 'الوصول'}):
+                        🧮 حاسبة التسعيرة
                       </span>
                     </div>
                     <button
@@ -1148,7 +1144,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                       className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] flex items-center gap-1"
                     >
                       <Settings className="w-3 h-3" />
-                      <span>تعريفة الخط</span>
+                      <span>التعريفة</span>
                     </button>
                   </div>
 
@@ -1158,7 +1154,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         {shippingEstimate.breakdown}
                       </span>
                       <span className="font-mono font-black text-sm text-emerald-400">
-                        السعر المقترح: {shippingEstimate.total} {shippingEstimate.currency}
+                        {shippingEstimate.total} {shippingEstimate.currency}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -1170,26 +1166,23 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           if (payer === 'sender') setAmountPaid(nextVal);
                           setCurrency(shippingEstimate.currency);
                           showToast(
-                            `تم اعتماد التسعيرة المحسوبة (${shippingEstimate.total} ${shippingEstimate.currency})`,
+                            `تم اعتماد التسعيرة (${shippingEstimate.total} ${shippingEstimate.currency})`,
                             'info'
                           );
                         }}
                         className="btn-gold px-2.5 py-1.5 rounded-xl font-black text-[10px]"
                       >
-                        اعتماد السعر ✓
+                        اعتماد ✓
                       </button>
                     </div>
                   </div>
 
                   {showTariffEditor && (
                     <div className="pt-2 border-t border-white/15 space-y-2 animate-fadeIn">
-                      <span className="text-[10px] text-[#F5C84C] font-bold block">
-                        تعديل تسعيرة الخط (من {originSt?.city} ⬅ إلى {destSt?.city}):
-                      </span>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-[9px] text-white/70 block mb-0.5">
-                            السعر الأساسي الأدنى:
+                            السعر الأدنى:
                           </label>
                           <input
                             type="number"
@@ -1200,7 +1193,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         </div>
                         <div>
                           <label className="text-[9px] text-white/70 block mb-0.5">
-                            ثمن الكيلوغرام الواحد (kg):
+                            ثمن الكيلوغرام (kg):
                           </label>
                           <input
                             type="number"
@@ -1215,7 +1208,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         onClick={handleSaveCustomRouteTariff}
                         className="btn-gold w-full py-1.5 rounded-lg font-black text-[11px]"
                       >
-                        حفظ تعريفة هذا الخط
+                        حفظ التعريفة
                       </button>
                     </div>
                   )}
@@ -1225,9 +1218,9 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               {/* 5. Financial Details */}
               <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-[#F5D799] flex items-center gap-1.5 text-xs">
+                  <span className="font-black text-[#F5D799] flex items-center gap-1.5 text-xs">
                     <DollarSign className="w-3.5 h-3.5 text-[#F3A952]" />
-                    <span>5. الثمن وخالص ولا ماشي خالص:</span>
+                    <span>💰 الخلاص</span>
                   </span>
                   <button
                     type="button"
@@ -1236,13 +1229,13 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                       autoApplyPrice ? 'btn-gold' : 'btn-cancel'
                     }`}
                   >
-                    {autoApplyPrice ? '✓ حساب تلقائي مفعل' : 'تحديد يدوي'}
+                    {autoApplyPrice ? '✓ تلقائي' : 'يدوي'}
                   </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[#C8B08A] mb-1 text-[11px]">الثمن الإجمالي *</label>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">💵 الثمن *</label>
                     <input
                       type="number"
                       step="0.01"
@@ -1258,7 +1251,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[#C8B08A] mb-1 text-[11px]">العملة:</label>
+                    <label className="block text-[#C8B08A] mb-1 text-[11px]">🪙 العملة:</label>
                     <select
                       value={currency}
                       onChange={(e) => setCurrency(e.target.value)}
@@ -1273,7 +1266,6 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   </div>
 
                   <div className="col-span-2">
-                    <label className="block text-[#C8B08A] mb-1 text-[11px]">واش خالص ولا يخلص المستلم؟ *</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -1282,7 +1274,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           payer === 'sender' ? 'btn-gold' : 'btn-cancel'
                         }`}
                       >
-                        ✓ خالص (أدى المرسل)
+                        ✅ خالص
                       </button>
                       <button
                         type="button"
@@ -1291,7 +1283,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           payer === 'receiver' ? 'btn-gold' : 'btn-cancel'
                         }`}
                       >
-                        ⏳ غير خالص (يؤدي المستلم)
+                        ⏳ المستلم يخلص
                       </button>
                     </div>
                   </div>
@@ -1301,7 +1293,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 <div className="grid grid-cols-1 gap-2 pt-1">
                   <div>
                     <label className="block text-[#C8B08A] mb-1 text-[11px]">
-                      المبلغ المدفوع الآن في المحطة:
+                      المدفوع الآن:
                     </label>
                     <input
                       type="number"
@@ -1315,14 +1307,14 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     />
                   </div>
 
-                  <div className="bg-[#120a00] p-2.5 rounded-xl border border-[#D4AF37]/30 flex items-center justify-between">
-                    <span className="text-[11px] text-[#C8B08A]">المبلغ المتبقي للتحصيل:</span>
+                  <div className="bg-[#120a00] p-2 rounded-xl border border-[#D4AF37]/30 flex items-center justify-between">
+                    <span className="text-[11px] text-[#C8B08A]">الباقي:</span>
                     <span
                       className={`font-mono font-black text-xs ${
                         remaining > 0 ? 'text-rose-400' : 'text-[#F5D799]'
                       }`}
                     >
-                      {remaining} {currency} {remaining === 0 ? '(خالص ✓)' : '(متبقي على المستلم)'}
+                      {remaining} {currency} {remaining === 0 ? '✓' : '⏳'}
                     </span>
                   </div>
                 </div>
@@ -1331,9 +1323,9 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               {/* 6. Parcel Condition */}
               <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/45 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-[#F5D799] block text-xs">حالة وسلامة الكولي:</span>
+                  <span className="font-black text-[#F5D799] block text-xs">🛡️ الحالة:</span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-[#120a00] text-[#E6C37A] border border-[#D4AF37]/40">
-                    {condition === 'normal' ? '✓ سليم وعادي' : '⚠ غير عادي'}
+                    {condition === 'normal' ? '✓ عادي' : '⚠ قابل للكسر'}
                   </span>
                 </div>
 
@@ -1346,7 +1338,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     }`}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>عادي (سليم)</span>
+                    <span>عادي</span>
                   </button>
 
                   <button
@@ -1357,19 +1349,16 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     }`}
                   >
                     <AlertCircle className="w-3.5 h-3.5" />
-                    <span>غير عادي (قابل للكسر)</span>
+                    <span>قابل للكسر</span>
                   </button>
                 </div>
 
                 {condition === 'abnormal' && (
                   <div className="pt-1 space-y-1">
-                    <label className="block text-[#F5D799] text-[11px] font-bold">
-                      وصف حالة الكسر أو العناية الخاصة *
-                    </label>
                     <input
                       type="text"
                       required
-                      placeholder="مثال: زجاج قابل للكسر / الكرتون مفتوح..."
+                      placeholder="وصف حالة الكسر أو العناية *"
                       value={conditionNotes}
                       onChange={(e) => setConditionNotes(e.target.value)}
                       className="w-full bg-[#120a00] border border-[#D4AF37]/60 rounded-xl px-3 py-2 text-white text-xs placeholder-[#A68966] focus:outline-none"
@@ -1383,16 +1372,19 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             /* MULTI-PARCEL BODY (بزاف ديال الكوليات من نفس المرسل - منظم وواضح) */
             /* =================================================================== */
             <div className="space-y-2.5">
-              <div className="flex items-center justify-between bg-black/65 px-3 py-2.5 rounded-2xl border border-[#F5C84C]/50">
-                <div>
-                  <span className="font-black text-[#F5C84C] text-xs block">
-                    📋 خانات الكوليات المرقمة ({multiItems.length} كوليات)
+              <div className="flex items-center justify-between bg-black/65 px-3 py-2 rounded-2xl border border-[#F5C84C]/50">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-black text-[#F5C84C] text-xs">
+                    📋 الكوليات ({multiItems.length})
                   </span>
-                  <span className="text-[10px] text-white/80">
-                    {multiSubMode === 'one_receiver'
-                      ? 'عمر غير شنو فالكولية والثمن لكل كولية (نفس المستلم أعلاه)'
-                      : 'عمر لكل كولية: اسم المستلم + هاتفه + شنو فالكولية + الثمن'}
-                  </span>
+                  <HelpPopover
+                    title="تعبئة الكوليات المتعددة"
+                    text={
+                      multiSubMode === 'one_receiver'
+                        ? 'عمر غير الوصف والثمن لكل كولية (نفس المستلم أعلاه).'
+                        : 'عمر لكل كولية: اسم المستلم + هاتفه + الوصف + الثمن.'
+                    }
+                  />
                 </div>
                 <button
                   type="button"
@@ -1400,15 +1392,11 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   className="btn-gold px-3 py-1.5 rounded-xl font-black text-[11px] flex items-center gap-1 shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>+ زيد كولية</span>
+                  <span>+ كولية</span>
                 </button>
               </div>
 
               {multiItems.map((item, idx) => {
-                const itemRem = Math.max(
-                  0,
-                  Math.round(((parseFloat(item.amountDue) || 0) - (parseFloat(item.amountPaid) || 0)) * 100) / 100
-                );
                 return (
                   <div
                     key={item.id}
@@ -1421,7 +1409,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           #{idx + 1}
                         </span>
                         <span className="font-black text-[#F5D799] text-xs">
-                          الكولية رقم {idx + 1} من {multiItems.length}
+                          📦 كولية #{idx + 1}
                         </span>
                       </div>
                       {multiItems.length > 1 && (
@@ -1431,17 +1419,16 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           className="px-2 py-1 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-bold flex items-center gap-1 hover:bg-rose-500/30"
                         >
                           <Trash2 className="w-3 h-3" />
-                          <span>حذف</span>
                         </button>
                       )}
                     </div>
 
                     {/* Receiver Name & Phone (Only if multi_receivers) */}
                     {multiSubMode === 'multi_receivers' && (
-                      <div className="grid grid-cols-2 gap-2 bg-black/45 p-2.5 rounded-xl border border-[#D4AF37]/30">
+                      <div className="grid grid-cols-2 gap-2 bg-black/45 p-2 rounded-xl border border-[#D4AF37]/30">
                         <div>
                           <label className="block text-[#F5C84C] mb-1 text-[10px] font-black">
-                            👤 اسم المستلم #{idx + 1} *
+                            👤 المستلم *
                           </label>
                           <input
                             type="text"
@@ -1456,7 +1443,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         </div>
                         <div>
                           <label className="block text-[#F5C84C] mb-1 text-[10px] font-black">
-                            📞 رقم هاتف المستلم #{idx + 1} *
+                            📞 الهاتف *
                           </label>
                           <input
                             type="tel"
@@ -1477,12 +1464,12 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     <div className="grid grid-cols-3 gap-2">
                       <div className="col-span-2">
                         <label className="block text-[#E6C37A] mb-1 text-[10px] font-bold">
-                          📦 شنو فالكولية #{idx + 1} (الوصف) *
+                          📦 السلعة *
                         </label>
                         <input
                           type="text"
                           required
-                          placeholder="مثلاً: كرتونة سلعة، ملابس، أمانة..."
+                          placeholder="شنو فالكولية..."
                           value={item.description}
                           onChange={(e) =>
                             updateMultiItem(item.id, { description: e.target.value })
@@ -1493,7 +1480,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
                       <div>
                         <label className="block text-[#C8B08A] mb-1 text-[10px] font-bold">
-                          عدد الطرود
+                          🔢 الطرود
                         </label>
                         <input
                           type="number"
@@ -1518,7 +1505,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           type="number"
                           min="0"
                           step="0.01"
-                          placeholder="مثلاً: 100"
+                          placeholder="100"
                           value={item.amountDue}
                           onChange={(e) =>
                             updateMultiItem(item.id, { amountDue: e.target.value })
@@ -1529,7 +1516,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
                       <div>
                         <label className="block text-[#E6C37A] mb-1 text-[10px] font-bold">
-                          حالة الخلاص:
+                          الخلاص:
                         </label>
                         <div className="grid grid-cols-2 gap-1">
                           <button
@@ -1541,7 +1528,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                                 : 'bg-black/50 text-white/70 border border-white/15'
                             }`}
                           >
-                            ✓ خالص
+                            ✅ خالص
                           </button>
                           <button
                             type="button"
@@ -1552,7 +1539,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                                 : 'bg-black/50 text-white/70 border border-white/15'
                             }`}
                           >
-                            ⏳ المستلم يخلص
+                            ⏳ كريدي
                           </button>
                         </div>
                       </div>
@@ -1560,7 +1547,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
                     {(parseInt(item.itemsCount, 10) || 1) > 1 && (
                       <div className="text-[10px] text-[#F5C84C] bg-[#F5C84C]/10 border border-[#F5C84C]/30 rounded-lg px-2 py-1 font-bold">
-                        🖨️ غادي يخرجو {item.itemsCount} ديال التيكيتات مرقمة (1/{item.itemsCount} إلى {item.itemsCount}/{item.itemsCount}) لهاد الكولية.
+                        🖨️ {item.itemsCount} تيكيتات (1/{item.itemsCount} ⬅ {item.itemsCount}/{item.itemsCount})
                       </div>
                     )}
                   </div>
@@ -1573,22 +1560,17 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 className="w-full py-2.5 rounded-2xl border-2 border-dashed border-[#F5C84C]/55 text-[#F5C84C] font-black text-xs flex items-center justify-center gap-1.5 hover:bg-[#F5C84C]/10 transition"
               >
                 <Plus className="w-4 h-4" />
-                <span>
-                  {multiSubMode === 'one_receiver'
-                    ? '+ إضافة كولية أخرى لنفس المستلم'
-                    : '+ إضافة كولية أخرى لمستلم جديد'}
-                </span>
+                <span>+ زيد كولية</span>
               </button>
 
               {/* Multi Summary Box */}
               <div className="bg-black/65 p-3 rounded-2xl border border-[#F5C84C]/40 flex items-center justify-between">
                 <div>
                   <span className="text-[11px] font-black text-[#F5C84C] block">
-                    ملخص الإرسالية المتعددة ({multiItems.length} كوليات):
+                    💰 المجموع ({multiItems.length}):
                   </span>
                   <span className="text-[10px] text-white/75 font-mono">
-                    المدفوع الآن: {multiTotalPaid} {currency} | الباقي على المستلمين:{' '}
-                    {Math.max(0, multiTotalDue - multiTotalPaid)} {currency}
+                    خالص: {multiTotalPaid} | باقي: {Math.max(0, multiTotalDue - multiTotalPaid)}
                   </span>
                 </div>
                 <div className="text-left font-mono font-black text-sm text-white">
@@ -1602,14 +1584,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           <div className="bg-black/50 p-2.5 rounded-2xl border border-emerald-500/35 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-              <div>
-                <span className="text-[11px] font-black text-white block">
-                  إشعار واتساب تلقائي للمرسل مع كود التتبع
-                </span>
-                <span className="text-[9px] text-white/65 block">
-                  فتح محادثة واتساب مع وصل الإيداع وكود التتبع فور الحفظ
-                </span>
-              </div>
+              <span className="text-[11px] font-black text-white">
+                💬 إشعار واتساب تلقائي
+              </span>
+              <HelpPopover text="فتح محادثة واتساب مع المرسل تتضمن وصل الإيداع وكود التتبع فور الحفظ." />
             </div>
             <button
               type="button"
@@ -1624,10 +1602,9 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
           {/* Notes */}
           <div>
-            <label className="block text-[#C8B08A] mb-1 text-[11px]">ملاحظات إضافية (اختياري):</label>
             <input
               type="text"
-              placeholder="مثال: يرجى الاتصال بالمستلم قبل التوصيل"
+              placeholder="📝 ملاحظة إضافية (اختياري)..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full bg-[#120a00] border border-[#D4AF37]/40 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-[#D4AF37]"
@@ -1639,15 +1616,15 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="btn-gold w-full py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 shadow-lg active:scale-95 transition disabled:opacity-50"
+              className="btn-gold w-full py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition disabled:opacity-50"
             >
               <Package className="w-4 h-4" />
               <span>
                 {isSubmitting
-                  ? 'جاري تسجيل الكوليات...'
+                  ? '⏳ جاري التسجيل...'
                   : registrationMode === 'multi'
-                  ? `تأكيد تسجيل (${multiItems.length}) كوليات وطباعة الملصقات`
-                  : 'تأكيد التسجيل وطباعة التذكرة الحرارية'}
+                  ? `✅ تسجيل (${multiItems.length}) كوليات + طباعة 🖨️`
+                  : '✅ تسجيل الكولي + طباعة 🖨️'}
               </span>
             </button>
           </div>

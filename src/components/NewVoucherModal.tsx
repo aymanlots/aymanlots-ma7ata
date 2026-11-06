@@ -161,9 +161,9 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
         {/* Header */}
         <div className="px-5 py-3.5 bg-black/55 border-b border-white/15 flex items-center justify-between shrink-0">
           <div>
-            <h3 className="text-base font-black text-white">تسجيل عملية في لاكيس المحطة</h3>
+            <h3 className="text-base sm:text-lg font-black text-white">💰 عملية فلاكيس</h3>
             <p className="text-xs text-[#F5C84C] font-bold mt-0.5">
-              المحطة: {selectedStationName} • الرصيد الحالي:{' '}
+              📍 {selectedStationName} •{' '}
               <span
                 dir="ltr"
                 className={
@@ -194,9 +194,6 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
 
           {/* Type Selector */}
           <div>
-            <label className="block text-xs font-bold text-white/90 mb-2">
-              نوع العملية فلاكيس (+ أو −)
-            </label>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
@@ -206,10 +203,9 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 }`}
               >
                 <div className="flex items-center gap-1 font-mono font-black text-sm">
-                  <span>+</span>
-                  <ArrowDownLeft className="w-4 h-4" />
+                  <span>➕</span>
                 </div>
-                <span className="text-[11px] font-black">+ زيادة فلاكيس</span>
+                <span className="text-xs font-black">إيداع</span>
               </button>
 
               <button
@@ -220,10 +216,9 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 }`}
               >
                 <div className="flex items-center gap-1 font-mono font-black text-sm">
-                  <span>−</span>
-                  <ArrowUpRight className="w-4 h-4" />
+                  <span>➖</span>
                 </div>
-                <span className="text-[11px] font-black">− سحب من لاكيس</span>
+                <span className="text-xs font-black">سحب</span>
               </button>
 
               <button
@@ -234,7 +229,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 }`}
               >
                 <ShoppingBag className="w-4 h-4" />
-                <span className="text-[11px] font-black">أداء سلع (−)</span>
+                <span className="text-xs font-black">أداء سلع</span>
               </button>
             </div>
           </div>
@@ -405,9 +400,9 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
           <div className="pt-2 flex items-center gap-2.5">
             <button
               type="submit"
-              className="btn-gold flex-1 py-3 rounded-xl font-black text-xs cursor-pointer"
+              className="btn-gold flex-1 py-3 rounded-xl font-black text-sm cursor-pointer"
             >
-              {type === 'cash_in' ? '+ تسجيل زيادة فلاكيس' : '− تسجيل سحب من لاكيس'}
+              {type === 'cash_in' ? '➕ تأكيد الإيداع' : '➖ تأكيد السحب'}
             </button>
             <button
               type="button"

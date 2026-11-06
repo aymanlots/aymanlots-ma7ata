@@ -25,6 +25,7 @@ import {
   Package,
   ArrowRight,
 } from 'lucide-react';
+import { HelpPopover } from './HelpPopover';
 
 interface AdminCollaborationRoomModalProps {
   isOpen: boolean;
@@ -426,13 +427,14 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#F5B05B] to-[#D4882A] text-[#1a0f00] flex items-center justify-center shrink-0 shadow-md">
               <Handshake className="w-5 h-5" />
             </div>
-            <div className="min-w-0">
-              <h2 className="text-sm sm:text-base font-black text-[#F5D799] truncate">
-                غرفة الشراكة وتعاون المدراء
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h2 className="text-base sm:text-lg font-black text-[#F5D799] truncate">
+                🤝 غرفة الشراكة
               </h2>
-              <p className="text-[10px] text-[#E6C37A] font-semibold truncate">
-                تبادل الكوليات بين المحطات والمحاسبة المضبوطة (COD)
-              </p>
+              <HelpPopover
+                title="غرفة الشراكة وتعاون المدراء"
+                text="ربط الشراكة مع مدراء المحطات في المدن الأخرى لتبادل الكوليات وتصفية الحسابات (COD) بدقة."
+              />
             </div>
           </div>
 
@@ -561,9 +563,15 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
 
             {/* Filter Pills: All vs Active Working Managers */}
             <div className="flex items-center justify-between gap-2 bg-[#120a00]/90 p-2 rounded-xl border border-[#D4AF37]/30">
-              <span className="text-[10px] font-bold text-[#E6C37A]">
-                فرز حسب النشاط والخدمة:
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-black text-[#E6C37A]">
+                  ⭐ النشاط:
+                </span>
+                <HelpPopover
+                  title="تقييم نجوم النشاط والخدمة"
+                  text="تظهر بجانب كل مدير نجوم تعبر عن نشاطه الفعلي وعدد محطاته وإرسالياته في التطبيق (من ⭐ إلى 5 نجوم ⭐⭐⭐⭐⭐) لتميز المدير النشيط عن غير النشيط."
+                />
+              </div>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
@@ -586,17 +594,8 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                   }`}
                 >
                   <Star className="w-3 h-3 fill-current" />
-                  <span>المدراء الخدامين ({activeWorkingManagersCount})</span>
+                  <span>الخدامين ({activeWorkingManagersCount})</span>
                 </button>
-              </div>
-            </div>
-
-            {/* Star Rating Legend */}
-            <div className="bg-[#1a0f00]/80 border border-[#D4AF37]/30 p-2.5 rounded-xl text-[10px] text-[#E6C37A] leading-relaxed flex items-start gap-2">
-              <Star className="w-4 h-4 text-[#F5C84C] fill-[#F5C84C] shrink-0 mt-0.5" />
-              <div>
-                <strong className="text-[#F5D799] font-black">تقييم نجوم النشاط والخدمة: </strong>
-                تظهر بجانب كل مدير نجوم تعبر عن نشاطه الفعلي وعدد محطاته وإرسالياته في التطبيق (من ⭐ إلى 5 نجوم ⭐⭐⭐⭐⭐) لتميز المدير النشيط عن غير النشيط.
               </div>
             </div>
 

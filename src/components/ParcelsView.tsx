@@ -49,6 +49,7 @@ import {
   Trash2,
   Copy
 } from 'lucide-react';
+import { HelpPopover } from './HelpPopover';
 
 interface ParcelsViewProps {
   onOpenNewParcel: () => void;
@@ -405,13 +406,17 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
       <div className="luxury-card p-3.5 rounded-[22px] space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <Package className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h1 className="text-xs sm:text-sm font-black text-white truncate">
-              إدارة الكوليات والديسباتش
+            <Package className="w-5 h-5 text-[#F5C84C] shrink-0" />
+            <h1 className="text-base sm:text-lg font-black text-white truncate">
+              📦 الكوليات
             </h1>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/60 text-[#F5C84C] border border-[#F5C84C]/40 font-black shrink-0">
-              {stats.total} كولي
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/60 text-[#F5C84C] border border-[#F5C84C]/40 font-mono font-black shrink-0">
+              {stats.total}
             </span>
+            <HelpPopover
+              title="قسم الكوليات والرحلات"
+              text="من هنا يمكنك تسجيل كولي جديد، مسح الباركود، شحن الكوليات في رحلات، وتتبع وصولها وتسليمها للزبون."
+            />
           </div>
 
           <button
@@ -420,7 +425,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             className="btn-cancel px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1 shrink-0 cursor-pointer"
             title="إظهار أو إخفاء الأدوات السريعة"
           >
-            <span>أدوات سريعة</span>
+            <span>⚡ أدوات</span>
             <ChevronDown
               className={`w-3.5 h-3.5 text-[#F5C84C] transition-transform duration-200 ${
                 isMoreToolsOpen ? 'rotate-180' : ''
@@ -433,20 +438,20 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setIsBarcodeScannerOpen(true)}
-            className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-black text-xs transition active:scale-95 cursor-pointer"
+            onClick={onOpenNewParcel}
+            className="btn-gold flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm transition active:scale-95 cursor-pointer shadow-md"
           >
-            <Scan className="w-3.5 h-3.5" />
-            <span>مسح باركود / QR</span>
+            <PlusCircle className="w-4 h-4" />
+            <span>➕ تسجيل كولي جديد</span>
           </button>
 
           <button
             type="button"
-            onClick={onOpenNewParcel}
-            className="btn-cancel flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-black text-xs transition active:scale-95 cursor-pointer"
+            onClick={() => setIsBarcodeScannerOpen(true)}
+            className="btn-cancel flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm transition active:scale-95 cursor-pointer"
           >
-            <PlusCircle className="w-3.5 h-3.5 text-[#F5C84C]" />
-            <span>كولي جديد</span>
+            <Scan className="w-4 h-4 text-[#F5C84C]" />
+            <span>📷 سكانر QR</span>
           </button>
         </div>
 
@@ -886,13 +891,14 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                   <span className="w-7 h-7 rounded-xl bg-purple-500 text-white font-black text-xs flex items-center justify-center shadow">
                     {pendingPartnerApprovalParcels.length}
                   </span>
-                  <div>
+                  <div className="flex items-center gap-1.5">
                     <h3 className="text-xs sm:text-sm font-black text-white">
-                      🤝 طلبات قبول كوليات واردة من غرفة الشراكة ({pendingPartnerApprovalParcels.length})
+                      🤝 كوليات بانتظار القبول ({pendingPartnerApprovalParcels.length})
                     </h3>
-                    <p className="text-[10px] text-purple-200 font-bold">
-                      أرسل إليك شريك كوليات نحو محطتك — يرجى مراجعتها والضغط على «قبول» أو «رفض» قبل دخولها للستوك
-                    </p>
+                    <HelpPopover
+                      title="قبول كوليات الشراكة"
+                      text="أرسل إليك شريك كوليات نحو محطتك — راجعها واضغط «قبول» أو «رفض» قبل دخولها للستوك."
+                    />
                   </div>
                 </div>
 
@@ -904,7 +910,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                     }
                     className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] transition active:scale-95 cursor-pointer shadow-md"
                   >
-                    ⚡ قبول الكل دفعة واحدة ({pendingPartnerApprovalParcels.length})
+                    ✅ قبول الكل ({pendingPartnerApprovalParcels.length})
                   </button>
                 )}
               </div>

@@ -25,6 +25,7 @@ import { NewVoucherModal } from './NewVoucherModal';
 import { MoneyTransferModal } from './MoneyTransferModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { ParcelDetailModal } from './ParcelDetailModal';
+import { HelpPopover } from './HelpPopover';
 import {
   formatDateTimeStandard,
   formatTrackingCodeNumeric,
@@ -452,21 +453,18 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Package className="w-5 h-5 text-[#F5C84C]" />
-            <div>
-              <h3 className="text-xs font-black text-white">
-                {activeStation ? `كوليات ${activeStation.name}` : 'إجمالي الكوليات (كافة المحطات)'} (
-                {parcelStats.total})
-              </h3>
-            </div>
+            <h3 className="text-sm sm:text-base font-black text-white">
+              📦 {activeStation ? activeStation.name : 'الكوليات'} ({parcelStats.total})
+            </h3>
           </div>
 
           <button
             type="button"
             onClick={handleOpenNewParcelAction}
-            className="btn-gold px-3.5 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 cursor-pointer"
+            className="btn-gold px-3.5 py-2 rounded-xl font-black text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer shadow-md"
           >
             <Plus className="w-4 h-4" />
-            <span>+ تسجيل كولي</span>
+            <span>➕ تسجيل كولي جديد</span>
           </button>
         </div>
 
@@ -528,17 +526,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             <div className="w-10 h-10 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0 shadow-md">
               <Wallet className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="text-sm font-black text-white">
-                {activeStation ? `صندوق (لاكيس) ${activeStation.name}` : 'صندوق كافة المحطات'}
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-sm sm:text-base font-black text-white">
+                💰 {activeStation ? `لاكيس ${activeStation.name}` : 'لاكيس المحطات'}
               </h3>
-              <p className="text-[11px] text-white/75 font-semibold">
-                {isCashboxOpen
-                  ? activeStation
-                    ? `${activeStation.country === 'MA' ? '🇲🇦 المغرب' : '🇲🇷 موريتانيا'} • ${activeStation.city}`
-                    : `مجموع السيولة في ${stations.length} محطات`
-                  : 'اضغط هنا للدخول للصندوق ورؤية الرصيد والعمليات المالية'}
-              </p>
+              <HelpPopover text="اضغط لعرض أرصدة الصناديق (درهم / أوقية)، الإيداع، السحب، الحوالات، وصرف العملة." />
             </div>
           </div>
 
@@ -551,7 +543,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               }}
               className="btn-cancel px-2.5 py-1.5 rounded-xl text-[11px] font-black cursor-pointer"
             >
-              صفحة الصناديق
+              الصناديق
             </button>
             <ChevronDown
               className={`w-5 h-5 text-[#F5C84C] transition-transform duration-200 ${
@@ -614,7 +606,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 className="btn-gold py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <ArrowDownLeft className="w-4 h-4" />
-                <span>+ زيادة فلاكيس</span>
+                <span>➕ إيداع</span>
               </button>
 
               <button
@@ -623,7 +615,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 className="btn-gold py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <ArrowUpRight className="w-4 h-4" />
-                <span>− سحب من لاكيس</span>
+                <span>➖ سحب</span>
               </button>
 
               <button
@@ -635,7 +627,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 className="btn-gold py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer relative"
               >
                 <Banknote className="w-4 h-4" />
-                <span>حوالة مالية</span>
+                <span>💸 حوالة</span>
                 {scopedPendingHawalas.length > 0 && (
                   <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-black">
                     {scopedPendingHawalas.length}
@@ -655,7 +647,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 }`}
               >
                 <ArrowLeftRight className="w-4 h-4" />
-                <span>صرف العملة</span>
+                <span>💱 صرف عملة</span>
               </button>
             </div>
 
@@ -805,19 +797,17 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         )}
       </div>
 
-      {/* 4. حوالات المحطة الجارية (تظهر بوضوح في المحطة المرسلة والمحطة المستلمة مع زر "تم الاستلام") */}
+      {/* 4. حوالات المحطة الجارية */}
       {scopedPendingHawalas.length > 0 && (
         <div className="luxury-card rounded-[22px] p-4 space-y-3 border border-[#F5C84C]/40">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Banknote className="w-5 h-5 text-[#F5C84C]" />
-              <div>
-                <h3 className="text-xs font-black text-white">
-                  حوالات مالية بانتظار الاستلام ({scopedPendingHawalas.length})
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-black text-white">
+                  💸 حوالات بانتظار التسليم ({scopedPendingHawalas.length})
                 </h3>
-                <p className="text-[10px] text-white/75">
-                  اضغط &quot;تم الاستلام&quot; عند تسليم الفلوس للمستلم ليتم خصمها (−) من لاكيس محطة الوصول
-                </p>
+                <HelpPopover text='اضغط "تم الاستلام" عند تسليم الفلوس للمستلم ليتم خصمها (−) من لاكيس محطة الوصول.' />
               </div>
             </div>
             <button
@@ -828,7 +818,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               }}
               className="btn-cancel px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer"
             >
-              كل الحوالات
+              الكل
             </button>
           </div>
 
@@ -892,15 +882,16 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         </div>
       )}
 
-      {/* 5. عند اختيار "الكل" فقط: عرض أسماء المحطات فقط بدون مبالغ مالية بجانبها */}
+      {/* 5. عند اختيار "الكل" فقط: عرض أسماء المحطات فقط */}
       {isAllStations && stations.length > 0 && (
         <div className="luxury-card rounded-[22px] p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Store className="w-4 h-4 text-[#F5C84C]" />
-              <h3 className="text-xs font-black text-white">
-                محطات الشبكة ({stations.length}) — اضغط على أي محطة للدخول إليها وحدها
+              <h3 className="text-sm font-black text-white">
+                🏪 المحطات ({stations.length})
               </h3>
+              <HelpPopover text="اضغط على أي محطة للدخول إليها وحدها وعرض كولياتها وصناديقها فقط." />
             </div>
           </div>
 

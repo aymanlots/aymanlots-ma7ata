@@ -33,6 +33,7 @@ import {
   ChevronDown,
   CheckCircle2,
 } from 'lucide-react';
+import { HelpPopover } from './HelpPopover';
 
 interface WorkerStationViewProps {
   onOpenNewVoucher: (initialType?: TransactionType) => void;
@@ -369,21 +370,21 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           <button
             type="button"
             onClick={() => setShowMoneyTransferModal(true)}
-            className="btn-gold py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95"
+            className="btn-gold py-2.5 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95"
           >
             <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
-            <span>إرسال / استقبال حوالة</span>
+            <span>💸 حوالة</span>
           </button>
 
           <button
             type="button"
             onClick={() => setShowWorkerExchange(prev => !prev)}
-            className={`py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95 ${
+            className={`py-2.5 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95 ${
               showWorkerExchange ? 'btn-gold' : 'btn-cancel'
             }`}
           >
             <ArrowRightLeft className="w-3.5 h-3.5 text-[#2ECC71] shrink-0" />
-            <span>صرف العملة (MAD ⇄ MRU)</span>
+            <span>💱 صرف عملة</span>
           </button>
         </div>
 
@@ -645,8 +646,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
       {/* 4. CARD "الطلبات" WITH THREE BIG BUTTONS: إدخال / إرسال / إرجاع */}
       <div className="luxury-card rounded-[24px] p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-black gold-text">الطلبات والعمليات السريعة</h3>
-          <span className="text-xs text-white/80 font-bold">اختر نوع العملية</span>
+          <h3 className="text-base font-black gold-text">⚡ العمليات</h3>
         </div>
 
         <div className="grid grid-cols-3 gap-2.5">
@@ -654,33 +654,30 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           <button
             type="button"
             onClick={() => setActiveBottomSheet('in')}
-            className="min-h-[84px] rounded-[20px] p-3 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/35 hover:bg-emerald-500/25 active:scale-95"
+            className="min-h-[78px] rounded-[20px] p-3 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/35 hover:bg-emerald-500/25 active:scale-95"
           >
             <ArrowDownLeft className="w-5 h-5" />
-            <span className="text-xs font-black">إدخال</span>
-            <span className="text-[10px] font-bold">استلام أو قبض</span>
+            <span className="text-xs font-black">📥 استلام</span>
           </button>
 
           {/* زر إرسال */}
           <button
             type="button"
             onClick={() => setActiveBottomSheet('out')}
-            className="min-h-[84px] rounded-[20px] p-3 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg bg-amber-500/15 text-amber-300 border border-amber-500/35 hover:bg-amber-500/25 active:scale-95"
+            className="min-h-[78px] rounded-[20px] p-3 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg bg-amber-500/15 text-amber-300 border border-amber-500/35 hover:bg-amber-500/25 active:scale-95"
           >
             <ArrowUpRight className="w-5 h-5" />
-            <span className="text-xs font-black">إرسال</span>
-            <span className="text-[10px] font-extrabold">كولي جديد أو صرف</span>
+            <span className="text-xs font-black">📤 إرسال</span>
           </button>
 
           {/* زر إرجاع */}
           <button
             type="button"
             onClick={() => setActiveBottomSheet('return')}
-            className="min-h-[84px] rounded-[20px] p-3 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md relative bg-blue-500/15 text-blue-300 border border-blue-500/35 hover:bg-blue-500/25 active:scale-95"
+            className="min-h-[78px] rounded-[20px] p-3 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md relative bg-blue-500/15 text-blue-300 border border-blue-500/35 hover:bg-blue-500/25 active:scale-95"
           >
             <RotateCcw className="w-5 h-5" />
-            <span className="text-xs font-black">إرجاع ({overdueUnclaimedParcels.length})</span>
-            <span className="text-[10px] font-bold">إرجاع للمرسل</span>
+            <span className="text-xs font-black">↩️ إرجاع ({overdueUnclaimedParcels.length})</span>
           </button>
         </div>
 
@@ -688,10 +685,10 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         <button
           type="button"
           onClick={() => setShowScanner(true)}
-          className="w-full py-2.5 px-3 rounded-2xl btn-gold text-xs font-black flex items-center justify-center gap-2 shadow-md transition active:scale-95 cursor-pointer"
+          className="w-full py-2.5 px-3 rounded-2xl btn-gold text-xs sm:text-sm font-black flex items-center justify-center gap-2 shadow-md transition active:scale-95 cursor-pointer"
         >
           <QrCode className="w-4 h-4 shrink-0" />
-          <span>مسح كولي بالكاميرا (تحقق واش ديال المحطة أو غرفة الشراكة)</span>
+          <span>📷 سكانر QR</span>
         </button>
       </div>
 
@@ -700,13 +697,11 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <Package className="w-5 h-5 text-[#F5C84C] shrink-0" />
-            <div>
+            <div className="flex items-center gap-1.5">
               <h3 className="text-sm sm:text-base font-black text-white">
-                كوليات محطة {currentStation.name} ({stationParcels.length})
+                📦 كوليات {currentStation.name} ({stationParcels.length})
               </h3>
-              <p className="text-[10px] text-white/75 font-bold">
-                تظهر هنا فقط الكوليات الواردة لمحطتك أو المرسلة منها (الداخلية + غرفة الشراكة)
-              </p>
+              <HelpPopover text="تظهر هنا فقط الكوليات الواردة لمحطتك أو المرسلة منها (الداخلية + غرفة الشراكة)." />
             </div>
           </div>
 
@@ -715,7 +710,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             onClick={onGoToParcels}
             className="btn-cancel px-3 py-1.5 rounded-xl text-[11px] font-black cursor-pointer"
           >
-            إدارة الكوليات ←
+            الكوليات ←
           </button>
         </div>
 
@@ -729,7 +724,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             }`}
           >
             <ArrowDownLeft className="w-4 h-4 shrink-0" />
-            <span>📥 واردة لمحطتي ({stationIncomingParcels.length})</span>
+            <span>📥 الوارد ({stationIncomingParcels.length})</span>
           </button>
 
           <button
@@ -740,7 +735,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             }`}
           >
             <ArrowUpRight className="w-4 h-4 shrink-0" />
-            <span>📤 صادرة من محطتي ({stationOutgoingParcels.length})</span>
+            <span>📤 الصادر ({stationOutgoingParcels.length})</span>
           </button>
         </div>
 
