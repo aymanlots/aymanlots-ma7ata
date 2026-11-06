@@ -150,20 +150,20 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-1.5 bg-black/75 animate-fadeIn"
       dir="rtl"
       onClick={onClose}
     >
       <div
-        className="luxury-card border border-[#F5C84C]/45 rounded-[28px] w-full max-w-[425px] overflow-hidden shadow-2xl max-h-[92vh] flex flex-col text-right"
+        className="luxury-card border border-[#F5C84C]/45 rounded-[20px] w-full max-w-[430px] overflow-hidden shadow-2xl max-h-[95vh] flex flex-col text-right"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-5 py-3.5 bg-black/55 border-b border-white/15 flex items-center justify-between shrink-0">
-          <div>
-            <h3 className="text-base sm:text-lg font-black text-white">💰 عملية فلاكيس</h3>
-            <p className="text-xs text-[#F5C84C] font-bold mt-0.5">
-              📍 {selectedStationName} •{' '}
+        {/* Compact Header */}
+        <div className="px-2.5 py-2 bg-black/55 border-b border-white/15 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="text-sm font-black text-white truncate">💰 عملية فلاكيس</h3>
+            <span className="text-[11px] text-[#F5C84C] font-bold truncate">
+              📍 {selectedStationName} (
               <span
                 dir="ltr"
                 className={
@@ -172,244 +172,149 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
               >
                 {currentStationBalance.toLocaleString('en-US')} {currency}
               </span>
-            </p>
+              )
+            </span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="btn-cancel p-2 rounded-xl transition cursor-pointer"
+            className="btn-cancel p-1 rounded-lg transition cursor-pointer"
             aria-label="إغلاق"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handlePreSubmit} className="p-4 sm:p-5 space-y-3.5 overflow-y-auto">
+        <form onSubmit={handlePreSubmit} className="p-2 space-y-1.5 overflow-y-auto text-xs">
           {error && (
-            <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 flex items-center gap-2 text-rose-200 text-xs font-bold">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div className="p-1.5 rounded-xl bg-rose-950/70 border border-rose-500/40 flex items-center gap-1.5 text-rose-200 text-[11px] font-bold">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Type Selector */}
-          <div>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setType('cash_in')}
-                className={`p-2.5 rounded-xl flex flex-col items-center gap-1 transition cursor-pointer ${
-                  type === 'cash_in' ? 'btn-gold' : 'btn-cancel'
-                }`}
-              >
-                <div className="flex items-center gap-1 font-mono font-black text-sm">
-                  <span>➕</span>
-                </div>
-                <span className="text-xs font-black">إيداع</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setType('cash_out')}
-                className={`p-2.5 rounded-xl flex flex-col items-center gap-1 transition cursor-pointer ${
-                  type === 'cash_out' ? 'btn-gold' : 'btn-cancel'
-                }`}
-              >
-                <div className="flex items-center gap-1 font-mono font-black text-sm">
-                  <span>➖</span>
-                </div>
-                <span className="text-xs font-black">سحب</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setType('goods_payment')}
-                className={`p-2.5 rounded-xl flex flex-col items-center gap-1 transition cursor-pointer ${
-                  type === 'goods_payment' ? 'btn-gold' : 'btn-cancel'
-                }`}
-              >
-                <ShoppingBag className="w-4 h-4" />
-                <span className="text-xs font-black">أداء سلع</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Station & Currency */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <div>
-              <label className="block text-xs font-bold text-white/90 mb-1">المحطة</label>
-              <select
-                value={stationId}
-                disabled={userRole === 'worker' || Boolean(fixedStationId && fixedStationId !== 'all')}
-                onChange={e => {
-                  const nextId = e.target.value;
-                  setStationId(nextId);
-                  const st = stations.find(s => s.id === nextId);
-                  if (st) {
-                    setCurrency(st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
-                  }
-                }}
-                className="w-full bg-black/65 border border-white/20 rounded-xl px-3 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-[#F5C84C] disabled:opacity-60"
-              >
-                {stations.map(st => (
-                  <option key={st.id} value={st.id}>
-                    {st.name} ({st.city})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-white/90 mb-1">العملة</label>
-              <select
-                value={currency}
-                onChange={e => setCurrency(e.target.value)}
-                className="w-full bg-black/65 border border-white/20 rounded-xl px-3 py-2.5 text-xs font-bold text-[#F5C84C] focus:outline-none focus:border-[#F5C84C]"
-              >
-                {currencies.map(c => (
-                  <option key={c.code} value={c.code}>
-                    {c.label_ar} ({c.code})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Live warning when cashbox is empty / insufficient */}
-          {isCashboxEmptyOrInsufficient && (
-            <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/50 flex items-start gap-2.5 text-xs">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <p className="font-black text-rose-200">
-                  تنبيه: لاكيس المحطة خاوية أو غير كافية ({currentStationBalance.toLocaleString('en-US')}{' '}
-                  {currency})
-                </p>
-                <p className="text-white/90 font-bold">
-                  إذا أكملت العملية سيصبح رصيد الصندوق:{' '}
-                  <span dir="ltr" className="text-rose-400 font-mono font-black">
-                    {resultingBalance.toLocaleString('en-US')} {currency}
-                  </span>
-                </p>
+          {/* جوج أعمدة: اليمين (المحطة + نوع العملية) | اليسار (السبب + الهاتف فنفس السطر) */}
+          <div className="grid grid-cols-2 gap-1.5 items-stretch">
+            {/* RIGHT COLUMN: المحطة + نوع العملية */}
+            <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
+              <div>
+                <label className="block text-[10px] font-black text-white/90 mb-0.5">📍 المحطة</label>
+                <select
+                  value={stationId}
+                  disabled={userRole === 'worker' || Boolean(fixedStationId && fixedStationId !== 'all')}
+                  onChange={e => {
+                    const nextId = e.target.value;
+                    setStationId(nextId);
+                    const st = stations.find(s => s.id === nextId);
+                    if (st) {
+                      setCurrency(st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
+                    }
+                  }}
+                  className="w-full bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] font-bold text-white focus:outline-none disabled:opacity-60"
+                >
+                  {stations.map(st => (
+                    <option key={st.id} value={st.id}>
+                      {st.name} ({st.city})
+                    </option>
+                  ))}
+                </select>
               </div>
-            </div>
-          )}
 
-          {/* Amount Input */}
-          <div>
-            <label className="block text-xs font-bold text-white/90 mb-1">المبلغ المالي</label>
-            <div className="relative">
-              <input
-                type="number"
-                step="any"
-                min="0.01"
-                required
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                placeholder="0.00"
-                className="w-full bg-black/65 border border-white/20 rounded-2xl px-4 py-3 text-xl font-black text-white focus:outline-none focus:border-[#F5C84C] text-left font-mono"
-                dir="ltr"
-              />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black bg-[#D4AF37]/20 text-[#F5C84C] px-2.5 py-1 rounded-lg">
-                {currency}
-              </span>
-            </div>
-
-            {numAmount > 0 && (currency === 'MAD' || currency === 'MRU') && (
-              <div className="mt-2 px-3 py-1.5 rounded-xl bg-black/55 border border-white/15 flex items-center justify-between text-xs">
-                <span className="text-white/80">القيمة المقابلة (بسعر {exchangeRate}):</span>
-                <span className="font-bold text-emerald-400 font-mono" dir="ltr">
-                  ≈ {equivalentValue.toLocaleString('en-US')} {equivalentCurrency}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Reason & Phone */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div>
-              <label className="block text-xs font-bold text-white/90 mb-1 flex items-center gap-1">
-                <FileText className="w-3.5 h-3.5 text-[#F5C84C]" />
-                <span>البيان / سبب العملية {isOutflow && <span className="text-rose-400">*</span>}</span>
-              </label>
-              <input
-                type="text"
-                required={isOutflow}
-                value={reason}
-                onChange={e => setReason(e.target.value)}
-                placeholder={isOutflow ? 'مثال: مصاريف، تسليم مبلغ...' : 'مثال: دفعة زبون، تغذية الصندوق...'}
-                className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#F5C84C]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-white/90 mb-1 flex items-center gap-1">
-                <Phone className="w-3.5 h-3.5 text-emerald-400" />
-                <span>رقم الهاتف (اختياري)</span>
-              </label>
-              <input
-                type="tel"
-                value={phoneNumber}
-                onChange={e => setPhoneNumber(e.target.value)}
-                placeholder="+212 6XX-XXXXXX"
-                dir="ltr"
-                className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono text-left focus:outline-none focus:border-[#F5C84C]"
-              />
-            </div>
-          </div>
-
-          {/* Receipt Photo Attachment */}
-          <div>
-            <label className="block text-xs font-bold text-white/90 mb-1 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <Camera className="w-3.5 h-3.5 text-[#F5C84C]" />
-                <span>إرفاق صورة الوصل (اختياري)</span>
-              </span>
-              {photoPreview && (
+              <div className="grid grid-cols-3 gap-1">
                 <button
                   type="button"
-                  onClick={() => setPhotoPreview('')}
-                  className="btn-delete px-2 py-0.5 rounded-lg flex items-center gap-1 text-[10px]"
+                  onClick={() => setType('cash_in')}
+                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition cursor-pointer ${
+                    type === 'cash_in' ? 'btn-gold' : 'btn-cancel'
+                  }`}
                 >
-                  <Trash2 className="w-3 h-3" /> إزالة الصورة
+                  ➕إيداع
                 </button>
-              )}
-            </label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handlePhotoUpload}
-              className="hidden"
-            />
-            {!photoPreview ? (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="btn-cancel w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
-              >
-                <Camera className="w-4 h-4" />
-                <span>التقاط أو رفع صورة الفاتورة / الوصل</span>
-              </button>
-            ) : (
-              <div className="relative rounded-xl overflow-hidden border border-white/20 max-h-32 bg-black/65 flex items-center justify-center">
-                <img src={photoPreview} alt="معاينة الوصل" className="max-h-32 object-contain" />
+                <button
+                  type="button"
+                  onClick={() => setType('cash_out')}
+                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition cursor-pointer ${
+                    type === 'cash_out' ? 'btn-gold' : 'btn-cancel'
+                  }`}
+                >
+                  ➖سحب
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setType('goods_payment')}
+                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition cursor-pointer ${
+                    type === 'goods_payment' ? 'btn-gold' : 'btn-cancel'
+                  }`}
+                >
+                  📦سلع
+                </button>
               </div>
-            )}
+            </div>
+
+            {/* LEFT COLUMN: السبب + الهاتف فنفس السطر */}
+            <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
+              <span className="block text-[10px] font-black text-white/90">
+                📝 السبب {isOutflow && <span className="text-rose-400">*</span>} + 📞 الهاتف
+              </span>
+              <div className="grid grid-cols-2 gap-1">
+                <input
+                  type="text"
+                  required={isOutflow}
+                  value={reason}
+                  onChange={e => setReason(e.target.value)}
+                  placeholder={isOutflow ? '📝 السبب *' : '📝 البيان'}
+                  className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white focus:outline-none"
+                />
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={e => setPhoneNumber(e.target.value)}
+                  placeholder="📞 الهاتف"
+                  dir="ltr"
+                  className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white font-mono text-left focus:outline-none"
+                />
+              </div>
+              {isCashboxEmptyOrInsufficient ? (
+                <span className="text-[9px] font-black text-rose-400 truncate block" dir="ltr">
+                  ⚠️ بعد السحب: {resultingBalance.toLocaleString('en-US')} {currency}
+                </span>
+              ) : (
+                <span className="text-[9px] font-bold text-white/70 truncate block">
+                  ⚡ عملية فورية فصندوق المحطة
+                </span>
+              )}
+            </div>
           </div>
 
-          <div className="pt-2 flex items-center gap-2.5">
+          {/* لتحت فسطر واحد: المبلغ + العملة + زر التأكيد */}
+          <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 flex items-center gap-1">
+            <input
+              type="number"
+              step="any"
+              min="0.01"
+              required
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              placeholder="💰 المبلغ *"
+              className="flex-1 min-w-[80px] bg-black/65 border border-white/20 rounded-lg px-2 py-1.5 text-sm font-black text-white focus:outline-none text-left font-mono"
+              dir="ltr"
+            />
+            <select
+              value={currency}
+              onChange={e => setCurrency(e.target.value)}
+              className="w-20 shrink-0 bg-black/65 border border-white/20 rounded-lg px-1 py-1.5 text-[11px] font-bold text-[#F5C84C] focus:outline-none"
+            >
+              {currencies.map(c => (
+                <option key={c.code} value={c.code}>
+                  {c.code}
+                </option>
+              ))}
+            </select>
             <button
               type="submit"
-              className="btn-gold flex-1 py-3 rounded-xl font-black text-sm cursor-pointer"
+              className="btn-gold px-3 py-1.5 rounded-lg font-black text-xs shrink-0 cursor-pointer"
             >
-              {type === 'cash_in' ? '➕ تأكيد الإيداع' : '➖ تأكيد السحب'}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn-cancel px-5 py-3 rounded-xl text-xs font-bold transition cursor-pointer"
-            >
-              إلغاء
+              {type === 'cash_in' ? '✅تأكيد (+)' : '✅تأكيد (−)'}
             </button>
           </div>
         </form>

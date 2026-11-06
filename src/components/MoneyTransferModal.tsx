@@ -218,189 +218,200 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn"
+      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-1.5 overflow-y-auto animate-fadeIn"
       dir="rtl"
       onClick={onClose}
     >
       <div
-        className="luxury-card border border-[#F5C84C]/45 rounded-[28px] w-full max-w-[425px] p-4 sm:p-5 shadow-2xl space-y-4 my-4 max-h-[92vh] overflow-y-auto text-right"
+        className="luxury-card border border-[#F5C84C]/45 rounded-[20px] w-full max-w-[430px] p-2 shadow-2xl space-y-1.5 my-1 max-h-[96vh] overflow-y-auto text-right"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/15 pb-3.5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0 shadow-md">
-              <Banknote className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm sm:text-base font-black text-white">
-                إرسال واستلام الحوالات المالية بين المحطات
-              </h3>
-              <p className="text-[10px] text-white/75 leading-relaxed">
-                عند الإرسال يُضاف المبلغ (+) لصندوق محطة الإرسال، وعند الاستلام يُخصم (−) من صندوق محطة الوصول
-              </p>
-            </div>
+        {/* Top Compact Header: Title + Tabs + Close on ONE Row */}
+        <div className="flex items-center justify-between gap-1 border-b border-white/15 pb-1.5">
+          <div className="flex items-center gap-1 min-w-0">
+            <span className="text-lg leading-none">💸</span>
+            <h3 className="text-sm font-black text-white truncate">
+              الحوالة المالية
+            </h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn-cancel p-2 rounded-xl shrink-0 cursor-pointer"
-            aria-label="إغلاق"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
-        {/* Tabs */}
-        <div className="grid grid-cols-2 gap-2 bg-black/55 p-1.5 rounded-2xl border border-white/15">
-          <button
-            type="button"
-            onClick={() => setActiveTab('send')}
-            className={`py-2.5 px-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'send' ? 'btn-gold' : 'btn-cancel'
-            }`}
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>إرسال حوالة جديدة (+)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('list')}
-            className={`py-2.5 px-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'list' ? 'btn-gold' : 'btn-cancel'
-            }`}
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            <span>سجل الحوالات ({scopedTransfers.length})</span>
-            {pendingCountForScope > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black">
-                {pendingCountForScope}
-              </span>
-            )}
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('send')}
+              className={`py-1 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                activeTab === 'send' ? 'btn-gold' : 'btn-cancel'
+              }`}
+            >
+              ➕ إرسال
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('list')}
+              className={`py-1 px-2 rounded-lg text-[11px] font-black transition flex items-center gap-1 cursor-pointer ${
+                activeTab === 'list' ? 'btn-gold' : 'btn-cancel'
+              }`}
+            >
+              <span>📋 ({scopedTransfers.length})</span>
+              {pendingCountForScope > 0 && (
+                <span className="px-1 rounded-full bg-rose-600 text-white text-[9px] font-black">
+                  {pendingCountForScope}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-cancel p-1 rounded-lg shrink-0 cursor-pointer"
+              aria-label="إغلاق"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {activeTab === 'send' ? (
-          <form onSubmit={handleCreateTransfer} className="space-y-3.5">
+          <form onSubmit={handleCreateTransfer} className="space-y-1.5 text-xs">
             {formError && (
-              <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-xs font-bold text-rose-200">
+              <div className="p-1.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-[11px] font-bold text-rose-200">
                 {formError}
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-3">
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">
-                  من محطة الإرسال (تُزاد فلاكيس +)
-                </label>
-                <select
-                  value={originStationId}
-                  disabled={userRole === 'worker'}
-                  onChange={e => {
-                    if (userRole === 'worker') return;
-                    const nextOrigin = e.target.value;
-                    setOriginStationId(nextOrigin);
-                    if (nextOrigin === destStationId) {
-                      const other = stations.find(s => s.id !== nextOrigin);
-                      if (other) setDestStationId(other.id);
-                    }
-                    const st = stations.find(s => s.id === nextOrigin);
-                    if (st) {
-                      const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
-                      setSendCurrency(c);
-                    }
-                  }}
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white font-bold focus:outline-none focus:border-[#F5C84C] disabled:opacity-75"
-                >
-                  {(userRole === 'worker' && workerStationId
-                    ? stations.filter(s => s.id === workerStationId)
-                    : stations
-                  ).map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.city})
-                    </option>
-                  ))}
-                </select>
+            {/* =====================================================================
+                جوج أعمدة: المرسل فاليمين (فوقو محطتو) | المستلم فاليسار (فوقو محطتو)
+                الاسم قصير وحداه فنفس السطر التيليفون ديالو
+               ===================================================================== */}
+            <div className="grid grid-cols-2 gap-1.5 items-stretch">
+              {/* RIGHT COLUMN (اليمين): محطة الإرسال + المرسل (الاسم + الهاتف فنفس السطر) */}
+              <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
+                <div>
+                  <label className="block text-[10px] text-white/90 font-black mb-0.5 truncate">
+                    📍 من محطة (+) المرسل
+                  </label>
+                  <select
+                    value={originStationId}
+                    disabled={userRole === 'worker'}
+                    onChange={e => {
+                      if (userRole === 'worker') return;
+                      const nextOrigin = e.target.value;
+                      setOriginStationId(nextOrigin);
+                      if (nextOrigin === destStationId) {
+                        const other = stations.find(s => s.id !== nextOrigin);
+                        if (other) setDestStationId(other.id);
+                      }
+                      const st = stations.find(s => s.id === nextOrigin);
+                      if (st) {
+                        const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
+                        setSendCurrency(c);
+                      }
+                    }}
+                    className="w-full bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white font-bold focus:outline-none disabled:opacity-75"
+                  >
+                    {(userRole === 'worker' && workerStationId
+                      ? stations.filter(s => s.id === workerStationId)
+                      : stations
+                    ).map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.city})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <span className="font-black text-white block text-[10px] mb-0.5">
+                    👤 المرسل (الاسم + 📞 الهاتف)
+                  </span>
+                  <div className="grid grid-cols-2 gap-1">
+                    <input
+                      type="text"
+                      required
+                      value={senderName}
+                      onChange={e => setSenderName(e.target.value)}
+                      placeholder="👤 الاسم *"
+                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white focus:outline-none"
+                    />
+                    <input
+                      type="tel"
+                      dir="ltr"
+                      value={senderPhone}
+                      onChange={e => setSenderPhone(e.target.value)}
+                      placeholder="📞 الهاتف"
+                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white font-mono focus:outline-none"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">
-                  إلى محطة الاستلام (تُنقص عند الاستلام −)
-                </label>
-                <select
-                  value={destStationId}
-                  onChange={e => {
-                    const nextDest = e.target.value;
-                    setDestStationId(nextDest);
-                    const st = stations.find(s => s.id === nextDest);
-                    if (st) {
-                      const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
-                      setPayoutCurrency(c);
-                    }
-                  }}
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white font-bold focus:outline-none focus:border-[#F5C84C]"
-                >
-                  {stations.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.city})
-                    </option>
-                  ))}
-                </select>
+
+              {/* LEFT COLUMN (اليسار): محطة الاستلام + المستلم (الاسم + الهاتف فنفس السطر) */}
+              <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
+                <div>
+                  <label className="block text-[10px] text-white/90 font-black mb-0.5 truncate">
+                    📍 إلى محطة (−) المستلم
+                  </label>
+                  <select
+                    value={destStationId}
+                    onChange={e => {
+                      const nextDest = e.target.value;
+                      setDestStationId(nextDest);
+                      const st = stations.find(s => s.id === nextDest);
+                      if (st) {
+                        const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
+                        setPayoutCurrency(c);
+                      }
+                    }}
+                    className="w-full bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white font-bold focus:outline-none"
+                  >
+                    {stations.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.city})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <span className="font-black text-white block text-[10px] mb-0.5">
+                    👤 المستلم (الاسم + 📞 الهاتف)
+                  </span>
+                  <div className="grid grid-cols-2 gap-1">
+                    <input
+                      type="text"
+                      required
+                      value={receiverName}
+                      onChange={e => setReceiverName(e.target.value)}
+                      placeholder="👤 الاسم *"
+                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white focus:outline-none"
+                    />
+                    <input
+                      type="tel"
+                      dir="ltr"
+                      value={receiverPhone}
+                      onChange={e => setReceiverPhone(e.target.value)}
+                      placeholder="📞 الهاتف"
+                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white font-mono focus:outline-none"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">اسم المرسل *</label>
-                <input
-                  type="text"
-                  required
-                  value={senderName}
-                  onChange={e => setSenderName(e.target.value)}
-                  placeholder="الاسم الكامل للمرسل"
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#F5C84C]"
-                />
+            {/* =====================================================================
+                لتحت فسطر واحد: المبلغ + عملة الإيداع + عملة التسليم + تأكيد الحوالة
+               ===================================================================== */}
+            <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1">
+              <div className="flex items-center justify-between text-[10px] font-black px-0.5">
+                <span className="text-emerald-400" dir="ltr">
+                  ➕ {(numericSend + numericCommission).toLocaleString('en-US')} {sendCurrency}
+                </span>
+                <span>💰 الفلوس + ✅ التأكيد</span>
+                <span className="text-rose-400" dir="ltr">
+                  ➖ {payoutAmount.toLocaleString('en-US')} {payoutCurrency}
+                </span>
               </div>
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">هاتف المرسل</label>
-                <input
-                  type="text"
-                  dir="ltr"
-                  value={senderPhone}
-                  onChange={e => setSenderPhone(e.target.value)}
-                  placeholder="+212..."
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-[#F5C84C]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">اسم المستلم *</label>
-                <input
-                  type="text"
-                  required
-                  value={receiverName}
-                  onChange={e => setReceiverName(e.target.value)}
-                  placeholder="الاسم الكامل للمستلم"
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#F5C84C]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">هاتف المستلم (واتساب)</label>
-                <input
-                  type="text"
-                  dir="ltr"
-                  value={receiverPhone}
-                  onChange={e => setReceiverPhone(e.target.value)}
-                  placeholder="+222..."
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-[#F5C84C]"
-                />
-              </div>
-            </div>
 
-            {/* المبلغ وعملات الإرسال والاستلام */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">
-                  المبلغ المودع فلاكيس *
-                </label>
+              <div className="flex items-center gap-1">
                 <input
                   type="number"
                   min="1"
@@ -409,97 +420,39 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   dir="ltr"
                   value={sendAmount}
                   onChange={e => setSendAmount(e.target.value)}
-                  placeholder="200"
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2.5 text-sm font-mono font-black text-[#F5C84C] focus:outline-none focus:border-[#F5C84C]"
+                  placeholder="💰 المبلغ *"
+                  className="flex-1 min-w-[70px] bg-black/65 border border-white/20 rounded-lg px-2 py-1.5 text-xs font-mono font-black text-[#F5C84C] focus:outline-none"
                 />
-              </div>
 
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">عملة الإيداع (+)</label>
                 <select
                   value={sendCurrency}
                   onChange={e => setSendCurrency(e.target.value as 'MAD' | 'MRU')}
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3 py-2.5 text-xs font-black text-emerald-400 focus:outline-none focus:border-[#F5C84C]"
+                  title="عملة الإيداع (+)"
+                  className="w-16 shrink-0 bg-black/65 border border-white/20 rounded-lg px-1 py-1.5 text-[10px] font-black text-emerald-400 focus:outline-none"
                 >
-                  <option value="MAD">درهم مغربي (MAD)</option>
-                  <option value="MRU">أوقية موريتانية (MRU)</option>
+                  <option value="MAD">+MAD</option>
+                  <option value="MRU">+MRU</option>
                 </select>
-              </div>
 
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">عملة التسليم (−)</label>
                 <select
                   value={payoutCurrency}
                   onChange={e => setPayoutCurrency(e.target.value as 'MAD' | 'MRU')}
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3 py-2.5 text-xs font-black text-[#F5C84C] focus:outline-none focus:border-[#F5C84C]"
+                  title="عملة التسليم (−)"
+                  className="w-16 shrink-0 bg-black/65 border border-white/20 rounded-lg px-1 py-1.5 text-[10px] font-black text-[#F5C84C] focus:outline-none"
                 >
-                  <option value="MAD">درهم مغربي (MAD)</option>
-                  <option value="MRU">أوقية موريتانية (MRU)</option>
+                  <option value="MAD">−MAD</option>
+                  <option value="MRU">−MRU</option>
                 </select>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="btn-gold px-2.5 py-1.5 rounded-lg font-black text-[11px] shrink-0 flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <span>{isSubmitting ? '⏳' : '✅تأكيد'}</span>
+                </button>
               </div>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">
-                  عمولة التحويل الإضافية (اختياري)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  dir="ltr"
-                  value={commissionAmount}
-                  onChange={e => setCommissionAmount(e.target.value)}
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-[#F5C84C]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-white/90 font-bold mb-1">ملاحظة إضافية (اختياري)</label>
-                <input
-                  type="text"
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  placeholder="ملاحظة حول الحوالة..."
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#F5C84C]"
-                />
-              </div>
-            </div>
-
-            {/* ملخص الأثر المحاسبي على المحطتين */}
-            <div className="bg-black/65 border border-[#D4AF37]/40 rounded-2xl p-3.5 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-white/90 font-bold flex items-center gap-1">
-                  <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-400" />
-                  يُضاف الآن فلاكيس ({originStation?.name || 'محطة الإرسال'}):
-                </span>
-                <span dir="ltr" className="text-sm font-black font-mono text-emerald-400">
-                  +{(numericSend + numericCommission).toLocaleString('en-US')} {sendCurrency}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs border-t border-white/15 pt-2">
-                <span className="text-white/90 font-bold flex items-center gap-1">
-                  <ArrowUpRight className="w-3.5 h-3.5 text-rose-400" />
-                  يُخصم عند &quot;تم الاستلام&quot; من ({destStation?.name || 'محطة الوصول'}):
-                </span>
-                <span dir="ltr" className="text-sm font-black font-mono text-[#F5C84C]">
-                  -{payoutAmount.toLocaleString('en-US')} {payoutCurrency}
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="btn-gold w-full py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Send className="w-4 h-4" />
-              <span>
-                {isSubmitting
-                  ? 'جاري تسجيل الحوالة...'
-                  : `تأكيد إرسال الحوالة (+${(numericSend + numericCommission).toLocaleString('en-US')} ${sendCurrency})`}
-              </span>
-            </button>
           </form>
         ) : (
           <div className="space-y-3.5">

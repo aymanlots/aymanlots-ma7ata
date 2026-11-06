@@ -90,6 +90,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     extendSubscription,
     startFiveMinuteSubscriptionTest,
     showToast,
+    themeMode,
+    setThemeMode,
     t
   } = useApp();
 
@@ -436,17 +438,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </form>
         </div>
 
-        {/* 4. Language */}
-        <div className="luxury-card rounded-[22px] p-4">
-          <div className="flex items-center gap-2">
-            <Languages className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h3 className="text-xs font-black text-white">لغة واجهة التطبيق</h3>
-          </div>
-          <div className="mt-2.5 pt-2.5 border-t border-white/15">
-            <div className="flex items-center gap-2 p-2 rounded-xl bg-black/60 border border-white/15 text-xs font-bold text-white">
-              <span className="w-2 h-2 rounded-full bg-[#2ECC71] shrink-0"></span>
-              <span>العربية الفصحى (اللغة الرسمية المعتمدة)</span>
-            </div>
+        {/* 4. Theme Mode (وضع النهار / وضع الليل) & Language */}
+        <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
+          <span className="text-xs font-black text-white block">☀️ مظهر التطبيق (النهار / الليل)</span>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setThemeMode('light')}
+              className={`py-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                themeMode === 'light' ? 'btn-gold' : 'btn-cancel'
+              }`}
+            >
+              ☀️ وضع النهار
+            </button>
+            <button
+              type="button"
+              onClick={() => setThemeMode('dark')}
+              className={`py-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                themeMode === 'dark' ? 'btn-gold' : 'btn-cancel'
+              }`}
+            >
+              🌙 وضع الليل
+            </button>
           </div>
         </div>
 
@@ -484,6 +497,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
           <PWAInstallButton />
+        </div>
+
+        {/* Quick Light / Dark Mode Switcher */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setThemeMode('light')}
+            className={`py-2 rounded-xl text-xs font-black transition cursor-pointer ${
+              themeMode === 'light' ? 'btn-gold' : 'btn-cancel'
+            }`}
+          >
+            ☀️ وضع النهار
+          </button>
+          <button
+            type="button"
+            onClick={() => setThemeMode('dark')}
+            className={`py-2 rounded-xl text-xs font-black transition cursor-pointer ${
+              themeMode === 'dark' ? 'btn-gold' : 'btn-cancel'
+            }`}
+          >
+            🌙 وضع الليل
+          </button>
         </div>
 
         {/* Connection status badge */}
@@ -696,10 +731,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 1.5 إدارة المحطات وتعديل الأسماء (الوكالة والمحطات في مكان واحد منظم) */}
       {(userRole === 'owner' || userRole === 'platform_owner') && (
         <div className="luxury-card rounded-[22px] p-4 space-y-3 border border-[#D4AF37]/40">
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => setOpenStationsSection(!openStationsSection)}
-            className="w-full flex items-center justify-between gap-2 text-right cursor-pointer"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setOpenStationsSection(!openStationsSection);
+              }
+            }}
+            className="w-full flex items-center justify-between gap-2 text-right cursor-pointer select-none"
           >
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0 shadow-md">
@@ -715,7 +757,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 openStationsSection ? 'rotate-180' : ''
               }`}
             />
-          </button>
+          </div>
 
           {openStationsSection && (
             <div className="space-y-3 pt-3 border-t border-white/15 animate-fadeIn">

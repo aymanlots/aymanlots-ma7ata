@@ -50,6 +50,8 @@ export const Header: React.FC<HeaderProps> = ({
     setLanguage,
     language,
     managerPartnerships,
+    themeMode,
+    toggleThemeMode,
     t
   } = useApp();
 
@@ -69,12 +71,24 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-[#080502]/90 backdrop-blur-xl border-b border-[#D4AF37]/25 px-3.5 py-2.5 pt-safe relative shadow-2xl">
+      <header
+        className={`sticky top-0 z-40 px-2.5 py-2 pt-safe relative ${
+          themeMode === 'dark'
+            ? 'bg-[#080502]/90 backdrop-blur-xl border-b border-[#D4AF37]/25 shadow-2xl'
+            : 'bg-white/80 backdrop-blur-md border-b border-slate-300 shadow-sm'
+        }`}
+      >
         <div className="w-full mx-auto flex items-center justify-between gap-2 relative z-10" dir={dir}>
           
-          {/* Right Section (RTL): Large Golden Title + Quick Pills */}
+          {/* Right Section (RTL): Large Title + Quick Pills */}
           <div className="flex flex-col items-start text-right min-w-0 flex-1">
-            <h1 className="text-[20px] sm:text-[22px] font-black tracking-tight text-[#E6C37A] leading-tight truncate max-w-full drop-shadow-[0_2px_8px_rgba(212,175,55,0.25)]">
+            <h1
+              className={`text-[20px] sm:text-[22px] font-black tracking-tight leading-tight truncate max-w-full ${
+                themeMode === 'dark'
+                  ? 'text-[#E6C37A] drop-shadow-[0_2px_8px_rgba(212,175,55,0.25)]'
+                  : 'text-[#111111]'
+              }`}
+            >
               {!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
                 ? 'Sahara📦 Express'
                 : currentWorkspace.name}
@@ -83,10 +97,10 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="nav-tab-btn flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1a0f00]/90 border border-[#D4AF37]/45 text-[11px] font-extrabold text-[#F5C84C] hover:border-[#F5C84C] transition active:scale-95 cursor-pointer"
+                className="btn-cancel flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
                 title="القائمة والأدوات"
               >
-                <Menu className="w-3.5 h-3.5 text-[#F5C84C]" />
+                <Menu className="w-3.5 h-3.5" />
                 <span>القائمة</span>
               </button>
 
@@ -94,11 +108,11 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   type="button"
                   onClick={onOpenCollabRoom}
-                  className="nav-tab-btn relative flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-amber-950/80 to-[#1a0f00]/90 border border-amber-500/60 text-[11px] font-extrabold text-[#F5C84C] hover:border-[#F5C84C] transition active:scale-95 cursor-pointer shadow-sm"
+                  className="btn-cancel relative flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
                   title="غرفة الشراكة بين المدراء والمحاسبة المشتركة"
                 >
-                  <Handshake className="w-3.5 h-3.5 text-amber-400" />
-                  <span>غرفة الشراكة</span>
+                  <Handshake className="w-3.5 h-3.5" />
+                  <span>🤝 الشراكة</span>
                   {pendingPartnershipRequestsCount > 0 && (
                     <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center animate-bounce shadow">
                       {pendingPartnershipRequestsCount}
@@ -109,8 +123,17 @@ export const Header: React.FC<HeaderProps> = ({
 
               <button
                 type="button"
+                onClick={toggleThemeMode}
+                className="btn-cancel flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black transition active:scale-95 cursor-pointer"
+                title={themeMode === 'light' ? 'التبديل إلى وضع الليل (Dark Mode)' : 'التبديل إلى وضع النهار (Light Mode)'}
+              >
+                <span>{themeMode === 'light' ? '🌙 ليل' : '☀️ نهار'}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={toggleHideAmounts}
-                className="nav-tab-btn flex items-center justify-center w-7 h-7 rounded-full bg-[#1a0f00]/90 border border-[#D4AF37]/45 text-[#F5C84C] hover:border-[#F5C84C] transition active:scale-95 cursor-pointer"
+                className="btn-cancel flex items-center justify-center w-7 h-7 rounded-full transition active:scale-95 cursor-pointer"
                 title={hideAmounts ? 'إظهار المبالغ المالية' : 'إخفاء المبالغ المالية (وضع الخصوصية)'}
               >
                 {hideAmounts ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -142,7 +165,9 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => setMobileMenuOpen(false)}
         >
           <div 
-            className="w-full max-w-[390px] bg-[#140b00] border-t-2 border-[#D4AF37]/60 rounded-t-3xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto space-y-3.5 text-right"
+            className={`w-full max-w-[390px] luxury-card border-t-2 rounded-t-3xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto space-y-3.5 text-right ${
+              themeMode === 'dark' ? 'bg-[#140b00] border-[#D4AF37]/60' : 'bg-white border-slate-300'
+            }`}
             onClick={e => e.stopPropagation()}
             dir="rtl"
           >

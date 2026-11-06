@@ -541,10 +541,13 @@ interface AppContextType {
     targetPhone?: string;
   }>;
 
-  // Language & i18n
+  // Language & i18n & Theme Mode (Light Mode is default)
   language: Language;
   setLanguage: (lang: Language) => void;
   t: (key: string, fallback?: string) => string;
+  themeMode: 'light' | 'dark';
+  setThemeMode: (mode: 'light' | 'dark') => void;
+  toggleThemeMode: () => void;
 
   // Subscription / Paywall
   subscription: Subscription | null;
@@ -591,6 +594,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (dict && dict[key]) return dict[key];
     return fallback !== undefined ? fallback : key;
   };
+
+  // Theme Mode: Light Mode ('light') is the default on first visit; Dark Mode ('dark') preserved intact
+  const [themeMode, setThemeModeState] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem('sahara_theme_mode_v2');
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch {}
+    return 'light';
+  });
+
+  const setThemeMode = useCallback((mode: 'light' | 'dark') => {
+    setThemeModeState(mode);
+    try {
+      localStorage.setItem('sahara_theme_mode_v2', mode);
+    } catch {}
+  }, []);
+
+  const toggleThemeMode = useCallback(() => {
+    setThemeModeState((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      try {
+        localStorage.setItem('sahara_theme_mode_v2', next);
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const body = document.body;
+    if (themeMode === 'light') {
+      root.classList.add('theme-light');
+      root.classList.remove('theme-dark');
+      body.classList.add('theme-light');
+      body.classList.remove('theme-dark');
+    } else {
+      root.classList.add('theme-dark');
+      root.classList.remove('theme-light');
+      body.classList.add('theme-dark');
+      body.classList.remove('theme-light');
+    }
+  }, [themeMode]);
 
   // Official Exchange Rate: 1 MAD = 3.80 MRU (0.263 MAD per MRU)
   const [exchangeRate, setExchangeRateState] = useState<number>(() => {
@@ -9034,6 +9079,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         language,
         setLanguage,
         t,
+        themeMode,
+        setThemeMode,
+        toggleThemeMode,
         subscription,
         isSubscriptionExpired,
         daysUntilExpiry,

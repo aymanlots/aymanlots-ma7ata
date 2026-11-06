@@ -485,81 +485,77 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
         )}
       </div>
 
-      {/* Active Currency Exchange & Cashbox Recording Widget (صرف العملة الفعلي بين الدرهم والأوقية) */}
+      {/* Active Currency Exchange & Cashbox Recording Widget (بترتيب يمين / يسار + سطر واحد لتحت) */}
       {showConverter && (
-        <div className="luxury-card rounded-[20px] p-3.5 animate-fadeIn space-y-3 border border-[#F5C84C]/65">
-          <div className="flex items-center justify-between border-b border-white/15 pb-2">
+        <div className="luxury-card rounded-[20px] p-2 animate-fadeIn space-y-1.5 border border-[#F5C84C]/65">
+          <div className="flex items-center justify-between border-b border-white/15 pb-1">
             <div className="flex items-center gap-1.5 text-xs font-black text-[#F5C84C]">
-              <ArrowRightLeft className="w-4 h-4 text-[#F5C84C]" />
-              <span>عملية صرف العملة فلاكيس (درهم مغربي MAD ⇄ أوقية موريتانية MRU)</span>
+              <ArrowRightLeft className="w-3.5 h-3.5 text-[#F5C84C]" />
+              <span>💱 صرف العملة فلاكيس (MAD ⇄ MRU)</span>
             </div>
             <button
               type="button"
               onClick={() => setShowConverter(false)}
-              className="btn-cancel px-2.5 py-1 rounded-lg text-[10px] font-bold"
+              className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-bold"
             >
-              إغلاق ▲
+              ✕
             </button>
           </div>
 
-          {/* Direction Quick Toggle */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setCalcFrom('MAD')}
-              className={`py-2 px-2.5 rounded-xl text-[11px] font-black transition flex items-center justify-center gap-1.5 ${
-                calcFrom === 'MAD' ? 'btn-gold' : 'btn-cancel'
-              }`}
-            >
-              <span>🇲🇦 درهم ➔ 🇲🇷 أوقية</span>
-              <span className="text-[9px] opacity-85">(+MAD / -MRU)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCalcFrom('MRU')}
-              className={`py-2 px-2.5 rounded-xl text-[11px] font-black transition flex items-center justify-center gap-1.5 ${
-                calcFrom === 'MRU' ? 'btn-gold' : 'btn-cancel'
-              }`}
-            >
-              <span>🇲🇷 أوقية ➔ 🇲🇦 درهم</span>
-              <span className="text-[9px] opacity-85">(+MRU / -MAD)</span>
-            </button>
-          </div>
+          {/* جوج أعمدة: اليمين (المحطة + اتجاه الصرف) | اليسار (سعر الصرف + الزبون والهاتف فنفس السطر) */}
+          <div className="grid grid-cols-2 gap-1.5 items-stretch text-xs">
+            {/* RIGHT COLUMN */}
+            <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
+              <div>
+                <label className="block text-[10px] text-[#F5C84C] font-black mb-0.5">
+                  📍 المحطة
+                </label>
+                <select
+                  value={exchangeStationId || currentStation?.id || ''}
+                  disabled={userRole === 'worker'}
+                  onChange={e => {
+                    if (userRole === 'worker') return;
+                    setExchangeStationId(e.target.value);
+                  }}
+                  className="w-full bg-black/80 border border-white/20 rounded-lg px-1.5 py-1 text-white font-bold text-[11px] focus:outline-none disabled:opacity-75"
+                >
+                  {(userRole === 'worker' && workerStationId
+                    ? stations.filter(st => st.id === workerStationId)
+                    : stations
+                  ).map(st => (
+                    <option key={st.id} value={st.id}>
+                      {st.name} ({st.city})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          {/* Station + Manual Exchange Rate Input Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-            <div className="bg-black/65 p-2.5 rounded-xl border border-white/15">
-              <label className="block text-[10px] text-[#F5C84C] font-bold mb-1">
-                محطة تنفيذ عملية الصرف:
-              </label>
-              <select
-                value={exchangeStationId || currentStation?.id || ''}
-                disabled={userRole === 'worker'}
-                onChange={e => {
-                  if (userRole === 'worker') return;
-                  setExchangeStationId(e.target.value);
-                }}
-                className="w-full bg-black/80 border border-white/20 rounded-lg px-2.5 py-1.5 text-white font-bold text-xs focus:outline-none focus:border-[#F5C84C] disabled:opacity-75"
-              >
-                {(userRole === 'worker' && workerStationId
-                  ? stations.filter(st => st.id === workerStationId)
-                  : stations
-                ).map(st => (
-                  <option key={st.id} value={st.id}>
-                    {st.name} ({st.city})
-                  </option>
-                ))}
-              </select>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCalcFrom('MAD')}
+                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition ${
+                    calcFrom === 'MAD' ? 'btn-gold' : 'btn-cancel'
+                  }`}
+                >
+                  +MAD ➔ −MRU
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalcFrom('MRU')}
+                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition ${
+                    calcFrom === 'MRU' ? 'btn-gold' : 'btn-cancel'
+                  }`}
+                >
+                  +MRU ➔ −MAD
+                </button>
+              </div>
             </div>
 
-            <div className="bg-black/65 p-2.5 rounded-xl border border-[#F5C84C]/35 flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-bold text-white">سعر الصرف المعتمد:</span>
-                <span className="text-[10px] font-mono text-[#E6C37A]" dir="ltr">
-                  1 MAD = {exchangeRate} MRU
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
+            {/* LEFT COLUMN */}
+            <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-black text-white shrink-0">السعر:</span>
                 <input
                   type="number"
                   step="0.01"
@@ -574,74 +570,31 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
                       setExchangeRate(num);
                     }
                   }}
-                  className="w-full bg-black/80 border border-[#F5C84C]/60 focus:border-[#F5C84C] rounded-lg px-2.5 py-1 text-center font-mono font-black text-white text-xs"
+                  className="w-full bg-black/80 border border-[#F5C84C]/60 rounded-lg px-1.5 py-1 text-center font-mono font-black text-white text-[11px]"
                 />
-                <span className="text-[10px] font-mono font-bold text-[#68E399] shrink-0">MRU</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const num = parseFloat(manualRateStr);
-                    if (!isNaN(num) && num > 0) {
-                      setExchangeRate(num);
-                      showToast(`تم تثبيت سعر الصرف: 1 درهم = ${num} أوقية`, 'success');
-                    } else {
-                      showToast('يرجى إدخال سعر صرف صحيح أكبر من 0', 'error');
-                    }
-                  }}
-                  className="btn-gold px-2.5 py-1 rounded-lg text-[10px] font-black shrink-0"
-                >
-                  حفظ
-                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1">
+                <input
+                  type="text"
+                  placeholder="👤 الزبون"
+                  value={exchangeCustomerName}
+                  onChange={e => setExchangeCustomerName(e.target.value)}
+                  className="w-full min-w-0 bg-black/60 border border-white/20 rounded-lg px-1.5 py-1 text-white text-[11px] focus:outline-none"
+                />
+                <input
+                  type="tel"
+                  dir="ltr"
+                  placeholder="📞 الهاتف"
+                  value={exchangeCustomerPhone}
+                  onChange={e => setExchangeCustomerPhone(e.target.value)}
+                  className="w-full min-w-0 bg-black/60 border border-white/20 rounded-lg px-1.5 py-1 text-white font-mono text-[11px] focus:outline-none"
+                />
               </div>
             </div>
           </div>
 
-          {/* Conversion Amount Calculator & Customer Info */}
-          <div className="grid grid-cols-2 gap-2 items-stretch text-xs">
-            <div className="bg-emerald-950/35 p-2.5 rounded-xl border border-emerald-500/40">
-              <label className="text-[10px] text-emerald-300 font-black block mb-1">
-                + المبلغ المستلم فلاكيس ({calcFrom}):
-              </label>
-              <input
-                type="number"
-                value={calcAmount}
-                onChange={(e) => setCalcAmount(e.target.value)}
-                placeholder="أدخل المبلغ المستلم..."
-                className="w-full bg-black/70 border border-emerald-500/40 rounded-xl px-2.5 py-1.5 text-white font-mono font-black text-sm"
-              />
-            </div>
-
-            <div className="bg-rose-950/35 p-2.5 rounded-xl border border-rose-500/40 flex flex-col justify-between">
-              <span className="text-[10px] text-rose-300 font-black block">
-                − المبلغ المسلّم للزبون ({calcFrom === 'MAD' ? 'MRU' : 'MAD'}):
-              </span>
-              <span className="text-sm font-black font-mono text-[#F5C84C] py-1" dir="ltr">
-                {convertCurrency(parseFloat(calcAmount) || 0, calcFrom, calcFrom === 'MAD' ? 'MRU' : 'MAD')}{' '}
-                {calcFrom === 'MAD' ? 'MRU' : 'MAD'}
-              </span>
-            </div>
-          </div>
-
-          {/* Optional Customer Name & Phone */}
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <input
-              type="text"
-              placeholder="اسم الزبون (اختياري)..."
-              value={exchangeCustomerName}
-              onChange={e => setExchangeCustomerName(e.target.value)}
-              className="bg-black/60 border border-white/20 rounded-xl px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#F5C84C]"
-            />
-            <input
-              type="tel"
-              dir="ltr"
-              placeholder="هاتف الزبون (اختياري)..."
-              value={exchangeCustomerPhone}
-              onChange={e => setExchangeCustomerPhone(e.target.value)}
-              className="bg-black/60 border border-white/20 rounded-xl px-2.5 py-1.5 text-white font-mono text-xs focus:outline-none focus:border-[#F5C84C]"
-            />
-          </div>
-
-          {/* Execute Currency Exchange in Station Cashbox Button (with Empty Cashbox Warning) */}
+          {/* لتحت فسطر واحد: المبلغ المستلم + المبلغ المسلم + تأكيد الصرف */}
           {(() => {
             const targetStId =
               (exchangeStationId && exchangeStationId !== 'all' ? exchangeStationId : '') ||
@@ -679,34 +632,26 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
 
             if (showFxNegativeWarning) {
               return (
-                <div className="p-3 rounded-xl bg-rose-950/80 border-2 border-rose-500/50 space-y-2 text-xs">
-                  <div className="flex items-center gap-2 text-rose-300 font-black">
-                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                    <span>تنبيه: لاكيس {toCurr} في المحطة خاوية أو غير كافية!</span>
-                  </div>
-                  <p className="text-white/90 font-bold">
-                    الرصيد الحالي:{' '}
-                    <span dir="ltr" className="font-mono text-[#F5C84C]">
-                      {currentOutBal.toLocaleString('en-US')} {toCurr}
-                    </span>{' '}
-                    ➔ سيصبح بعد الصرف:{' '}
-                    <span dir="ltr" className="font-mono text-rose-400 font-black">
+                <div className="p-2 rounded-xl bg-rose-950/80 border border-rose-500/50 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between text-rose-300 font-black text-[10px]">
+                    <span>⚠️ لاكيس {toCurr} ستصبح بالسالب:</span>
+                    <span dir="ltr" className="font-mono text-rose-400">
                       {resultingOutBal.toLocaleString('en-US')} {toCurr}
                     </span>
-                  </p>
-                  <div className="flex items-center gap-2">
+                  </div>
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       disabled={isExecutingExchange}
                       onClick={runExchange}
-                      className="flex-1 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-black text-xs cursor-pointer"
+                      className="btn-delete flex-1 py-1.5 rounded-lg font-black text-[11px] cursor-pointer"
                     >
-                      نعم، نفذ الصرف (رصيد سالب)
+                      ✅ تأكيد الصرف (رصيد سالب)
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowFxNegativeWarning(false)}
-                      className="btn-cancel px-3 py-2 rounded-xl text-xs font-bold cursor-pointer"
+                      className="btn-cancel px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer"
                     >
                       إلغاء
                     </button>
@@ -716,29 +661,36 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
             }
 
             return (
-              <button
-                type="button"
-                disabled={isExecutingExchange || stations.length === 0}
-                onClick={async () => {
-                  if (fromAmt <= 0 || toAmt <= 0) {
-                    showToast('يرجى إدخال مبلغ صحيح أكبر من 0 لتنفيذ عملية الصرف', 'error');
-                    return;
-                  }
-                  if (currentOutBal <= 0 || resultingOutBal < 0) {
-                    setShowFxNegativeWarning(true);
-                    return;
-                  }
-                  await runExchange();
-                }}
-                className="btn-gold w-full py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition disabled:opacity-50"
-              >
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>
-                  {isExecutingExchange
-                    ? 'جاري تسجيل عملية الصرف فلاكيس...'
-                    : `تأكيد وتسجيل الصرف فلاكيس (+${fromAmt} ${calcFrom} / -${toAmt} ${toCurr})`}
+              <div className="flex items-center gap-1 bg-black/55 p-1.5 rounded-xl border border-white/15">
+                <input
+                  type="number"
+                  value={calcAmount}
+                  onChange={(e) => setCalcAmount(e.target.value)}
+                  placeholder={`+${calcFrom} المستلم *`}
+                  className="flex-1 min-w-[75px] bg-black/70 border border-emerald-500/40 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs"
+                />
+                <span className="text-xs font-black font-mono text-[#F5C84C] px-1 shrink-0" dir="ltr">
+                  ➔ -{toAmt} {toCurr}
                 </span>
-              </button>
+                <button
+                  type="button"
+                  disabled={isExecutingExchange || stations.length === 0}
+                  onClick={async () => {
+                    if (fromAmt <= 0 || toAmt <= 0) {
+                      showToast('يرجى إدخال مبلغ صحيح أكبر من 0 لتنفيذ عملية الصرف', 'error');
+                      return;
+                    }
+                    if (currentOutBal <= 0 || resultingOutBal < 0) {
+                      setShowFxNegativeWarning(true);
+                      return;
+                    }
+                    await runExchange();
+                  }}
+                  className="btn-gold px-2.5 py-1.5 rounded-lg font-black text-[11px] shrink-0 cursor-pointer"
+                >
+                  {isExecutingExchange ? '⏳' : '✅تأكيد الصرف'}
+                </button>
+              </div>
             );
           })()}
         </div>

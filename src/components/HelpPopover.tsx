@@ -14,12 +14,20 @@ export const HelpPopover: React.FC<HelpPopoverProps> = ({ text, title, className
 
   return (
     <span className={`inline-flex flex-col ${className}`} onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
+      <span
+        role="button"
+        tabIndex={0}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
           setOpen((prev) => !prev);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen((prev) => !prev);
+          }
         }}
         title={title || 'اضغط لعرض الشرح'}
         aria-label="شرح"
@@ -30,19 +38,19 @@ export const HelpPopover: React.FC<HelpPopoverProps> = ({ text, title, className
         }`}
       >
         ؟
-      </button>
+      </span>
 
       {open && (
-        <div
+        <span
           onClick={(e) => {
             e.stopPropagation();
             setOpen(false);
           }}
-          className="mt-1.5 p-2.5 rounded-xl bg-[#120a00] border border-[#F5C84C]/60 text-[11px] text-[#F5D799] font-bold leading-relaxed shadow-xl animate-fadeIn max-w-xs sm:max-w-sm z-40 cursor-pointer"
+          className="mt-1.5 p-2.5 rounded-xl bg-[#120a00] border border-[#F5C84C]/60 text-[11px] text-[#F5D799] font-bold leading-relaxed shadow-xl animate-fadeIn max-w-xs sm:max-w-sm z-40 cursor-pointer block"
         >
-          {title && <div className="text-[#F5C84C] font-black mb-0.5">{title}</div>}
-          <div className="text-white/90">{text}</div>
-        </div>
+          {title && <span className="text-[#F5C84C] font-black mb-0.5 block">{title}</span>}
+          <span className="text-white/90 block">{text}</span>
+        </span>
       )}
     </span>
   );

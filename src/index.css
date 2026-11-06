@@ -2,250 +2,510 @@
 
 @layer base {
   :root {
-    --bg-main: #080c14;
-    --bg-card: rgba(13, 20, 36, 0.65);
-    --border-color: rgba(255, 255, 255, 0.12);
-    --emerald-in: #006233;
-    --red-out: #C1272D;
-    --btn-gold: #F5C84C;
-    --btn-text-dark: #111111;
-    --btn-danger: #C1272D;
+    --font-arabic: 'Cairo', 'Tajawal', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
   }
 
   html,
   body {
-    background-color: #080c14;
-    color: #FFFFFF;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
-    -webkit-tap-highlight-color: transparent;
-    user-select: none;
-    -webkit-font-smoothing: antialiased;
+    font-family: var(--font-arabic);
     overflow-x: hidden;
-    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 }
 
-/* Guerguerat Cross-Border Desert Background Frame */
-.app-desert-frame {
-  background-color: #140d06;
-  background-image:
-    linear-gradient(to bottom, rgba(10, 6, 2, 0.18) 0%, rgba(10, 6, 2, 0.35) 100%),
-    url('/assets/aistudio/WhatsApp_Image_2026-10-22_at_04.15.27_e3559304.jpeg');
-  background-size: 100% 100%;
-  background-position: center top;
-  background-repeat: no-repeat;
+/* ============================================================================
+   ☀️ LIGHT MODE (وضع النهار — الافتراضي Default)
+   كروت بيضاء شفافة شوية باش الخلفية تبقى باينة، وكتابة كحلة واضحة 100% فكل بلاصة
+   ============================================================================ */
+html:not(.theme-dark),
+html.theme-light,
+html:not(.theme-dark) body,
+html.theme-light body {
+  background-color: #F8FAFC !important;
+  color: #000000 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-/* Shared Design Tokens: Dark Semi-Transparent Cards with Thin Borders & Crisp Readability */
-.luxury-card {
-  background: rgba(0, 0, 0, 0.52) !important;
-  backdrop-filter: blur(6px) !important;
-  -webkit-backdrop-filter: blur(6px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
-}
-
-/* Hide horizontal scrollbar for station filter strip */
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
-.gold-pill,
-.btn-gold {
-  background: var(--btn-gold) !important;
-  background-image: none !important;
-  color: var(--btn-text-dark) !important;
-  border: 1px solid var(--btn-gold) !important;
-  border-radius: 0.75rem !important;
-  font-weight: 800 !important;
-  text-shadow: none !important;
-}
-
-/* Unified Button System Across Entire App (All Pages & Modals) */
-button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.collapsible-header-btn) {
-  background: var(--btn-gold) !important;
-  background-image: none !important;
-  color: var(--btn-text-dark) !important;
-  border: 1px solid var(--btn-gold) !important;
-  border-radius: 0.75rem !important;
-  font-weight: 800 !important;
-  text-shadow: none !important;
-  box-shadow: none !important;
-}
-
-button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.collapsible-header-btn) *,
-button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.collapsible-header-btn) svg,
-.btn-gold *,
-.btn-gold svg {
-  color: var(--btn-text-dark) !important;
-  text-shadow: none !important;
-}
-
-/* Close & Cancel Buttons: Same Gold Color, No Background, Gold Border & Gold Text */
-button.btn-cancel,
-button[aria-label="إغلاق"],
-button[aria-label="مسح البحث"] {
+/* Ensure the fixed desert background image and its overlay keep the exact same size, position, and visibility in Light Mode as in Dark Mode */
+html:not(.theme-dark) .desert-bg-frame,
+html.theme-light .desert-bg-frame {
+  position: fixed !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  height: 100dvh !important;
+  max-height: 100vh !important;
   background: transparent !important;
-  background-image: none !important;
-  color: var(--btn-gold) !important;
-  border: 1px solid var(--btn-gold) !important;
-  border-radius: 0.75rem !important;
-  font-weight: 800 !important;
-  text-shadow: none !important;
-  box-shadow: none !important;
-}
-
-button.btn-cancel *,
-button.btn-cancel svg,
-button[aria-label="إغلاق"] *,
-button[aria-label="إغلاق"] svg,
-button[aria-label="مسح البحث"] *,
-button[aria-label="مسح البحث"] svg {
-  color: var(--btn-gold) !important;
-  text-shadow: none !important;
-}
-
-/* Delete Buttons Only: Remain Red */
-button.btn-delete,
-button[title*="حذف"],
-button[title*="إزالة"] {
-  background: var(--btn-danger) !important;
-  background-image: none !important;
-  color: #FFFFFF !important;
-  border: 1px solid #FF5A5F !important;
-  border-radius: 0.75rem !important;
-  font-weight: 800 !important;
-  text-shadow: none !important;
-  box-shadow: none !important;
-}
-
-button.btn-delete *,
-button.btn-delete svg,
-button[title*="حذف"] *,
-button[title*="حذف"] svg,
-button[title*="إزالة"] *,
-button[title*="إزالة"] svg {
-  color: #FFFFFF !important;
-  text-shadow: none !important;
-}
-
-/* Disabled Buttons: Same Color at 40% Opacity */
-button:disabled,
-button[disabled] {
-  opacity: 0.4 !important;
-  cursor: not-allowed !important;
-}
-
-.gold-text {
-  color: #FFFFFF;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95);
-}
-
-/* Cards, Tables, Forms and Amounts on Semi-Transparent Surfaces */
-.bg-\[\#1a0f00\]\/80,
-.bg-\[\#1a0f00\]\/85,
-.bg-\[\#1a0f00\]\/90,
-.bg-\[\#1a0f00\]\/95,
-.bg-\[\#1a0f00\]\/75,
-.bg-\[\#1a0f00\]\/70,
-.bg-\[\#1a0f00\]\/60 {
-  background: rgba(0, 0, 0, 0.52) !important;
-  backdrop-filter: blur(6px) !important;
-  -webkit-backdrop-filter: blur(6px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-}
-
-.bg-\[\#120a00\]\/90,
-.bg-\[\#120a00\]\/80,
-.bg-\[\#120a00\]\/70 {
-  background: rgba(0, 0, 0, 0.50) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-}
-
-/* Modals and Bottom Sheets with Clean Backdrop and No Heavy Blur */
-div.fixed.inset-0.bg-black,
-div.fixed.inset-0.bg-black\/95,
-div.fixed.inset-0.bg-black\/90,
-div.fixed.inset-0.bg-black\/85,
-div.fixed.inset-0.bg-black\/80,
-div.fixed.inset-0.bg-black\/70,
-div.fixed.inset-0.bg-black\/60,
-div.fixed.inset-0.bg-\[\#060A14\]\/90,
-div.fixed.inset-0.bg-slate-950\/85 {
-  background-color: rgba(0, 0, 0, 0.55) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 
-/* Safe area support for iOS / PWA full screen */
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 16px);
+html:not(.theme-dark) .desert-bg-overlay,
+html.theme-light .desert-bg-overlay {
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.30)) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-.pt-safe {
-  padding-top: env(safe-area-inset-top, 16px);
+/* Translucent White Cards in Light Mode so the Full App Background Image (Flags + Gate + Van) Remains Clearly Visible */
+html:not(.theme-dark) .luxury-card,
+html.theme-light .luxury-card {
+  background: rgba(255, 255, 255, 0.74) !important;
+  border: 1.5px solid rgba(15, 23, 42, 0.28) !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08) !important;
+  color: #000000 !important;
 }
 
-/* Custom sleek green scrollbar */
+/* Eliminate ALL dark/black/slate card & box backgrounds in Light Mode (excluding body, root, and background image overlay) */
+html:not(.theme-dark) [class*="bg-black"]:not(body):not(html):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-overlay),
+html:not(.theme-dark) [class*="bg-[#1"]:not(body):not(html):not(.desert-bg-frame):not(.desert-bg-overlay),
+html:not(.theme-dark) [class*="bg-[#0"]:not(body):not(html):not(.desert-bg-frame):not(.desert-bg-overlay),
+html:not(.theme-dark) [class*="bg-[#2"]:not(body):not(html):not(.desert-bg-frame):not(.desert-bg-overlay),
+html:not(.theme-dark) [class*="bg-slate-8"]:not(body):not(html),
+html:not(.theme-dark) [class*="bg-slate-9"]:not(body):not(html),
+html:not(.theme-dark) [class*="bg-gray-8"]:not(body):not(html),
+html:not(.theme-dark) [class*="bg-gray-9"]:not(body):not(html),
+html:not(.theme-dark) [class*="from-[#2"]:not(body):not(html):not(.desert-bg-overlay),
+html:not(.theme-dark) [class*="from-[#1"]:not(body):not(html):not(.desert-bg-overlay),
+html:not(.theme-dark) [class*="to-black"]:not(body):not(html):not(.desert-bg-overlay),
+html:not(.theme-dark) [class*="via-black"]:not(body):not(html):not(.desert-bg-overlay) {
+  background: rgba(255, 255, 255, 0.78) !important;
+  background-image: none !important;
+  border-color: rgba(15, 23, 42, 0.25) !important;
+  color: #000000 !important;
+}
+
+/* Modal backdrop overlay in Light Mode */
+html:not(.theme-dark) .fixed.inset-0.bg-black\/75,
+html:not(.theme-dark) .fixed.inset-0.bg-black\/80,
+html:not(.theme-dark) .fixed.inset-0.bg-black\/85,
+html:not(.theme-dark) .fixed.inset-0.bg-black\/90,
+html:not(.theme-dark) .fixed.inset-0.bg-\[\#060A14\]\/90 {
+  background: rgba(15, 23, 42, 0.40) !important;
+}
+
+/* Borders in Light Mode: crisp slate borders */
+html:not(.theme-dark) .border-white\/10,
+html:not(.theme-dark) .border-white\/15,
+html:not(.theme-dark) .border-white\/20,
+html:not(.theme-dark) [class*="border-slate-7"],
+html:not(.theme-dark) [class*="border-slate-8"],
+html:not(.theme-dark) [class*="border-[#D4AF37]"],
+html:not(.theme-dark) [class*="border-[#F5C84C]"],
+html:not(.theme-dark) [class*="border-[#C9A24B]"] {
+  border-color: rgba(15, 23, 42, 0.26) !important;
+}
+
+/* ULTRA-CRISP BLACK TYPOGRAPHY IN LIGHT MODE (100% visible everywhere!) */
+html:not(.theme-dark) .gold-text,
+html:not(.theme-dark) [class*="text-white"],
+html:not(.theme-dark) [class*="text-slate-"],
+html:not(.theme-dark) [class*="text-gray-"],
+html:not(.theme-dark) .text-\[\#FFF8EB\],
+html:not(.theme-dark) .text-\[\#F5C84C\],
+html:not(.theme-dark) .text-\[\#F5D799\],
+html:not(.theme-dark) .text-\[\#E6C37A\],
+html:not(.theme-dark) .text-\[\#F3A952\],
+html:not(.theme-dark) .text-\[\#D4AF37\],
+html:not(.theme-dark) .text-\[\#D9B36C\],
+html:not(.theme-dark) .text-\[\#C8B08A\],
+html:not(.theme-dark) .text-\[\#A68966\] {
+  color: #000000 !important;
+  background: none !important;
+  -webkit-text-fill-color: #000000 !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+/* Readable semantic green & red in Light Mode */
+html:not(.theme-dark) .text-emerald-400,
+html:not(.theme-dark) .text-emerald-300,
+html:not(.theme-dark) .text-emerald-200,
+html:not(.theme-dark) .text-\[\#2ECC71\],
+html:not(.theme-dark) .text-\[\#68E399\] {
+  color: #065F46 !important;
+  -webkit-text-fill-color: #065F46 !important;
+  font-weight: 900 !important;
+}
+
+html:not(.theme-dark) .text-rose-400,
+html:not(.theme-dark) .text-rose-300,
+html:not(.theme-dark) .text-rose-200 {
+  color: #991B1B !important;
+  -webkit-text-fill-color: #991B1B !important;
+  font-weight: 900 !important;
+}
+
+html:not(.theme-dark) [class*="bg-rose-950"] {
+  background-color: rgba(254, 242, 242, 0.94) !important;
+  border-color: #EF4444 !important;
+  color: #991B1B !important;
+}
+
+html:not(.theme-dark) [class*="bg-emerald-950"] {
+  background-color: rgba(236, 253, 245, 0.94) !important;
+  border-color: #10B981 !important;
+  color: #065F46 !important;
+}
+
+html:not(.theme-dark) [class*="bg-amber-950"] {
+  background-color: rgba(255, 251, 235, 0.94) !important;
+  border-color: #F59E0B !important;
+  color: #78350F !important;
+}
+
+html:not(.theme-dark) .text-amber-200,
+html:not(.theme-dark) .text-amber-300,
+html:not(.theme-dark) .text-amber-400 {
+  color: #78350F !important;
+  -webkit-text-fill-color: #78350F !important;
+  font-weight: 900 !important;
+}
+
+html:not(.theme-dark) [class*="bg-purple-950"] {
+  background-color: rgba(243, 232, 255, 0.94) !important;
+  border-color: #A855F7 !important;
+  color: #581C87 !important;
+}
+html:not(.theme-dark) .text-purple-200,
+html:not(.theme-dark) .text-purple-300 {
+  color: #581C87 !important;
+  -webkit-text-fill-color: #581C87 !important;
+  font-weight: 900 !important;
+}
+
+/* Badges and icon containers in Light Mode: clean white with dark border & black text */
+html:not(.theme-dark) .bg-\[\#F5C84C\],
+html:not(.theme-dark) .from-\[\#F5B05B\],
+html:not(.theme-dark) .bg-amber-500 {
+  background: rgba(255, 255, 255, 0.95) !important;
+  background-image: none !important;
+  color: #000000 !important;
+  border: 1.5px solid #000000 !important;
+}
+html:not(.theme-dark) .bg-\[\#F5C84C\] *,
+html:not(.theme-dark) .from-\[\#F5B05B\] *,
+html:not(.theme-dark) .bg-amber-500 * {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+}
+
+html:not(.theme-dark) .bg-\[\#D4AF37\]\/20,
+html:not(.theme-dark) .bg-\[\#F5C84C\]\/15,
+html:not(.theme-dark) .bg-\[\#F5C84C\]\/20,
+html:not(.theme-dark) .bg-\[\#F5C84C\]\/25 {
+  background: rgba(241, 245, 249, 0.90) !important;
+  border-color: #64748B !important;
+  color: #000000 !important;
+}
+
+/* PRIMARY BUTTONS IN LIGHT MODE: Clean White Buttons with Bold Black Border & Black Text */
+html:not(.theme-dark) .btn-gold,
+html:not(.theme-dark) button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.help-popover-btn) {
+  background: rgba(255, 255, 255, 0.96) !important;
+  background-image: none !important;
+  color: #000000 !important;
+  font-weight: 900 !important;
+  border: 2px solid #000000 !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.10) !important;
+  transition: all 0.15s ease !important;
+}
+
+html:not(.theme-dark) .btn-gold *,
+html:not(.theme-dark) button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.help-popover-btn) *:not(.help-popover-btn):not(.help-popover-btn *) {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+}
+
+html:not(.theme-dark) .btn-gold:hover,
+html:not(.theme-dark) button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.help-popover-btn):hover {
+  background: #F1F5F9 !important;
+}
+
+/* SECONDARY / CANCEL BUTTONS IN LIGHT MODE */
+html:not(.theme-dark) .btn-cancel {
+  background: rgba(241, 245, 249, 0.90) !important;
+  color: #000000 !important;
+  border: 1.5px solid #475569 !important;
+  box-shadow: none !important;
+  font-weight: 800 !important;
+}
+html:not(.theme-dark) .btn-cancel * {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+}
+html:not(.theme-dark) .btn-cancel:hover {
+  background: rgba(226, 232, 240, 0.98) !important;
+  border-color: #000000 !important;
+}
+
+/* DELETE BUTTONS IN LIGHT MODE */
+html:not(.theme-dark) .btn-delete {
+  background: rgba(254, 226, 226, 0.95) !important;
+  color: #991B1B !important;
+  border: 1.5px solid #DC2626 !important;
+  font-weight: 900 !important;
+}
+html:not(.theme-dark) .btn-delete * {
+  color: #991B1B !important;
+  -webkit-text-fill-color: #991B1B !important;
+}
+
+/* INPUTS, SELECTS & TEXTAREAS IN LIGHT MODE */
+html:not(.theme-dark) input:not([type="checkbox"]):not([type="radio"]),
+html:not(.theme-dark) select,
+html:not(.theme-dark) textarea {
+  background-color: rgba(255, 255, 255, 0.96) !important;
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+  border: 1.5px solid #334155 !important;
+  font-weight: 800 !important;
+}
+
+html:not(.theme-dark) input::placeholder,
+html:not(.theme-dark) textarea::placeholder {
+  color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
+  opacity: 0.85 !important;
+  font-weight: 700 !important;
+}
+
+html:not(.theme-dark) input:focus,
+html:not(.theme-dark) select:focus,
+html:not(.theme-dark) textarea:focus {
+  border-color: #000000 !important;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.16) !important;
+}
+
+html:not(.theme-dark) select option,
+html:not(.theme-dark) select optgroup {
+  background-color: #FFFFFF !important;
+  color: #000000 !important;
+}
+
+/* Bottom Navigation Tabs in Light Mode */
+html:not(.theme-dark) .nav-tab-btn {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+
+/* ============================================================================
+   🌙 DARK MODE (وضع الليل — كتابة واضحة وباينة 100% فكل بلاصة)
+   ============================================================================ */
+html.theme-dark,
+html.theme-dark body {
+  background-color: #120804 !important;
+  color: #FFFFFF !important;
+}
+
+html.theme-dark .luxury-card {
+  background: rgba(15, 10, 6, 0.78) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6) !important;
+  color: #FFFFFF !important;
+}
+
+html.theme-dark .luxury-card-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html.theme-dark .luxury-card-hover:hover {
+  border-color: rgba(245, 200, 76, 0.65) !important;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.75);
+}
+
+html.theme-dark .gold-gradient {
+  background: #F5C84C;
+  color: #000000 !important;
+}
+
+html.theme-dark .gold-text {
+  color: #FFE066 !important;
+}
+
+/* Force all muted/gray/translucent-white text in Dark Mode to be bright, clear White */
+html.theme-dark .text-white\/90,
+html.theme-dark .text-white\/85,
+html.theme-dark .text-white\/80,
+html.theme-dark .text-white\/75,
+html.theme-dark .text-white\/70,
+html.theme-dark .text-white\/60,
+html.theme-dark .text-white\/50,
+html.theme-dark .text-slate-300,
+html.theme-dark .text-slate-400,
+html.theme-dark .text-slate-500,
+html.theme-dark .text-gray-300,
+html.theme-dark .text-gray-400,
+html.theme-dark .text-\[\#C8B08A\],
+html.theme-dark .text-\[\#A68966\],
+html.theme-dark .text-\[\#FFF8EB\] {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+/* Ensure gold/amber text on dark cards is ultra-bright and readable */
+html.theme-dark .text-\[\#F5C84C\],
+html.theme-dark .text-\[\#F5D799\],
+html.theme-dark .text-\[\#E6C37A\],
+html.theme-dark .text-\[\#D4AF37\],
+html.theme-dark .text-\[\#D9B36C\] {
+  color: #FFE066 !important;
+}
+
+/* PRIMARY GOLD BUTTONS IN DARK MODE: Bright Gold Background + Pitch Black Text on Button AND All Children */
+html.theme-dark .btn-gold,
+html.theme-dark .bg-\[\#F5C84C\],
+html.theme-dark .bg-amber-500:not([class*="bg-amber-500/"]) {
+  background: #F5C84C !important;
+  color: #000000 !important;
+  font-weight: 900 !important;
+  border: 1.5px solid #E0B236 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: all 0.18s ease;
+}
+
+html.theme-dark .btn-gold *,
+html.theme-dark .bg-\[\#F5C84C\] *,
+html.theme-dark .bg-amber-500:not([class*="bg-amber-500/"]) *:not(.bg-rose-500):not(.bg-rose-600) {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+  opacity: 1 !important;
+}
+
+html.theme-dark .btn-gold:hover {
+  background: #FFD45E !important;
+}
+
+html.theme-dark .btn-gold:active {
+  transform: scale(0.98);
+}
+
+/* Emerald/Amber solid action buttons in Dark Mode (e.g. accept/arrive buttons): dark text */
+html.theme-dark .bg-emerald-500:not([class*="bg-emerald-500/"]),
+html.theme-dark .bg-emerald-500:not([class*="bg-emerald-500/"]) * {
+  color: #000000 !important;
+  font-weight: 900 !important;
+}
+
+/* SECONDARY / CANCEL BUTTONS IN DARK MODE: Dark Background + Crisp White Text on Button AND All Children */
+html.theme-dark .btn-cancel {
+  background: rgba(18, 12, 6, 0.85) !important;
+  color: #FFFFFF !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.35) !important;
+  box-shadow: none !important;
+  font-weight: 800 !important;
+}
+
+html.theme-dark .btn-cancel * {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+html.theme-dark .btn-cancel:hover {
+  background: rgba(30, 20, 10, 0.95) !important;
+  border-color: rgba(245, 200, 76, 0.65) !important;
+}
+
+html.theme-dark .btn-delete {
+  background: rgba(185, 28, 28, 0.45) !important;
+  color: #FFFFFF !important;
+  border: 1.5px solid rgba(248, 113, 113, 0.65) !important;
+  font-weight: 900 !important;
+}
+
+html.theme-dark .btn-delete * {
+  color: #FFFFFF !important;
+}
+
+html.theme-dark .btn-delete:hover {
+  background: rgba(220, 38, 38, 0.65) !important;
+}
+
+html.theme-dark .bg-\[\#1a0f00\]\/80,
+html.theme-dark .bg-\[\#1a0f00\]\/90,
+html.theme-dark .bg-\[\#120a00\]\/90,
+html.theme-dark .bg-\[\#120a00\]\/85,
+html.theme-dark .bg-\[\#120a00\],
+html.theme-dark .bg-\[\#251605\],
+html.theme-dark .bg-\[\#0e0800\] {
+  background: rgba(15, 10, 6, 0.78) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+html.theme-dark input:not([type="checkbox"]):not([type="radio"]),
+html.theme-dark select,
+html.theme-dark textarea {
+  background-color: rgba(0, 0, 0, 0.78) !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  font-weight: 800 !important;
+}
+
+html.theme-dark input::placeholder,
+html.theme-dark textarea::placeholder {
+  color: rgba(255, 255, 255, 0.85) !important;
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.85) !important;
+  opacity: 1 !important;
+}
+
+html.theme-dark select option,
+html.theme-dark select optgroup {
+  background-color: #1a110b !important;
+  color: #FFFFFF !important;
+}
+
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
+
 ::-webkit-scrollbar-track {
-  background: #0b0805;
+  background: rgba(0, 0, 0, 0.08);
 }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 98, 51, 0.5);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(46, 204, 113, 0.7);
+  background: rgba(100, 116, 139, 0.45);
+  border-radius: 9999px;
 }
 
-/* Numerical monospace font & strict LTR BiDi isolation to prevent flipped signs/dates/IDs */
-.font-mono-numbers {
-  font-family: 'JetBrains Mono', monospace;
-  font-feature-settings: 'tnum' on, 'lnum' on;
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-[dir="ltr"],
-.ltr-isolate {
-  direction: ltr !important;
-  unicode-bidi: isolate !important;
+.animate-fadeIn {
+  animation: fadeIn 0.22s ease-out forwards;
 }
 
-/* Crisp black-on-white live preview for thermal stickers (no inherited text-shadow or blur) */
-.parcel-sticker-box,
-.parcel-sticker-box * {
-  text-shadow: none !important;
-  filter: none !important;
-  -webkit-font-smoothing: antialiased;
-}
-
-/* Print Stylesheet for thermal and A4 receipts */
+/* Print Styles for Thermal 80mm Receipt & A4 */
 @media print {
-  body {
-    background: #ffffff !important;
-    color: #000000 !important;
+  body * {
+    visibility: hidden;
   }
-
-  header, nav, .print\:hidden, button {
-    display: none !important;
+  #printable-voucher, #printable-voucher * {
+    visibility: visible;
   }
-
-  #printable-receipt {
-    max-width: 100% !important;
+  #printable-voucher {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white !important;
+    color: black !important;
     box-shadow: none !important;
-    border: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    background: #ffffff !important;
-    color: #000000 !important;
+    border: 1px solid #000 !important;
+  }
+  .no-print {
+    display: none !important;
   }
 }

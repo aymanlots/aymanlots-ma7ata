@@ -43,7 +43,8 @@ const MainApp: React.FC = () => {
     daysUntilExpiry, 
     subscriptionRemainingLabel,
     isSubscriptionExpired,
-    showToast
+    showToast,
+    themeMode,
   } = useApp();
 
   const dir = 'rtl';
@@ -106,22 +107,38 @@ const MainApp: React.FC = () => {
     }
   }, [currentUser?.id, currentWorkspace?.id, userRole, stations.length]);
 
-  // Fixed Mobile Frame Background Wrapper (Guerguerat Border Crossing with Moroccan & Mauritanian Flags & Delivery Van)
-  const renderDesertFrameBackground = () => (
-    <div className="fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] pointer-events-none z-0 overflow-hidden">
-      <img
-        src="/assets/aistudio/WhatsApp_Image_2026-10-22_at_04.15.27_e3559304.jpeg"
-        alt=""
-        className="w-full h-full object-cover object-center"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/25 to-black/45" />
-    </div>
-  );
+  // Fixed Mobile Frame Background Wrapper (Identical size & position in both Light Mode & Dark Mode)
+  const renderDesertFrameBackground = () => {
+    return (
+      <div
+        className="desert-bg-frame fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] pointer-events-none z-0 overflow-hidden"
+        style={{ height: '100dvh', maxHeight: '100vh' }}
+      >
+        <img
+          src="/assets/aistudio/WhatsApp_Image_2026-10-22_at_04.15.27_e3559304.jpeg"
+          alt=""
+          className="w-full h-full object-cover object-center block"
+        />
+        <div
+          className={`desert-bg-overlay absolute inset-0 ${
+            themeMode === 'dark'
+              ? 'bg-gradient-to-b from-black/20 via-black/25 to-black/45'
+              : 'bg-gradient-to-b from-black/10 via-black/15 to-black/30'
+          }`}
+        />
+      </div>
+    );
+  };
 
   // If user is not logged in, prompt Auth modal (plus Public Tracking modal if open)
   if (!currentUser) {
     return (
-      <div className="min-h-screen w-full bg-[#080c14] flex justify-center relative" dir={dir}>
+      <div
+        className={`min-h-screen w-full flex justify-center relative ${
+          themeMode === 'dark' ? 'bg-[#080c14]' : 'bg-[#F8FAFC]'
+        }`}
+        dir={dir}
+      >
         {renderDesertFrameBackground()}
         <div className="w-full max-w-[430px] min-h-screen relative z-10">
           <AuthModal
@@ -142,7 +159,12 @@ const MainApp: React.FC = () => {
   // If user has no workspace, prompt Onboarding modal
   if (!currentWorkspace) {
     return (
-      <div className="min-h-screen w-full bg-[#080c14] flex justify-center relative" dir={dir}>
+      <div
+        className={`min-h-screen w-full flex justify-center relative ${
+          themeMode === 'dark' ? 'bg-[#080c14]' : 'bg-[#F8FAFC]'
+        }`}
+        dir={dir}
+      >
         {renderDesertFrameBackground()}
         <div className="w-full max-w-[430px] min-h-screen relative z-10">
           <OnboardingModal isOpen={true} />
@@ -153,10 +175,23 @@ const MainApp: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#080c14] flex justify-center selection:bg-[#D4AF37]/30 selection:text-[#FFF8EB] relative" dir={dir}>
+    <div
+      className={`min-h-screen w-full flex justify-center relative ${
+        themeMode === 'dark'
+          ? 'bg-[#080c14] selection:bg-[#D4AF37]/30 selection:text-[#FFF8EB]'
+          : 'bg-[#F8FAFC] selection:bg-slate-900 selection:text-white'
+      }`}
+      dir={dir}
+    >
       {renderDesertFrameBackground()}
 
-      <div className="w-full max-w-[430px] min-h-screen text-[#FFF8EB] flex flex-col border-x border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)] relative z-10 overflow-x-hidden">
+      <div
+        className={`w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
+          themeMode === 'dark'
+            ? 'text-[#FFF8EB] border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)]'
+            : 'bg-transparent text-[#111111] border-slate-300 shadow-lg'
+        }`}
+      >
         {/* Offline Status Top Banner */}
         <OfflineIndicator />
 
@@ -176,7 +211,7 @@ const MainApp: React.FC = () => {
         {!isSubscriptionExpired && daysUntilExpiry <= 3 && (
           <div 
             onClick={() => setShowPaywall(true)}
-            className="luxury-card border-b border-[#D4AF37]/40 px-3.5 py-2 text-xs font-semibold text-[#E6C37A] flex items-center justify-between gap-2 cursor-pointer transition text-right"
+            className="luxury-card border-b border-[#D4AF37]/40 px-2.5 py-1.5 text-xs font-semibold text-[#E6C37A] flex items-center justify-between gap-2 cursor-pointer transition text-right"
           >
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-[#D4AF37] shrink-0" />
@@ -194,7 +229,7 @@ const MainApp: React.FC = () => {
         {isSubscriptionExpired && (
           <div 
             onClick={() => setShowPaywall(true)}
-            className="bg-rose-950/90 border-b border-rose-500/50 px-3.5 py-2.5 text-xs font-bold text-rose-200 flex items-center justify-between gap-2 cursor-pointer hover:bg-rose-950 transition text-right"
+            className="bg-rose-950/90 border-b border-rose-500/50 px-2.5 py-2 text-xs font-bold text-rose-200 flex items-center justify-between gap-2 cursor-pointer hover:bg-rose-950 transition text-right"
           >
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
@@ -211,7 +246,7 @@ const MainApp: React.FC = () => {
         )}
 
         {/* Main View Area */}
-        <main className="flex-1 w-full mx-auto px-3 py-3">
+        <main className="flex-1 w-full mx-auto px-1.5 py-2">
           {/* Universal Station Switcher & Active Station Context Bar */}
           {currentTab !== 'settings' && <StationScopeBar />}
 

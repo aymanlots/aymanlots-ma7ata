@@ -388,78 +388,55 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           </button>
         </div>
 
-        {/* Active Currency Exchange Panel for Worker */}
+        {/* Active Currency Exchange Panel for Worker (يمين / يسار + سطر واحد لتحت) */}
         {showWorkerExchange && (
-          <div className="p-3 rounded-2xl bg-black/65 border border-[#F5C84C]/55 space-y-2.5 animate-fadeIn text-xs">
-            <div className="flex items-center justify-between border-b border-white/15 pb-1.5">
-              <span className="font-black text-[#F5C84C]">
-                💱 صرف العملة فلاكيس (درهم ⇄ أوقية)
+          <div className="p-2 rounded-xl bg-black/65 border border-[#F5C84C]/55 space-y-1.5 animate-fadeIn text-xs">
+            <div className="flex items-center justify-between border-b border-white/15 pb-1">
+              <span className="font-black text-[#F5C84C] text-xs">
+                💱 صرف العملة (درهم ⇄ أوقية)
               </span>
               <button
                 type="button"
                 onClick={() => setShowWorkerExchange(false)}
                 className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-bold"
               >
-                إغلاق ▲
+                ✕
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setExFromCurr('MAD')}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-black transition ${
-                  exFromCurr === 'MAD' ? 'btn-gold' : 'btn-cancel'
-                }`}
-              >
-                🇲🇦 درهم ➔ 🇲🇷 أوقية (+MAD / -MRU)
-              </button>
-              <button
-                type="button"
-                onClick={() => setExFromCurr('MRU')}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-black transition ${
-                  exFromCurr === 'MRU' ? 'btn-gold' : 'btn-cancel'
-                }`}
-              >
-                🇲🇷 أوقية ➔ 🇲🇦 درهم (+MRU / -MAD)
-              </button>
-            </div>
+            {/* جوج أعمدة: اليمين (اتجاه الصرف) | اليسار (اسم الزبون + الصرف) */}
+            <div className="grid grid-cols-2 gap-1.5 items-stretch">
+              <div className="bg-black/50 p-1.5 rounded-xl border border-white/15 grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setExFromCurr('MAD')}
+                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition ${
+                    exFromCurr === 'MAD' ? 'btn-gold' : 'btn-cancel'
+                  }`}
+                >
+                  +MAD ➔ −MRU
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExFromCurr('MRU')}
+                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition ${
+                    exFromCurr === 'MRU' ? 'btn-gold' : 'btn-cancel'
+                  }`}
+                >
+                  +MRU ➔ −MAD
+                </button>
+              </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-emerald-950/35 p-2 rounded-xl border border-emerald-500/40">
-                <label className="block text-[10px] text-emerald-300 font-bold mb-1">
-                  + المستلم فلاكيس ({exFromCurr}):
-                </label>
+              <div className="bg-black/50 p-1.5 rounded-xl border border-white/15 flex items-center">
                 <input
-                  type="number"
-                  value={exAmountStr}
-                  onChange={e => setExAmountStr(e.target.value)}
-                  className="w-full bg-black/70 border border-emerald-500/40 rounded-lg px-2 py-1 text-white font-mono font-black text-xs"
+                  type="text"
+                  placeholder="👤 اسم الزبون (اختياري)"
+                  value={exCustomerName}
+                  onChange={e => setExCustomerName(e.target.value)}
+                  className="w-full bg-black/60 border border-white/15 rounded-lg px-1.5 py-1 text-white text-[11px] focus:outline-none"
                 />
               </div>
-
-              <div className="bg-rose-950/35 p-2 rounded-xl border border-rose-500/40 flex flex-col justify-between">
-                <span className="text-[10px] text-rose-300 font-bold block">
-                  − المسلّم للزبون ({exFromCurr === 'MAD' ? 'MRU' : 'MAD'}):
-                </span>
-                <span className="font-mono font-black text-sm text-[#F5C84C]" dir="ltr">
-                  {convertCurrency(
-                    parseFloat(exAmountStr) || 0,
-                    exFromCurr,
-                    exFromCurr === 'MAD' ? 'MRU' : 'MAD'
-                  )}{' '}
-                  {exFromCurr === 'MAD' ? 'MRU' : 'MAD'}
-                </span>
-              </div>
             </div>
-
-            <input
-              type="text"
-              placeholder="اسم الزبون (اختياري)..."
-              value={exCustomerName}
-              onChange={e => setExCustomerName(e.target.value)}
-              className="w-full bg-black/60 border border-white/15 rounded-xl px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#F5C84C]"
-            />
 
             {(() => {
               const fromAmt = parseFloat(exAmountStr) || 0;
@@ -493,34 +470,26 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
 
               if (showFxNegativeWarning) {
                 return (
-                  <div className="p-3 rounded-xl bg-rose-950/80 border-2 border-rose-500/50 space-y-2 text-xs">
-                    <div className="flex items-center gap-2 text-rose-300 font-black">
-                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                      <span>تنبيه: لاكيس {toCurr} في المحطة خاوية أو غير كافية!</span>
-                    </div>
-                    <p className="text-white/90 font-bold">
-                      الرصيد الحالي:{' '}
-                      <span dir="ltr" className="font-mono text-[#F5C84C]">
-                        {currentOutBal.toLocaleString('en-US')} {toCurr}
-                      </span>{' '}
-                      ➔ سيصبح بعد الصرف:{' '}
-                      <span dir="ltr" className="font-mono text-rose-400 font-black">
+                  <div className="p-2 rounded-xl bg-rose-950/80 border border-rose-500/50 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between text-rose-300 font-black text-[10px]">
+                      <span>⚠️ لاكيس {toCurr} ستصبح بالسالب:</span>
+                      <span dir="ltr" className="font-mono text-rose-400">
                         {resultingOutBal.toLocaleString('en-US')} {toCurr}
                       </span>
-                    </p>
-                    <div className="flex items-center gap-2">
+                    </div>
+                    <div className="flex items-center gap-1.5">
                       <button
                         type="button"
                         disabled={isExchanging}
                         onClick={runWorkerExchange}
-                        className="flex-1 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-black text-xs cursor-pointer"
+                        className="btn-delete flex-1 py-1.5 rounded-lg font-black text-[11px] cursor-pointer"
                       >
-                        نعم، نفذ الصرف (رصيد سالب)
+                        ✅ تأكيد (رصيد سالب)
                       </button>
                       <button
                         type="button"
                         onClick={() => setShowFxNegativeWarning(false)}
-                        className="btn-cancel px-3 py-2 rounded-xl text-xs font-bold cursor-pointer"
+                        className="btn-cancel px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer"
                       >
                         إلغاء
                       </button>
@@ -530,30 +499,38 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
               }
 
               return (
-                <button
-                  type="button"
-                  disabled={isExchanging || !currentStation}
-                  onClick={async () => {
-                    if (!currentStation) return;
-                    if (fromAmt <= 0 || toAmt <= 0) {
-                      showToast('يرجى إدخال مبلغ صحيح للصرف', 'error');
-                      return;
-                    }
-                    if (currentOutBal <= 0 || resultingOutBal < 0) {
-                      setShowFxNegativeWarning(true);
-                      return;
-                    }
-                    await runWorkerExchange();
-                  }}
-                  className="btn-gold w-full py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    {isExchanging
-                      ? 'جاري تسجيل الصرف...'
-                      : `تأكيد الصرف فلاكيس (+${fromAmt} ${exFromCurr} / -${toAmt} ${toCurr})`}
+                /* لتحت فسطر واحد: المبلغ المستلم + المبلغ المسلم + تأكيد الصرف */
+                <div className="flex items-center gap-1 bg-black/50 p-1.5 rounded-xl border border-white/15">
+                  <input
+                    type="number"
+                    value={exAmountStr}
+                    onChange={e => setExAmountStr(e.target.value)}
+                    placeholder={`+${exFromCurr}`}
+                    className="flex-1 min-w-[70px] bg-black/70 border border-emerald-500/40 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs"
+                  />
+                  <span className="font-mono font-black text-[11px] text-[#F5C84C] shrink-0 px-1" dir="ltr">
+                    ➔ -{toAmt} {toCurr}
                   </span>
-                </button>
+                  <button
+                    type="button"
+                    disabled={isExchanging || !currentStation}
+                    onClick={async () => {
+                      if (!currentStation) return;
+                      if (fromAmt <= 0 || toAmt <= 0) {
+                        showToast('يرجى إدخال مبلغ صحيح للصرف', 'error');
+                        return;
+                      }
+                      if (currentOutBal <= 0 || resultingOutBal < 0) {
+                        setShowFxNegativeWarning(true);
+                        return;
+                      }
+                      await runWorkerExchange();
+                    }}
+                    className="btn-gold px-2.5 py-1.5 rounded-lg font-black text-[11px] shrink-0 cursor-pointer"
+                  >
+                    {isExchanging ? '⏳' : '✅تأكيد الصرف'}
+                  </button>
+                </div>
               );
             })()}
           </div>
