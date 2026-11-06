@@ -810,6 +810,8 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
   const [copiesPerParcel, setCopiesPerParcel] = useState<number>(1);
   const [referenceSenderParcel, setReferenceSenderParcel] = useState<Parcel | null>(null);
   const [showBrandingEditor, setShowBrandingEditor] = useState<boolean>(false);
+  const [showParcelsSelector, setShowParcelsSelector] = useState<boolean>(false);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState<boolean>(false);
 
   // خريطة رموز QR المولّدة لكل كود تتبع فريد
   const [qrMap, setQrMap] = useState<Record<string, string>>({});
@@ -1165,9 +1167,6 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
     options.showDateTime &&
     options.showRouteLine &&
     options.showStampBox;
-
-  const [showParcelsSelector, setShowParcelsSelector] = useState(false);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   const modalContent = (
     <div
