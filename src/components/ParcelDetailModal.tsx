@@ -230,11 +230,9 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 animate-fadeIn overflow-y-auto">
-      <div className="fixed inset-0 bg-black/90 backdrop-blur-sm" onClick={onClose} />
-
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-1.5 bg-black/80 backdrop-blur-md animate-fadeIn overflow-y-auto" onClick={onClose}>
       <div 
-        className="w-full max-w-[420px] rounded-[24px] luxury-card border border-[#D4AF37]/65 p-4 shadow-2xl text-right overflow-hidden relative z-10 my-4 space-y-3 max-h-[92vh] flex flex-col"
+        className="w-[calc(100%-8px)] max-w-[420px] rounded-[22px] luxury-card border-2 border-[#D4AF37]/65 p-3 sm:p-4 shadow-2xl text-right overflow-hidden relative z-10 my-auto space-y-3 max-h-[92vh] flex flex-col"
         onClick={e => e.stopPropagation()}
         dir="rtl"
       >

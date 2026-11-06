@@ -296,8 +296,8 @@ interface AppContextType {
   clearAuditLogs: () => void;
   executeCurrencyExchange: (params: {
     stationId: string;
-    fromCurrency: 'MAD' | 'MRU';
-    toCurrency: 'MAD' | 'MRU';
+    fromCurrency: 'MAD' | 'MRU' | 'EUR';
+    toCurrency: 'MAD' | 'MRU' | 'EUR';
     fromAmount: number;
     toAmount: number;
     rate: number;
@@ -4792,8 +4792,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // تنفيذ عملية صرف العملة الفعلية في لاكيس المحطة (بين الدرهم MAD والأوقية MRU أو العكس)
   const executeCurrencyExchange = async (params: {
     stationId: string;
-    fromCurrency: 'MAD' | 'MRU';
-    toCurrency: 'MAD' | 'MRU';
+    fromCurrency: 'MAD' | 'MRU' | 'EUR';
+    toCurrency: 'MAD' | 'MRU' | 'EUR';
     fromAmount: number;
     toAmount: number;
     rate: number;
@@ -5675,7 +5675,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const parcel = allParcels.find(p => p.id === id);
     if (!parcel) return { success: false, error: 'الكولي غير موجود' };
-    if (currentWorkspace && parcel.workspace_id && parcel.workspace_id !== currentWorkspace.id) {
+
+    // Partnership security: sender workspace cannot edit the parcel once sent to partner
+    const isSenderWorkspace = parcel.is_partnership_parcel && (
+      parcel.partner_origin_workspace_id === currentWorkspace?.id ||
+      (!parcel.partner_origin_workspace_id && parcel.workspace_id === currentWorkspace?.id)
+    );
+    if (isSenderWorkspace) {
+      const msg = '🔒 لا يمكنك تعديل بيانات هذه الكولية: بمجرد إرسالها لغرفة الشراكة، يتم قفل التعديل عن المرسل حفاظاً على أمان المعاملات.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    if (currentWorkspace && parcel.workspace_id && parcel.workspace_id !== currentWorkspace.id && !parcel.is_partnership_parcel) {
       const msg = 'لا يمكن تعديل بيانات طرد تابع لمساحة عمل أخرى';
       showToast(msg, 'error');
       return { success: false, error: msg };
@@ -6800,8 +6812,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const targetParcel = allParcels.find(p => p.id === id);
     if (!targetParcel) return { success: false, error: 'الكولي غير موجود' };
 
+    // Partnership protection: Sender workspace CANNOT delete a parcel once dispatched/sent to partner!
+    const isSenderWorkspace = targetParcel.is_partnership_parcel && (
+      targetParcel.partner_origin_workspace_id === currentWorkspace?.id ||
+      (!targetParcel.partner_origin_workspace_id && targetParcel.workspace_id === currentWorkspace?.id)
+    );
+    if (isSenderWorkspace) {
+      const msg = '🔒 لا يمكنك حذف هذه الكولية: بمجرد إرسال الكولية لغرفة الشراكة، يتم قفل الحذف عن المرسل. المسؤول الوحيد عن إدارتها هو مدير المحطة المستقبلة.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const wsId = targetParcel.workspace_id || currentWorkspace?.id || 'ws-default';
     setAllParcels(prev => prev.filter(p => p.id !== id));
+    allParcelsRef.current = allParcelsRef.current.filter(p => p.id !== id);
+
+    // Record permanent operation audit log entry
+    const auditEntry: AuditLogEntry = {
+      id: isSupabaseConfigured() ? generateUUID() : `audit-del-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      workspace_id: wsId,
+      team_id: wsId,
+      user_id: currentUser?.id || null,
+      user_name: currentUser?.name || 'المدير',
+      action: 'DELETE',
+      table_name: 'parcels',
+      record_id: targetParcel.id,
+      reason: `🗑️ قام المدير [${currentUser?.name || 'مدير المحطة'}] بحذف الكولي [${targetParcel.tracking_code || targetParcel.parcel_number}] (المرسل: ${targetParcel.sender_name} ➔ المستلم: ${targetParcel.receiver_name})`,
+      old_data: {
+        tracking_code: targetParcel.tracking_code,
+        parcel_number: targetParcel.parcel_number,
+        sender: targetParcel.sender_name,
+        receiver: targetParcel.receiver_name,
+        shipping_fee: targetParcel.shipping_fee,
+        deleted_by: currentUser?.name || 'المدير',
+      },
+      new_data: null,
+      created_at: new Date().toISOString(),
+    };
+    setAuditLogs(prev => [auditEntry, ...prev]);
 
     const supabase = getSupabaseClient();
     if (supabase && isSupabaseConfigured() && isValidUUID(id)) {
@@ -6812,9 +6860,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (firebaseSyncService.isAvailable()) {
       firebaseSyncService.deleteParcel(wsId, id).catch(() => {});
+      if (targetParcel.partner_workspace_id && targetParcel.partner_workspace_id !== wsId) {
+        firebaseSyncService.deleteParcel(targetParcel.partner_workspace_id, id).catch(() => {});
+      }
+      firebaseSyncService.logPlatformActivity({
+        workspace_id: wsId,
+        workspace_name: currentWorkspace?.name || 'Sahara Express',
+        actor_id: currentUser?.id || 'sys',
+        action_type: 'PARCEL_DELETE',
+        action_title: `🗑️ تم حذف كولي: [${targetParcel.tracking_code || targetParcel.parcel_number}] بواسطة المدير ${currentUser?.name || ''}`,
+        actor_name: currentUser?.name || 'المدير',
+        actor_role: userRole,
+        details: `حذف الكولي نهائياً: المرسل ${targetParcel.sender_name} | المستلم ${targetParcel.receiver_name}`,
+      }).catch(() => {});
     }
 
-    showToast(`تم حذف الكولي [${targetParcel.tracking_code}] نهائياً`, 'info');
+    showToast(`تم حذف الكولي [${targetParcel.tracking_code}] نهائياً مع توثيق العملية في السجل`, 'info');
     return { success: true };
   };
 
@@ -7141,9 +7202,50 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.syncStation(wsId, updatedStation).catch(err => {
         console.warn('Firebase station sync error:', err);
       });
+      // Propagate updated station name, phone, and city to partner managers across all partnerships in real-time
+      firebaseSyncService.updateStationInPartnerships(wsId, stationId, {
+        id: updatedStation.id,
+        name: updatedStation.name,
+        city: updatedStation.city,
+        country: updatedStation.country,
+        phone: updatedStation.phone,
+      }).catch(() => {});
     }
 
-    showToast(`تم تحديث بيانات محطة "${updatedStation.name}" بنجاح`, 'success');
+    // Update local partnerships cache
+    setManagerPartnerships(prev => prev.map(p => {
+      let isChanged = false;
+      let newA = p.workspace_a_stations || [];
+      let newB = p.workspace_b_stations || [];
+      if (p.workspace_a_id === wsId) {
+        newA = newA.map(s => s.id === stationId ? { ...s, name: updatedStation.name, city: updatedStation.city, phone: updatedStation.phone } : s);
+        isChanged = true;
+      }
+      if (p.workspace_b_id === wsId) {
+        newB = newB.map(s => s.id === stationId ? { ...s, name: updatedStation.name, city: updatedStation.city, phone: updatedStation.phone } : s);
+        isChanged = true;
+      }
+      return isChanged ? { ...p, workspace_a_stations: newA, workspace_b_stations: newB } : p;
+    }));
+
+    // Record permanent operation audit log
+    const stationAudit: AuditLogEntry = {
+      id: isSupabaseConfigured() ? generateUUID() : `audit-st-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      workspace_id: wsId,
+      team_id: wsId,
+      user_id: currentUser?.id || null,
+      user_name: currentUser?.name || 'المدير',
+      action: 'UPDATE',
+      table_name: 'stations',
+      record_id: stationId,
+      reason: `✏️ قام المدير [${currentUser?.name || 'المدير'}] بتعديل بيانات محطة [${updatedStation.name}] (${updatedStation.city}) - الهاتف: ${updatedStation.phone || 'غير محدد'}`,
+      old_data: { name: existing.name, city: existing.city, phone: existing.phone },
+      new_data: { name: updatedStation.name, city: updatedStation.city, phone: updatedStation.phone },
+      created_at: new Date().toISOString(),
+    };
+    setAuditLogs(prev => [stationAudit, ...prev]);
+
+    showToast(`تم تحديث بيانات محطة "${updatedStation.name}" وتعميمها على الشركاء بنجاح`, 'success');
     return { success: true };
   };
 
@@ -7152,6 +7254,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
     const wsId = currentWorkspace?.id || 'ws-default';
+    const targetStation = stations.find(s => s.id === stationId);
     setStations(prev => {
       const next = prev.filter(s => s.id !== stationId);
       if (selectedStationId === stationId) {
@@ -7160,6 +7263,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return next;
     });
 
+    // Remove deleted station from local partnerships cache
+    setManagerPartnerships(prev => prev.map(p => {
+      let isChanged = false;
+      let newA = p.workspace_a_stations || [];
+      let newB = p.workspace_b_stations || [];
+      if (p.workspace_a_id === wsId) {
+        newA = newA.filter(s => s.id !== stationId);
+        isChanged = true;
+      }
+      if (p.workspace_b_id === wsId) {
+        newB = newB.filter(s => s.id !== stationId);
+        isChanged = true;
+      }
+      return isChanged ? { ...p, workspace_a_stations: newA, workspace_b_stations: newB } : p;
+    }));
+
+    // Record permanent operation audit log
+    const delStationAudit: AuditLogEntry = {
+      id: isSupabaseConfigured() ? generateUUID() : `audit-del-st-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      workspace_id: wsId,
+      team_id: wsId,
+      user_id: currentUser?.id || null,
+      user_name: currentUser?.name || 'المدير',
+      action: 'DELETE',
+      table_name: 'stations',
+      record_id: stationId,
+      reason: `🗑️ قام المدير [${currentUser?.name || 'المدير'}] بحذف محطة [${targetStation?.name || stationId}] (${targetStation?.city || ''}) نهائياً`,
+      old_data: { name: targetStation?.name, city: targetStation?.city, phone: targetStation?.phone },
+      new_data: null,
+      created_at: new Date().toISOString(),
+    };
+    setAuditLogs(prev => [delStationAudit, ...prev]);
+
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(wsId) && isValidUUID(stationId)) {
       try {
@@ -7167,14 +7303,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } catch {}
     }
 
-    // Sync deletion to Firebase Firestore
+    // Sync deletion to Firebase Firestore and remove from all partnerships in real-time
     if (firebaseSyncService.isAvailable()) {
       firebaseSyncService.deleteStation(wsId, stationId).catch(err => {
         console.warn('Firebase station delete error:', err);
       });
+      firebaseSyncService.updateStationInPartnerships(wsId, stationId, null).catch(() => {});
+      firebaseSyncService.logPlatformActivity({
+        workspace_id: wsId,
+        workspace_name: currentWorkspace?.name || 'Sahara Express',
+        actor_id: currentUser?.id || 'sys',
+        action_type: 'STATION_DELETE',
+        action_title: `🗑️ تم مسح محطة: [${targetStation?.name || stationId}] بواسطة المدير ${currentUser?.name || ''}`,
+        actor_name: currentUser?.name || 'المدير',
+        actor_role: userRole,
+        details: `حذف المحطة نهائياً: ${targetStation?.name || ''} (${targetStation?.city || ''})`,
+      }).catch(() => {});
     }
 
-    showToast('تم حذف المحطة بنجاح', 'info');
+    showToast('تم حذف المحطة وإزالتها من غرفة الشراكة وسجلات الشركاء بنجاح', 'info');
     return { success: true };
   };
 

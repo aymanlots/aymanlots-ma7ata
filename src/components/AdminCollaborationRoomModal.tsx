@@ -413,12 +413,12 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-1.5 bg-black/80 backdrop-blur-md overflow-y-auto animate-fadeIn"
       dir="rtl"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[430px] luxury-card rounded-[26px] p-4 shadow-2xl text-right overflow-hidden relative my-2 max-h-[93vh] flex flex-col border-2 border-[#D4AF37]/50"
+        className="w-[calc(100%-8px)] max-w-[420px] luxury-card rounded-[22px] p-3 sm:p-4 shadow-2xl text-right overflow-hidden relative my-auto max-h-[93vh] flex flex-col border-2 border-[#D4AF37]/65"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Luxury Header */}

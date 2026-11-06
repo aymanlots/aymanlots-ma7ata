@@ -218,19 +218,19 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-1.5 overflow-y-auto animate-fadeIn"
-      dir="rtl"
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-1 sm:p-2 overflow-y-auto overflow-x-hidden animate-fadeIn"
       onClick={onClose}
     >
       <div
-        className="luxury-card border border-[#F5C84C]/45 rounded-[20px] w-full max-w-[430px] p-2 shadow-2xl space-y-1.5 my-1 max-h-[96vh] overflow-y-auto text-right"
+        dir="rtl"
+        className="luxury-card border-2 border-[#D4AF37]/65 rounded-[22px] w-[calc(100%-8px)] max-w-[420px] p-2.5 sm:p-3 shadow-2xl space-y-2.5 my-auto max-h-[96vh] overflow-y-auto overflow-x-hidden text-right"
         onClick={e => e.stopPropagation()}
       >
         {/* Top Compact Header: Title + Tabs + Close on ONE Row */}
-        <div className="flex items-center justify-between gap-1 border-b border-white/15 pb-1.5">
-          <div className="flex items-center gap-1 min-w-0">
-            <span className="text-lg leading-none">💸</span>
-            <h3 className="text-sm font-black text-white truncate">
+        <div className="flex items-center justify-between gap-1.5 border-b border-white/15 pb-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-xl leading-none">💸</span>
+            <h3 className="text-sm sm:text-base font-black text-white truncate">
               الحوالة المالية
             </h3>
           </div>
@@ -239,7 +239,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('send')}
-              className={`py-1 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+              className={`py-1.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
                 activeTab === 'send' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
@@ -248,7 +248,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('list')}
-              className={`py-1 px-2 rounded-lg text-[11px] font-black transition flex items-center gap-1 cursor-pointer ${
+              className={`py-1.5 px-2.5 rounded-xl text-xs font-black transition flex items-center gap-1 cursor-pointer ${
                 activeTab === 'list' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
@@ -262,7 +262,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="btn-cancel p-1 rounded-lg shrink-0 cursor-pointer"
+              className="btn-cancel p-1.5 rounded-xl shrink-0 cursor-pointer"
               aria-label="إغلاق"
             >
               <X className="w-4 h-4" />
@@ -271,22 +271,21 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
         </div>
 
         {activeTab === 'send' ? (
-          <form onSubmit={handleCreateTransfer} className="space-y-1.5 text-xs">
+          <form onSubmit={handleCreateTransfer} className="space-y-2.5 text-xs sm:text-sm min-w-0">
             {formError && (
-              <div className="p-1.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-[11px] font-bold text-rose-200">
+              <div className="p-2 rounded-xl bg-rose-950/70 border border-rose-500/40 text-xs font-black text-rose-200">
                 {formError}
               </div>
             )}
 
             {/* =====================================================================
                 جوج أعمدة: المرسل فاليمين (فوقو محطتو) | المستلم فاليسار (فوقو محطتو)
-                الاسم قصير وحداه فنفس السطر التيليفون ديالو
                ===================================================================== */}
-            <div className="grid grid-cols-2 gap-1.5 items-stretch">
-              {/* RIGHT COLUMN (اليمين): محطة الإرسال + المرسل (الاسم + الهاتف فنفس السطر) */}
-              <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
-                <div>
-                  <label className="block text-[10px] text-white/90 font-black mb-0.5 truncate">
+            <div className="grid grid-cols-2 gap-1.5 sm:gap-2 items-stretch min-w-0">
+              {/* RIGHT COLUMN (اليمين): محطة الإرسال + المرسل */}
+              <div className="bg-black/55 p-2 rounded-2xl border border-white/15 space-y-2 flex flex-col justify-between min-w-0 overflow-hidden">
+                <div className="min-w-0">
+                  <label className="block text-xs text-white/90 font-black mb-1 truncate">
                     📍 من محطة (+) المرسل
                   </label>
                   <select
@@ -306,7 +305,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                         setSendCurrency(c);
                       }
                     }}
-                    className="w-full bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white font-bold focus:outline-none disabled:opacity-75"
+                    className="w-full min-w-0 bg-black/65 border border-white/20 rounded-xl px-1.5 py-2.5 text-xs text-white font-black focus:outline-none disabled:opacity-75 truncate"
                   >
                     {(userRole === 'worker' && workerStationId
                       ? stations.filter(s => s.id === workerStationId)
@@ -319,18 +318,18 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   </select>
                 </div>
 
-                <div>
-                  <span className="font-black text-white block text-[10px] mb-0.5">
+                <div className="min-w-0">
+                  <span className="font-black text-white block text-xs mb-1 truncate">
                     👤 المرسل (الاسم + 📞 الهاتف)
                   </span>
-                  <div className="grid grid-cols-2 gap-1">
+                  <div className="grid grid-cols-2 gap-1 min-w-0">
                     <input
                       type="text"
                       required
                       value={senderName}
                       onChange={e => setSenderName(e.target.value)}
                       placeholder="👤 الاسم *"
-                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white focus:outline-none"
+                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-xl px-1.5 py-2.5 text-xs font-black text-white focus:outline-none"
                     />
                     <input
                       type="tel"
@@ -338,16 +337,16 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                       value={senderPhone}
                       onChange={e => setSenderPhone(e.target.value)}
                       placeholder="📞 الهاتف"
-                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white font-mono focus:outline-none"
+                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-xl px-1.5 py-2.5 text-xs font-black text-white font-mono focus:outline-none"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* LEFT COLUMN (اليسار): محطة الاستلام + المستلم (الاسم + الهاتف فنفس السطر) */}
-              <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
-                <div>
-                  <label className="block text-[10px] text-white/90 font-black mb-0.5 truncate">
+              {/* LEFT COLUMN (اليسار): محطة الاستلام + المستلم */}
+              <div className="bg-black/55 p-2 rounded-2xl border border-white/15 space-y-2 flex flex-col justify-between min-w-0 overflow-hidden">
+                <div className="min-w-0">
+                  <label className="block text-xs text-white/90 font-black mb-1 truncate">
                     📍 إلى محطة (−) المستلم
                   </label>
                   <select
@@ -361,7 +360,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                         setPayoutCurrency(c);
                       }
                     }}
-                    className="w-full bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white font-bold focus:outline-none"
+                    className="w-full min-w-0 bg-black/65 border border-white/20 rounded-xl px-1.5 py-2.5 text-xs text-white font-black focus:outline-none truncate"
                   >
                     {stations.map(s => (
                       <option key={s.id} value={s.id}>
@@ -371,18 +370,18 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   </select>
                 </div>
 
-                <div>
-                  <span className="font-black text-white block text-[10px] mb-0.5">
+                <div className="min-w-0">
+                  <span className="font-black text-white block text-xs mb-1 truncate">
                     👤 المستلم (الاسم + 📞 الهاتف)
                   </span>
-                  <div className="grid grid-cols-2 gap-1">
+                  <div className="grid grid-cols-2 gap-1 min-w-0">
                     <input
                       type="text"
                       required
                       value={receiverName}
                       onChange={e => setReceiverName(e.target.value)}
                       placeholder="👤 الاسم *"
-                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white focus:outline-none"
+                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-xl px-1.5 py-2.5 text-xs font-black text-white focus:outline-none"
                     />
                     <input
                       type="tel"
@@ -390,7 +389,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                       value={receiverPhone}
                       onChange={e => setReceiverPhone(e.target.value)}
                       placeholder="📞 الهاتف"
-                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white font-mono focus:outline-none"
+                      className="w-full min-w-0 bg-black/65 border border-white/20 rounded-xl px-1.5 py-2.5 text-xs font-black text-white font-mono focus:outline-none"
                     />
                   </div>
                 </div>
@@ -398,37 +397,39 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
             </div>
 
             {/* =====================================================================
-                لتحت فسطر واحد: المبلغ + عملة الإيداع + عملة التسليم + تأكيد الحوالة
+                لتحت: المبلغ + عملة الإيداع + عملة التسليم + زر التأكيد بعرض كامل
                ===================================================================== */}
-            <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1">
-              <div className="flex items-center justify-between text-[10px] font-black px-0.5">
-                <span className="text-emerald-400" dir="ltr">
+            <div className="bg-black/55 p-2.5 rounded-2xl border border-[#D4AF37]/50 space-y-2 min-w-0">
+              <div className="flex items-center justify-between text-xs font-black px-0.5">
+                <span className="text-emerald-400 font-mono" dir="ltr">
                   ➕ {(numericSend + numericCommission).toLocaleString('en-US')} {sendCurrency}
                 </span>
-                <span>💰 الفلوس + ✅ التأكيد</span>
-                <span className="text-rose-400" dir="ltr">
+                <span>💰 المبلغ والعملة</span>
+                <span className="text-rose-400 font-mono" dir="ltr">
                   ➖ {payoutAmount.toLocaleString('en-US')} {payoutCurrency}
                 </span>
               </div>
 
-              <div className="flex items-center gap-1">
+              <div className="grid grid-cols-12 gap-1.5 items-center min-w-0">
                 <input
-                  type="number"
-                  min="1"
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   required
                   dir="ltr"
                   value={sendAmount}
-                  onChange={e => setSendAmount(e.target.value)}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^0-9.]/g, '');
+                    setSendAmount(val);
+                  }}
                   placeholder="💰 المبلغ *"
-                  className="flex-1 min-w-[70px] bg-black/65 border border-white/20 rounded-lg px-2 py-1.5 text-xs font-mono font-black text-[#F5C84C] focus:outline-none"
+                  className="col-span-6 w-full min-w-0 bg-black/65 border-2 border-[#D4AF37]/60 rounded-xl px-2 py-2.5 text-xs sm:text-sm font-mono font-black text-[#F5C84C] text-center focus:outline-none"
                 />
 
                 <select
                   value={sendCurrency}
                   onChange={e => setSendCurrency(e.target.value as 'MAD' | 'MRU')}
                   title="عملة الإيداع (+)"
-                  className="w-16 shrink-0 bg-black/65 border border-white/20 rounded-lg px-1 py-1.5 text-[10px] font-black text-emerald-400 focus:outline-none"
+                  className="col-span-3 w-full min-w-0 bg-black/65 border border-white/20 rounded-xl px-1 py-2.5 text-xs font-black text-emerald-400 focus:outline-none"
                 >
                   <option value="MAD">+MAD</option>
                   <option value="MRU">+MRU</option>
@@ -438,20 +439,20 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   value={payoutCurrency}
                   onChange={e => setPayoutCurrency(e.target.value as 'MAD' | 'MRU')}
                   title="عملة التسليم (−)"
-                  className="w-16 shrink-0 bg-black/65 border border-white/20 rounded-lg px-1 py-1.5 text-[10px] font-black text-[#F5C84C] focus:outline-none"
+                  className="col-span-3 w-full min-w-0 bg-black/65 border border-white/20 rounded-xl px-1 py-2.5 text-xs font-black text-[#F5C84C] focus:outline-none"
                 >
                   <option value="MAD">−MAD</option>
                   <option value="MRU">−MRU</option>
                 </select>
-
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="btn-gold px-2.5 py-1.5 rounded-lg font-black text-[11px] shrink-0 flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <span>{isSubmitting ? '⏳' : '✅تأكيد'}</span>
-                </button>
               </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="btn-gold w-full py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+              >
+                <span>{isSubmitting ? '⏳ جاري الإرسال...' : '✅ تأكيد وإرسال الحوالة الآن 💸'}</span>
+              </button>
             </div>
           </form>
         ) : (

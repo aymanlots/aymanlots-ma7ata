@@ -107,25 +107,24 @@ const MainApp: React.FC = () => {
     }
   }, [currentUser?.id, currentWorkspace?.id, userRole, stations.length]);
 
-  // Fixed Mobile Frame Background Wrapper (Identical size & position in both Light Mode & Dark Mode)
+  // Fixed Background Wrapper: framed strictly to phone width (max-w-[430px]) centered on screen
   const renderDesertFrameBackground = () => {
     return (
-      <div
-        className="desert-bg-frame fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] pointer-events-none z-0 overflow-hidden"
-        style={{ height: '100dvh', maxHeight: '100vh' }}
-      >
-        <img
-          src="/assets/aistudio/WhatsApp_Image_2026-10-22_at_04.15.27_e3559304.jpeg"
-          alt=""
-          className="w-full h-full object-cover object-center block"
-        />
-        <div
-          className={`desert-bg-overlay absolute inset-0 ${
-            themeMode === 'dark'
-              ? 'bg-gradient-to-b from-black/20 via-black/25 to-black/45'
-              : 'bg-gradient-to-b from-black/10 via-black/15 to-black/30'
-          }`}
-        />
+      <div className="desert-bg-frame fixed inset-0 flex justify-center pointer-events-none z-0 overflow-hidden">
+        <div className="w-full max-w-[430px] h-full relative overflow-hidden">
+          <img
+            src="/assets/aistudio/WhatsApp_Image_2026-10-22_at_04.15.27_e3559304.jpeg"
+            alt=""
+            className="w-full h-full object-cover object-center block"
+          />
+          <div
+            className={`desert-bg-overlay absolute inset-0 ${
+              themeMode === 'dark'
+                ? 'bg-black/35'
+                : 'bg-black/15'
+            }`}
+          />
+        </div>
       </div>
     );
   };
@@ -135,12 +134,12 @@ const MainApp: React.FC = () => {
     return (
       <div
         className={`min-h-screen w-full flex justify-center relative ${
-          themeMode === 'dark' ? 'bg-[#080c14]' : 'bg-[#F8FAFC]'
+          themeMode === 'dark' ? 'bg-[#06090e]' : 'bg-[#0f172a]'
         }`}
         dir={dir}
       >
         {renderDesertFrameBackground()}
-        <div className="w-full max-w-[430px] min-h-screen relative z-10">
+        <div className="w-full max-w-[430px] min-h-screen relative z-10 flex items-center justify-center p-2">
           <AuthModal
             isOpen={true}
             onOpenPublicTracking={() => setShowPublicTracking(true)}
@@ -161,12 +160,12 @@ const MainApp: React.FC = () => {
     return (
       <div
         className={`min-h-screen w-full flex justify-center relative ${
-          themeMode === 'dark' ? 'bg-[#080c14]' : 'bg-[#F8FAFC]'
+          themeMode === 'dark' ? 'bg-[#06090e]' : 'bg-[#0f172a]'
         }`}
         dir={dir}
       >
         {renderDesertFrameBackground()}
-        <div className="w-full max-w-[430px] min-h-screen relative z-10">
+        <div className="w-full max-w-[430px] min-h-screen relative z-10 flex items-center justify-center p-2">
           <OnboardingModal isOpen={true} />
           <Toast />
         </div>
@@ -178,8 +177,8 @@ const MainApp: React.FC = () => {
     <div
       className={`min-h-screen w-full flex justify-center relative ${
         themeMode === 'dark'
-          ? 'bg-[#080c14] selection:bg-[#D4AF37]/30 selection:text-[#FFF8EB]'
-          : 'bg-[#F8FAFC] selection:bg-slate-900 selection:text-white'
+          ? 'bg-[#06090e] selection:bg-[#D4AF37]/30 selection:text-[#FFF8EB]'
+          : 'bg-[#0f172a] selection:bg-slate-900 selection:text-white'
       }`}
       dir={dir}
     >
@@ -189,7 +188,7 @@ const MainApp: React.FC = () => {
         className={`w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
           themeMode === 'dark'
             ? 'text-[#FFF8EB] border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)]'
-            : 'bg-transparent text-[#111111] border-slate-300 shadow-lg'
+            : 'bg-transparent text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
         }`}
       >
         {/* Offline Status Top Banner */}

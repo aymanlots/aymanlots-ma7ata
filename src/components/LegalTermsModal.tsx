@@ -21,7 +21,7 @@ export const LegalTermsModal: React.FC<LegalTermsModalProps> = ({
       <div className="fixed inset-0 bg-[#060A14]/90 backdrop-blur-xs" onClick={onClose} />
 
       <div 
-        className="w-full max-w-2xl rounded-3xl bg-[#0F172A] border border-amber-500/30 p-5 sm:p-6 shadow-2xl text-right overflow-hidden relative z-10 my-4 space-y-4 max-h-[90vh] flex flex-col"
+        className="w-[calc(100%-8px)] max-w-[420px] rounded-[22px] luxury-card border-2 border-[#D4AF37]/65 p-3 sm:p-4 shadow-2xl text-right overflow-hidden relative z-10 my-auto space-y-3 max-h-[92vh] flex flex-col"
         onClick={e => e.stopPropagation()}
         dir="rtl"
       >

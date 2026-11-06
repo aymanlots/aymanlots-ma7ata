@@ -1596,6 +1596,128 @@ export const firebaseSyncService = {
   },
 
   /**
+   * Immediately propagates station updates (name, phone, city) or deletion across all active partnerships
+   * so partner phones see the updated name/phone immediately and deleted stations vanish in real time.
+   */
+  async updateStationInPartnerships(
+    wsId: string,
+    stationId: string,
+    updatedStationInfo: PartnershipStationInfo | null
+  ): Promise<void> {
+    if (!this.isAvailable() || !wsId || !stationId) return;
+    try {
+      const snap = await getDocs(collection(db, 'partnerships'));
+      const updates: Promise<any>[] = [];
+      snap.forEach((d) => {
+        const p = d.data() as ManagerPartnership;
+        if (p.workspace_a_id === wsId || p.workspace_b_id === wsId) {
+          let changed = false;
+          let newStationsA = [...(p.workspace_a_stations || [])];
+          let newStationsB = [...(p.workspace_b_stations || [])];
+
+          if (p.workspace_a_id === wsId) {
+            if (updatedStationInfo === null) {
+              const filtered = newStationsA.filter((s) => s.id !== stationId);
+              if (filtered.length !== newStationsA.length) {
+                newStationsA = filtered;
+                changed = true;
+              }
+            } else {
+              const idx = newStationsA.findIndex((s) => s.id === stationId);
+              if (idx !== -1) {
+                newStationsA[idx] = updatedStationInfo;
+                changed = true;
+              } else {
+                newStationsA.push(updatedStationInfo);
+                changed = true;
+              }
+            }
+          }
+
+          if (p.workspace_b_id === wsId) {
+            if (updatedStationInfo === null) {
+              const filtered = newStationsB.filter((s) => s.id !== stationId);
+              if (filtered.length !== newStationsB.length) {
+                newStationsB = filtered;
+                changed = true;
+              }
+            } else {
+              const idx = newStationsB.findIndex((s) => s.id === stationId);
+              if (idx !== -1) {
+                newStationsB[idx] = updatedStationInfo;
+                changed = true;
+              } else {
+                newStationsB.push(updatedStationInfo);
+                changed = true;
+              }
+            }
+          }
+
+          if (changed) {
+            updates.push(
+              setDoc(
+                doc(db, 'partnerships', d.id),
+                sanitizeForFirestore({
+                  workspace_a_stations: newStationsA,
+                  workspace_b_stations: newStationsB,
+                  updated_at: new Date().toISOString(),
+                }),
+                { merge: true }
+              )
+            );
+          }
+        }
+      });
+      await Promise.all(updates);
+    } catch (err) {
+      console.warn('Error updating station in partnerships:', err);
+    }
+  },
+
+  /**
+   * Propagates manager name, phone, or WhatsApp changes across all partnerships.
+   */
+  async updateManagerProfileInPartnerships(
+    wsId: string,
+    ownerName: string,
+    ownerPhone: string,
+    ownerWhatsapp?: string
+  ): Promise<void> {
+    if (!this.isAvailable() || !wsId) return;
+    try {
+      const snap = await getDocs(collection(db, 'partnerships'));
+      const updates: Promise<any>[] = [];
+      snap.forEach((d) => {
+        const p = d.data() as ManagerPartnership;
+        const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+        let changed = false;
+
+        if (p.workspace_a_id === wsId) {
+          patch.workspace_a_owner_name = ownerName;
+          patch.workspace_a_phone = ownerPhone;
+          if (ownerWhatsapp) patch.workspace_a_whatsapp = ownerWhatsapp;
+          changed = true;
+        }
+        if (p.workspace_b_id === wsId) {
+          patch.workspace_b_owner_name = ownerName;
+          patch.workspace_b_phone = ownerPhone;
+          if (ownerWhatsapp) patch.workspace_b_whatsapp = ownerWhatsapp;
+          changed = true;
+        }
+
+        if (changed) {
+          updates.push(
+            setDoc(doc(db, 'partnerships', d.id), sanitizeForFirestore(patch), { merge: true })
+          );
+        }
+      });
+      await Promise.all(updates);
+    } catch (err) {
+      console.warn('Error updating manager profile in partnerships:', err);
+    }
+  },
+
+  /**
    * Records a financial settlement payment between two partners.
    */
   async recordPartnershipSettlement(

@@ -149,12 +149,12 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({ isOpen, onClose }) =
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-1.5 bg-black/80 backdrop-blur-md overflow-y-auto animate-fadeIn"
       dir="rtl"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[445px] rounded-[26px] luxury-card border border-[#F5C84C]/55 shadow-2xl text-right overflow-hidden relative my-4 max-h-[92vh] flex flex-col"
+        className="w-[calc(100%-8px)] max-w-[420px] rounded-[22px] luxury-card border-2 border-[#D4AF37]/65 shadow-2xl text-right overflow-hidden relative my-auto max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Decorative Gold Gradient Bar */}

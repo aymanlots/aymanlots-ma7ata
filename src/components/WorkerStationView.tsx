@@ -34,6 +34,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { HelpPopover } from './HelpPopover';
+import { CurrencyExchangeModal } from './CurrencyExchangeModal';
 
 interface WorkerStationViewProps {
   onOpenNewVoucher: (initialType?: TransactionType) => void;
@@ -388,153 +389,12 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           </button>
         </div>
 
-        {/* Active Currency Exchange Panel for Worker (يمين / يسار + سطر واحد لتحت) */}
-        {showWorkerExchange && (
-          <div className="p-2 rounded-xl bg-black/65 border border-[#F5C84C]/55 space-y-1.5 animate-fadeIn text-xs">
-            <div className="flex items-center justify-between border-b border-white/15 pb-1">
-              <span className="font-black text-[#F5C84C] text-xs">
-                💱 صرف العملة (درهم ⇄ أوقية)
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowWorkerExchange(false)}
-                className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* جوج أعمدة: اليمين (اتجاه الصرف) | اليسار (اسم الزبون + الصرف) */}
-            <div className="grid grid-cols-2 gap-1.5 items-stretch">
-              <div className="bg-black/50 p-1.5 rounded-xl border border-white/15 grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setExFromCurr('MAD')}
-                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition ${
-                    exFromCurr === 'MAD' ? 'btn-gold' : 'btn-cancel'
-                  }`}
-                >
-                  +MAD ➔ −MRU
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExFromCurr('MRU')}
-                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition ${
-                    exFromCurr === 'MRU' ? 'btn-gold' : 'btn-cancel'
-                  }`}
-                >
-                  +MRU ➔ −MAD
-                </button>
-              </div>
-
-              <div className="bg-black/50 p-1.5 rounded-xl border border-white/15 flex items-center">
-                <input
-                  type="text"
-                  placeholder="👤 اسم الزبون (اختياري)"
-                  value={exCustomerName}
-                  onChange={e => setExCustomerName(e.target.value)}
-                  className="w-full bg-black/60 border border-white/15 rounded-lg px-1.5 py-1 text-white text-[11px] focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {(() => {
-              const fromAmt = parseFloat(exAmountStr) || 0;
-              const toCurr: 'MAD' | 'MRU' = exFromCurr === 'MAD' ? 'MRU' : 'MAD';
-              const toAmt = convertCurrency(fromAmt, exFromCurr, toCurr);
-              const currentOutBal = currentStation ? (stationBalances[currentStation.id]?.[toCurr] || 0) : 0;
-              const resultingOutBal = currentOutBal - toAmt;
-
-              const runWorkerExchange = async () => {
-                if (!currentStation) return;
-                setIsExchanging(true);
-                try {
-                  const res = await executeCurrencyExchange({
-                    stationId: currentStation.id,
-                    fromCurrency: exFromCurr,
-                    toCurrency: toCurr,
-                    fromAmount: fromAmt,
-                    toAmount: toAmt,
-                    rate: exchangeRate,
-                    customerName: exCustomerName,
-                  });
-                  if (res.success) {
-                    setExCustomerName('');
-                    setShowFxNegativeWarning(false);
-                    setShowWorkerExchange(false);
-                  }
-                } finally {
-                  setIsExchanging(false);
-                }
-              };
-
-              if (showFxNegativeWarning) {
-                return (
-                  <div className="p-2 rounded-xl bg-rose-950/80 border border-rose-500/50 space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between text-rose-300 font-black text-[10px]">
-                      <span>⚠️ لاكيس {toCurr} ستصبح بالسالب:</span>
-                      <span dir="ltr" className="font-mono text-rose-400">
-                        {resultingOutBal.toLocaleString('en-US')} {toCurr}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={isExchanging}
-                        onClick={runWorkerExchange}
-                        className="btn-delete flex-1 py-1.5 rounded-lg font-black text-[11px] cursor-pointer"
-                      >
-                        ✅ تأكيد (رصيد سالب)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowFxNegativeWarning(false)}
-                        className="btn-cancel px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer"
-                      >
-                        إلغاء
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                /* لتحت فسطر واحد: المبلغ المستلم + المبلغ المسلم + تأكيد الصرف */
-                <div className="flex items-center gap-1 bg-black/50 p-1.5 rounded-xl border border-white/15">
-                  <input
-                    type="number"
-                    value={exAmountStr}
-                    onChange={e => setExAmountStr(e.target.value)}
-                    placeholder={`+${exFromCurr}`}
-                    className="flex-1 min-w-[70px] bg-black/70 border border-emerald-500/40 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs"
-                  />
-                  <span className="font-mono font-black text-[11px] text-[#F5C84C] shrink-0 px-1" dir="ltr">
-                    ➔ -{toAmt} {toCurr}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={isExchanging || !currentStation}
-                    onClick={async () => {
-                      if (!currentStation) return;
-                      if (fromAmt <= 0 || toAmt <= 0) {
-                        showToast('يرجى إدخال مبلغ صحيح للصرف', 'error');
-                        return;
-                      }
-                      if (currentOutBal <= 0 || resultingOutBal < 0) {
-                        setShowFxNegativeWarning(true);
-                        return;
-                      }
-                      await runWorkerExchange();
-                    }}
-                    className="btn-gold px-2.5 py-1.5 rounded-lg font-black text-[11px] shrink-0 cursor-pointer"
-                  >
-                    {isExchanging ? '⏳' : '✅تأكيد الصرف'}
-                  </button>
-                </div>
-              );
-            })()}
-          </div>
-        )}
+        {/* Unified Currency Exchange Modal */}
+        <CurrencyExchangeModal
+          isOpen={showWorkerExchange}
+          onClose={() => setShowWorkerExchange(false)}
+          defaultStationId={currentStation?.id}
+        />
 
         {/* Pending Hawalas for Worker Station */}
         {(() => {

@@ -1488,21 +1488,27 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                             </button>
 
                             {(userRole === 'owner' || userRole === 'platform_owner') && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setItemToDelete({
-                                    type: 'parcel',
-                                    id: parcel.id,
-                                    label: `${parcel.tracking_code} (${parcel.sender_name} ➔ ${parcel.receiver_name})`,
-                                  })
-                                }
-                                className="btn-delete flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-black text-[11px] transition"
-                                title="حذف الكولي نهائياً (للمدير فقط)"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>حذف الكولي</span>
-                              </button>
+                              parcel.is_partnership_parcel && (parcel.partner_origin_workspace_id === currentWorkspace?.id || (!parcel.partner_origin_workspace_id && parcel.workspace_id === currentWorkspace?.id)) ? (
+                                <span className="text-[10px] text-amber-300 font-bold px-2 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center gap-1" title="لا يمكن للمرسل حذف أو تعديل الكولية بمجرد إرسالها لغرفة الشراكة">
+                                  <span>🔒 مرسلة لشريك (مقفلة)</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setItemToDelete({
+                                      type: 'parcel',
+                                      id: parcel.id,
+                                      label: `${parcel.tracking_code} (${parcel.sender_name} ➔ ${parcel.receiver_name})`,
+                                    })
+                                  }
+                                  className="btn-delete flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-black text-[11px] transition"
+                                  title="حذف الكولي نهائياً (للمدير فقط)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>حذف الكولي</span>
+                                </button>
+                              )
                             )}
                           </div>
                         </div>

@@ -26,6 +26,7 @@ import { MoneyTransferModal } from './MoneyTransferModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { ParcelDetailModal } from './ParcelDetailModal';
 import { HelpPopover } from './HelpPopover';
+import { CurrencyExchangeModal } from './CurrencyExchangeModal';
 import {
   formatDateTimeStandard,
   formatTrackingCodeNumeric,
@@ -573,23 +574,23 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-bold text-white/85">
+                      <span className="text-[9px] font-bold text-white/70">
                         {curr.label} {curr.flag}
                       </span>
-                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#F5C84C]">
+                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#F5C84C] font-mono">
                         {curr.code}
                       </span>
                     </div>
                     <p
                       dir="ltr"
-                      className={`text-lg sm:text-xl font-black font-mono text-left ${
+                      className={`text-xl sm:text-2xl font-black font-mono tracking-tight text-left ${
                         isNegative ? 'text-rose-400' : 'text-[#F5C84C]'
                       }`}
                     >
                       {formatAmount(curr.balance, curr.code)}
                     </p>
                     {isNegative && (
-                      <span className="text-[10px] font-bold text-rose-300 block mt-0.5">
+                      <span className="text-[9px] font-black text-rose-300 block mt-0.5">
                         رصيد سالب (عجز فلاكيس)
                       </span>
                     )}
@@ -651,143 +652,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               </button>
             </div>
 
-            {/* نافذة صرف العملة المدمجة داخل لاكيس المحطة بترتيب يمين/يسار + سطر واحد لتحت */}
-            {showExchangeModal && (
-              <form
-                onSubmit={handleExecuteFxSubmit}
-                className="bg-black/65 border border-[#D4AF37]/40 rounded-xl p-2 space-y-1.5 animate-fadeIn"
-              >
-                <div className="flex items-center justify-between border-b border-white/15 pb-1">
-                  <div className="flex items-center gap-1">
-                    <ArrowLeftRight className="w-3.5 h-3.5 text-[#F5C84C]" />
-                    <span className="text-xs font-black text-white">
-                      💱 صرف العملة ({activeStation ? activeStation.name : 'المحطة'})
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowExchangeModal(false)}
-                    className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {fxError && (
-                  <div className="p-1.5 rounded-lg bg-rose-950/70 border border-rose-500/40 text-[11px] font-bold text-rose-200">
-                    {fxError}
-                  </div>
-                )}
-
-                {/* جوج أعمدة: اليمين (اتجاه الصرف + سعر الصرف) | اليسار (الزبون + المبلغ المسلم) */}
-                <div className="grid grid-cols-2 gap-1.5 items-stretch">
-                  <div className="bg-black/50 p-1.5 rounded-xl border border-white/15 space-y-1">
-                    <div className="grid grid-cols-2 gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setFxDirection('MAD_TO_MRU')}
-                        className={`py-1 px-1 rounded-lg text-[10px] font-black transition cursor-pointer ${
-                          fxDirection === 'MAD_TO_MRU' ? 'btn-gold' : 'btn-cancel'
-                        }`}
-                      >
-                        +MAD ➔ −MRU
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFxDirection('MRU_TO_MAD')}
-                        className={`py-1 px-1 rounded-lg text-[10px] font-black transition cursor-pointer ${
-                          fxDirection === 'MRU_TO_MAD' ? 'btn-gold' : 'btn-cancel'
-                        }`}
-                      >
-                        +MRU ➔ −MAD
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] font-bold text-white/85 shrink-0">السعر:</span>
-                      <input
-                        type="number"
-                        step="any"
-                        min="0.01"
-                        required
-                        dir="ltr"
-                        value={fxRateInput}
-                        onChange={e => setFxRateInput(e.target.value)}
-                        className="w-full bg-black/70 border border-white/20 rounded-lg px-1.5 py-1 text-xs font-mono font-black text-[#F5C84C] text-center focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="bg-black/50 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
-                    <input
-                      type="text"
-                      value={fxCustomerName}
-                      onChange={e => setFxCustomerName(e.target.value)}
-                      placeholder="👤 اسم الزبون (اختياري)"
-                      className="w-full bg-black/70 border border-white/20 rounded-lg px-1.5 py-1 text-[11px] text-white focus:outline-none"
-                    />
-                    <div className="flex items-center justify-between text-[10px] px-0.5">
-                      <span className="font-bold">−المسلم:</span>
-                      <span dir="ltr" className="font-mono font-black text-rose-400 text-xs">
-                        -{fxCalculatedToAmount.toLocaleString('en-US')} {fxToCurrency}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {showFxNegativeWarning ? (
-                  <div className="p-2 rounded-xl bg-rose-950/80 border border-rose-500/60 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] font-black text-rose-200">
-                      <span>⚠️ لاكيس {fxToCurrency} ستصبح بالسالب:</span>
-                      <span dir="ltr" className="font-mono text-rose-400">
-                        {fxResultingOutBalance.toLocaleString('en-US')} {fxToCurrency}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={isExecutingFx}
-                        onClick={performCurrencyExchange}
-                        className="btn-delete flex-1 py-1.5 rounded-lg font-black text-[11px] cursor-pointer"
-                      >
-                        ✅ تأكيد (رصيد سالب)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowFxNegativeWarning(false)}
-                        className="btn-cancel px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer"
-                      >
-                        إلغاء
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* لتحت فسطر واحد: المبلغ المستلم + المبلغ المسلم + تأكيد الصرف */
-                  <div className="flex items-center gap-1 bg-black/50 p-1.5 rounded-xl border border-white/15">
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.01"
-                      required
-                      dir="ltr"
-                      value={fxFromAmount}
-                      onChange={e => setFxFromAmount(e.target.value)}
-                      placeholder={`+${fxFromCurrency} المستلم *`}
-                      className="flex-1 min-w-[80px] bg-black/70 border border-white/20 rounded-lg px-2 py-1.5 text-xs font-mono font-black text-emerald-400 focus:outline-none"
-                    />
-                    <span dir="ltr" className="text-[11px] font-mono font-black text-rose-400 px-1 shrink-0">
-                      ➔ -{fxCalculatedToAmount} {fxToCurrency}
-                    </span>
-                    <button
-                      type="submit"
-                      disabled={isExecutingFx}
-                      className="btn-gold px-2.5 py-1.5 rounded-lg font-black text-[11px] shrink-0 cursor-pointer"
-                    >
-                      {isExecutingFx ? '⏳' : '✅تأكيد الصرف'}
-                    </button>
-                  </div>
-                )}
-              </form>
-            )}
+            {/* Unified Currency Exchange Modal */}
+            <CurrencyExchangeModal
+              isOpen={showExchangeModal}
+              onClose={() => setShowExchangeModal(false)}
+              defaultStationId={activeStation?.id}
+            />
           </div>
         )}
       </div>

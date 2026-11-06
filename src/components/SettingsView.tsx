@@ -566,167 +566,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
 
-      {/* 1.2 باقات الاشتراك والفترة التجريبية (ظاهرة بوضوح في الإعدادات) */}
-      {(userRole === 'owner' || userRole === 'platform_owner') && (
-        <div className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#F5C84C]/55 shadow-xl">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-xl bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] flex items-center justify-center shrink-0">
-                <Crown className="w-5 h-5" />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-sm sm:text-base font-black text-white">
-                  👑 الباقات والاشتراك
-                </h3>
-                <HelpPopover
-                  title="الفترة التجريبية والباقات"
-                  text="تستفيد خلال الـ 30 يوماً التجريبية من جميع الخصائص مجاناً مع تذكير قبل 3 أيام. عند الانتهاء يمكنك اختيار الباك الأول (99 درهم: محطتين وعامل لكل محطة) أو الباك الثاني (199 درهم: غير محدود + شعار خاص)."
-                />
-              </div>
-            </div>
-            <span className="px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px] font-black shrink-0">
-              {isPlan2TwoStations ? '✓ 99 DH' : '✓ 199 DH / تجريبي'}
-            </span>
-          </div>
-
-          {/* بطاقتا الباك الأول (99 درهم) والباك الثاني (199 درهم) */}
-          <div className="grid grid-cols-1 gap-2.5">
-            {/* الباك الأول: 99 درهم */}
-            <div
-              onClick={() => {
-                if (userRole === 'platform_owner') {
-                  switchWorkspacePlan('plan_2_two_stations');
-                } else {
-                  onOpenPaywall();
-                }
-              }}
-              className={`rounded-2xl p-3.5 border-2 transition cursor-pointer space-y-2 ${
-                isPlan2TwoStations
-                  ? 'bg-gradient-to-b from-[#2b1d05]/90 to-black/90 border-[#F5C84C] shadow-lg'
-                  : 'bg-black/55 border-white/15 hover:border-white/30'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-white/15 text-white text-[10px] font-black">
-                    الباك الأول
-                  </span>
-                  <h4 className="text-xs font-black text-white">
-                    جوج محطات فقط + عامل في كل محطة
-                  </h4>
-                </div>
-                <div className="px-2.5 py-1 rounded-xl bg-black/80 border border-[#F5C84C]/45 text-[#F5C84C] font-mono font-black text-xs shrink-0">
-                  99 درهم <span className="text-[9px] font-sans text-white/70">/ شهر</span>
-                </div>
-              </div>
-              <ul className="text-[11px] text-white/90 space-y-1 pr-1">
-                <li className="flex items-start gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>فتح <strong>جوج محطات (2) فقط</strong>، وفي كل محطة <strong>عامل واحد (1) فقط</strong>.</span>
-                </li>
-                <li className="flex items-start gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>الملصقات والبونات تخرج باسم التطبيق (<span dir="ltr">Sahara📦 Express</span>) ولوغو التطبيق الرسمي</strong> ولا يمكن تغييرهما.</span>
-                </li>
-              </ul>
-              <div className="pt-1 flex items-center justify-between gap-2">
-                <span className="text-[10px] text-white/70 font-bold">
-                  الحد الأقصى: 2 محطات | 2 عمال
-                </span>
-                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
-                  isPlan2TwoStations
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                    : 'bg-white/10 text-white/80'
-                }`}>
-                  {isPlan2TwoStations
-                    ? '✓ الباك المفعل حالياً'
-                    : userRole === 'platform_owner'
-                    ? 'اضغط لتجربة نظام الباك الأول (99 درهم)'
-                    : 'طلب تفعيل الباك الأول (99 درهم)'}
-                </span>
-              </div>
-            </div>
-
-            {/* الباك الثاني: 199 درهم */}
-            <div
-              onClick={() => {
-                if (userRole === 'platform_owner') {
-                  switchWorkspacePlan('plan_1_full');
-                } else {
-                  onOpenPaywall();
-                }
-              }}
-              className={`rounded-2xl p-3.5 border-2 transition cursor-pointer space-y-2 ${
-                !isPlan2TwoStations
-                  ? 'bg-gradient-to-b from-[#2b1d05]/90 to-black/90 border-[#F5C84C] shadow-lg'
-                  : 'bg-black/55 border-white/15 hover:border-white/30'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#F5C84C] text-[#111111] text-[10px] font-black">
-                    👑 الباك الثاني
-                  </span>
-                  <h4 className="text-xs font-black text-white">
-                    محطات وعمال غير محدودين + لوغو خاص بك
-                  </h4>
-                </div>
-                <div className="px-2.5 py-1 rounded-xl bg-black/80 border border-[#F5C84C]/45 text-[#F5C84C] font-mono font-black text-xs shrink-0">
-                  199 درهم <span className="text-[9px] font-sans text-white/70">/ شهر</span>
-                </div>
-              </div>
-              <ul className="text-[11px] text-white/90 space-y-1 pr-1">
-                <li className="flex items-start gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>فتح <strong>بزاف ديال المحطات (غير محدود)</strong> و<strong>بزاف ديال العمال (غير محدود)</strong> مرتبطين بأدمين واحد.</span>
-                </li>
-                <li className="flex items-start gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#F5C84C] shrink-0 mt-0.5" />
-                  <span><strong>وضع اللوغو (الشعار) الخاص بك واسم وكالتك</strong> في جميع الملصقات الحرارية وبونات الـ PDF.</span>
-                </li>
-              </ul>
-              <div className="pt-1 flex items-center justify-between gap-2">
-                <span className="text-[10px] text-[#E6C37A] font-bold">
-                  مفتوح بجميع الخصائص بدون قيود
-                </span>
-                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
-                  !isPlan2TwoStations
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                    : 'bg-[#F5C84C]/20 text-[#F5C84C]'
-                }`}>
-                  {!isPlan2TwoStations
-                    ? '✓ الباك المفعل حالياً'
-                    : userRole === 'platform_owner'
-                    ? 'اضغط لتفعيل نظام الباك الثاني (199 درهم)'
-                    : 'طلب تفعيل الباك الثاني (199 درهم)'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2">
-            <button
-              type="button"
-              onClick={onOpenPaywall}
-              className="btn-gold w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
-            >
-              <Crown className="w-4 h-4" />
-              <span>فتح نافذة الاشتراك وطلب التفعيل عبر واتساب</span>
-            </button>
-
-            {userRole === 'platform_owner' && onOpenPlatformOwner && (
-              <button
-                type="button"
-                onClick={onOpenPlatformOwner}
-                className="w-full py-2.5 px-3 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 hover:bg-amber-500/30 font-black text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition"
-              >
-                <Crown className="w-4 h-4 text-amber-400" />
-                <span>🔒 إدارة اشتراكات الشركات (خاصة بحسابك كمالك التطبيق فقط)</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* 1.5 إدارة المحطات وتعديل الأسماء (الوكالة والمحطات في مكان واحد منظم) */}
       {(userRole === 'owner' || userRole === 'platform_owner') && (
@@ -2205,6 +2044,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Trash2 className="w-3.5 h-3.5" />
             <span>🗑️ مسح البيانات</span>
           </button>
+        </div>
+      )}
+
+      {/* 9.5 باقة الاشتراك الموحدة (في أسفل الإعدادات خانة واحدة واضحة) */}
+      {(userRole === 'owner' || userRole === 'platform_owner') && (
+        <div className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#F5C84C]/50 shadow-md">
+          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+            <div className="flex items-center gap-2">
+              <Crown className="w-5 h-5 text-[#F5C84C]" />
+              <h3 className="text-xs sm:text-sm font-black text-white">
+                👑 باقة الاشتراك
+              </h3>
+            </div>
+            <span className="px-2.5 py-1 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] text-[10px] font-black">
+              {isPlan2TwoStations ? 'الباك الأول (99 درهم)' : 'الباك الثاني (199 درهم)'}
+            </span>
+          </div>
+
+          <div className="bg-black/50 p-3 rounded-xl border border-white/15 space-y-2 text-xs text-white/90">
+            <div className="space-y-1">
+              <p className="font-black text-[#F5D799]">
+                {isPlan2TwoStations
+                  ? '• الباك الأول (99 درهم/شهر): جوج محطات فقط + عامل واحد في كل محطة.'
+                  : '• الباك الثاني (199 درهم/شهر): محطات وعمال غير محدودين + شعار خاص بك وبونات مخصصة.'}
+              </p>
+              <p className="text-[11px] text-white/80">
+                حالة الاشتراك: <strong className="text-[#F5C84C]">{isSubscriptionExpired ? 'منتهي (يتطلب التجديد)' : subscriptionRemainingLabel}</strong>
+              </p>
+            </div>
+
+            <div className="pt-1 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={onOpenPaywall}
+                className="btn-gold w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow cursor-pointer"
+              >
+                <Crown className="w-4 h-4" />
+                <span>طلب تجديد أو ترقية باقة الاشتراك ➔</span>
+              </button>
+
+              {userRole === 'platform_owner' && onOpenPlatformOwner && (
+                <button
+                  type="button"
+                  onClick={onOpenPlatformOwner}
+                  className="w-full py-2 px-3 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 font-black text-[11px] flex items-center justify-center gap-2 transition"
+                >
+                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  <span>🔒 إدارة اشتراكات الشركات والمدراء</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

@@ -45,7 +45,7 @@ export const SQLModal: React.FC<SQLModalProps> = ({ isOpen, onClose }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-3 sm:p-5 animate-fadeIn">
       <div 
-        className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl bg-[#131C2E] border border-slate-700/80 shadow-2xl text-right overflow-hidden"
+        className="w-[calc(100%-8px)] max-w-[420px] max-h-[90vh] flex flex-col rounded-3xl bg-[#131C2E] border border-slate-700/80 shadow-2xl text-right overflow-hidden"
         onClick={e => e.stopPropagation()}
         dir="rtl"
       >

@@ -30,6 +30,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { HelpPopover } from './HelpPopover';
+import { CurrencyExchangeModal } from './CurrencyExchangeModal';
 
 interface LedgerViewProps {
   onOpenNewVoucher: (initialType?: TransactionType) => void;
@@ -417,7 +418,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
             className="btn-cancel flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer border border-[#F5C84C]/45 text-[#F5C84C]"
           >
             <ArrowRightLeft className="w-3.5 h-3.5 text-[#F5C84C] shrink-0" />
-            <span className="truncate">💸 حوالة</span>
+            <span className="whitespace-nowrap">💸 حوالة</span>
           </button>
 
           <button
@@ -434,7 +435,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
             }`}
           >
             <ArrowRightLeft className="w-3.5 h-3.5 text-[#2ECC71] shrink-0" />
-            <span className="truncate">💱 صرف عملة</span>
+            <span className="whitespace-nowrap">💱 صرف عملة</span>
           </button>
         </div>
 
@@ -485,216 +486,17 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
         )}
       </div>
 
-      {/* Active Currency Exchange & Cashbox Recording Widget (بترتيب يمين / يسار + سطر واحد لتحت) */}
-      {showConverter && (
-        <div className="luxury-card rounded-[20px] p-2 animate-fadeIn space-y-1.5 border border-[#F5C84C]/65">
-          <div className="flex items-center justify-between border-b border-white/15 pb-1">
-            <div className="flex items-center gap-1.5 text-xs font-black text-[#F5C84C]">
-              <ArrowRightLeft className="w-3.5 h-3.5 text-[#F5C84C]" />
-              <span>💱 صرف العملة فلاكيس (MAD ⇄ MRU)</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowConverter(false)}
-              className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-bold"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* جوج أعمدة: اليمين (المحطة + اتجاه الصرف) | اليسار (سعر الصرف + الزبون والهاتف فنفس السطر) */}
-          <div className="grid grid-cols-2 gap-1.5 items-stretch text-xs">
-            {/* RIGHT COLUMN */}
-            <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
-              <div>
-                <label className="block text-[10px] text-[#F5C84C] font-black mb-0.5">
-                  📍 المحطة
-                </label>
-                <select
-                  value={exchangeStationId || currentStation?.id || ''}
-                  disabled={userRole === 'worker'}
-                  onChange={e => {
-                    if (userRole === 'worker') return;
-                    setExchangeStationId(e.target.value);
-                  }}
-                  className="w-full bg-black/80 border border-white/20 rounded-lg px-1.5 py-1 text-white font-bold text-[11px] focus:outline-none disabled:opacity-75"
-                >
-                  {(userRole === 'worker' && workerStationId
-                    ? stations.filter(st => st.id === workerStationId)
-                    : stations
-                  ).map(st => (
-                    <option key={st.id} value={st.id}>
-                      {st.name} ({st.city})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCalcFrom('MAD')}
-                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition ${
-                    calcFrom === 'MAD' ? 'btn-gold' : 'btn-cancel'
-                  }`}
-                >
-                  +MAD ➔ −MRU
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCalcFrom('MRU')}
-                  className={`py-1 px-1 rounded-lg text-[10px] font-black transition ${
-                    calcFrom === 'MRU' ? 'btn-gold' : 'btn-cancel'
-                  }`}
-                >
-                  +MRU ➔ −MAD
-                </button>
-              </div>
-            </div>
-
-            {/* LEFT COLUMN */}
-            <div className="bg-black/55 p-1.5 rounded-xl border border-white/15 space-y-1 flex flex-col justify-between">
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black text-white shrink-0">السعر:</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  dir="ltr"
-                  value={manualRateStr}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setManualRateStr(val);
-                    const num = parseFloat(val);
-                    if (!isNaN(num) && num > 0) {
-                      setExchangeRate(num);
-                    }
-                  }}
-                  className="w-full bg-black/80 border border-[#F5C84C]/60 rounded-lg px-1.5 py-1 text-center font-mono font-black text-white text-[11px]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-1">
-                <input
-                  type="text"
-                  placeholder="👤 الزبون"
-                  value={exchangeCustomerName}
-                  onChange={e => setExchangeCustomerName(e.target.value)}
-                  className="w-full min-w-0 bg-black/60 border border-white/20 rounded-lg px-1.5 py-1 text-white text-[11px] focus:outline-none"
-                />
-                <input
-                  type="tel"
-                  dir="ltr"
-                  placeholder="📞 الهاتف"
-                  value={exchangeCustomerPhone}
-                  onChange={e => setExchangeCustomerPhone(e.target.value)}
-                  className="w-full min-w-0 bg-black/60 border border-white/20 rounded-lg px-1.5 py-1 text-white font-mono text-[11px] focus:outline-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* لتحت فسطر واحد: المبلغ المستلم + المبلغ المسلم + تأكيد الصرف */}
-          {(() => {
-            const targetStId =
-              (exchangeStationId && exchangeStationId !== 'all' ? exchangeStationId : '') ||
-              currentStation?.id ||
-              stations[0]?.id ||
-              '';
-            const fromAmt = parseFloat(calcAmount) || 0;
-            const toCurr: 'MAD' | 'MRU' = calcFrom === 'MAD' ? 'MRU' : 'MAD';
-            const toAmt = convertCurrency(fromAmt, calcFrom, toCurr);
-            const currentOutBal = stationBalances[targetStId]?.[toCurr] || 0;
-            const resultingOutBal = currentOutBal - toAmt;
-
-            const runExchange = async () => {
-              setIsExecutingExchange(true);
-              try {
-                const res = await executeCurrencyExchange({
-                  stationId: targetStId,
-                  fromCurrency: calcFrom,
-                  toCurrency: toCurr,
-                  fromAmount: fromAmt,
-                  toAmount: toAmt,
-                  rate: exchangeRate,
-                  customerName: exchangeCustomerName,
-                  customerPhone: exchangeCustomerPhone,
-                });
-                if (res.success) {
-                  setExchangeCustomerName('');
-                  setExchangeCustomerPhone('');
-                  setShowFxNegativeWarning(false);
-                }
-              } finally {
-                setIsExecutingExchange(false);
-              }
-            };
-
-            if (showFxNegativeWarning) {
-              return (
-                <div className="p-2 rounded-xl bg-rose-950/80 border border-rose-500/50 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between text-rose-300 font-black text-[10px]">
-                    <span>⚠️ لاكيس {toCurr} ستصبح بالسالب:</span>
-                    <span dir="ltr" className="font-mono text-rose-400">
-                      {resultingOutBal.toLocaleString('en-US')} {toCurr}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      disabled={isExecutingExchange}
-                      onClick={runExchange}
-                      className="btn-delete flex-1 py-1.5 rounded-lg font-black text-[11px] cursor-pointer"
-                    >
-                      ✅ تأكيد الصرف (رصيد سالب)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowFxNegativeWarning(false)}
-                      className="btn-cancel px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer"
-                    >
-                      إلغاء
-                    </button>
-                  </div>
-                </div>
-              );
-            }
-
-            return (
-              <div className="flex items-center gap-1 bg-black/55 p-1.5 rounded-xl border border-white/15">
-                <input
-                  type="number"
-                  value={calcAmount}
-                  onChange={(e) => setCalcAmount(e.target.value)}
-                  placeholder={`+${calcFrom} المستلم *`}
-                  className="flex-1 min-w-[75px] bg-black/70 border border-emerald-500/40 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs"
-                />
-                <span className="text-xs font-black font-mono text-[#F5C84C] px-1 shrink-0" dir="ltr">
-                  ➔ -{toAmt} {toCurr}
-                </span>
-                <button
-                  type="button"
-                  disabled={isExecutingExchange || stations.length === 0}
-                  onClick={async () => {
-                    if (fromAmt <= 0 || toAmt <= 0) {
-                      showToast('يرجى إدخال مبلغ صحيح أكبر من 0 لتنفيذ عملية الصرف', 'error');
-                      return;
-                    }
-                    if (currentOutBal <= 0 || resultingOutBal < 0) {
-                      setShowFxNegativeWarning(true);
-                      return;
-                    }
-                    await runExchange();
-                  }}
-                  className="btn-gold px-2.5 py-1.5 rounded-lg font-black text-[11px] shrink-0 cursor-pointer"
-                >
-                  {isExecutingExchange ? '⏳' : '✅تأكيد الصرف'}
-                </button>
-              </div>
-            );
-          })()}
-        </div>
-      )}
+      {/* Unified Currency Exchange Modal */}
+      <CurrencyExchangeModal
+        isOpen={showConverter}
+        onClose={() => setShowConverter(false)}
+        defaultStationId={
+          (exchangeStationId && exchangeStationId !== 'all' ? exchangeStationId : '') ||
+          currentStation?.id ||
+          stations[0]?.id ||
+          ''
+        }
+      />
 
       {/* 2. Compact Side-by-Side Dual Currency Boxes */}
       <div className="luxury-card rounded-[22px] p-3 space-y-2">
@@ -741,21 +543,21 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
                   isNegative ? 'bg-rose-950/60 border-rose-500/50' : `bg-black/55 ${borderColorClass}`
                 }`}
               >
-                <div className="flex items-center justify-between text-[10px] text-white/80 font-bold">
+                <div className="flex items-center justify-between text-[9px] text-white/70 font-bold mb-1">
                   <span>{curr.label} {curr.flag}</span>
-                  <span className={`font-mono font-bold ${textColorClass}`}>{curr.code}</span>
+                  <span className={`font-mono font-black px-1.5 py-0.2 rounded bg-black/40 ${textColorClass}`}>{curr.code}</span>
                 </div>
                 <div
-                  className={`text-sm sm:text-base font-black font-mono mt-0.5 ${
+                  className={`text-xl sm:text-2xl font-black font-mono tracking-tight mt-0.5 ${
                     isNegative ? 'text-rose-400' : textColorClass
                   }`}
                   dir="ltr"
                 >
-                  {hideAmounts ? '••••••' : curr.balance.toLocaleString('en-US')}{' '}
-                  <span className="text-[10px] font-sans text-white/80">{curr.symbol}</span>
+                  {hideAmounts ? '••••••' : curr.balance.toLocaleString('en-US', { maximumFractionDigits: 2 })}{' '}
+                  <span className="text-[11px] font-bold font-sans opacity-80">{curr.symbol}</span>
                 </div>
                 {isNegative && (
-                  <span className="text-[9px] font-bold text-rose-300 block mt-0.5">
+                  <span className="text-[9px] font-black text-rose-300 block mt-0.5">
                     عجز فلاكيس
                   </span>
                 )}

@@ -13,52 +13,81 @@
     -webkit-font-smoothing: antialiased;
     transition: background-color 0.2s ease, color 0.2s ease;
   }
+
+  /* Remove number input spinners to prevent decimal points and numbers from being cut off on mobile */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
 }
 
 /* ============================================================================
+/* ============================================================================
    ☀️ LIGHT MODE (وضع النهار — الافتراضي Default)
-   كروت بيضاء شفافة شوية باش الخلفية تبقى باينة، وكتابة كحلة واضحة 100% فكل بلاصة
+   كروت بيضاء معمرة 100% (#FFFFFF)، وكتابة كحلة واضحة فكل بلاصة
    ============================================================================ */
 html:not(.theme-dark),
 html.theme-light,
 html:not(.theme-dark) body,
 html.theme-light body {
-  background-color: #F8FAFC !important;
+  background-color: #0f172a !important;
   color: #000000 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 
-/* Ensure the fixed desert background image and its overlay keep the exact same size, position, and visibility in Light Mode as in Dark Mode */
-html:not(.theme-dark) .desert-bg-frame,
-html.theme-light .desert-bg-frame {
+/* Fixed Desert Background image rules in Light and Dark Mode: Framed strictly to phone width (max-w: 430px) */
+.desert-bg-frame {
   position: fixed !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  height: 100dvh !important;
-  max-height: 100vh !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  display: flex !important;
+  justify-content: center !important;
+  pointer-events: none !important;
+  z-index: 0 !important;
   background: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  overflow: hidden !important;
+}
+
+.desert-bg-frame img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  display: block !important;
 }
 
 html:not(.theme-dark) .desert-bg-overlay,
 html.theme-light .desert-bg-overlay {
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.30)) !important;
+  position: absolute !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.14) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 
-/* Translucent White Cards in Light Mode so the Full App Background Image (Flags + Gate + Van) Remains Clearly Visible */
+html.theme-dark .desert-bg-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.38) !important;
+}
+
+/* SOLID White Cards in Light Mode: fully filled (#FFFFFF), 0% transparency so text is ultra-clear */
 html:not(.theme-dark) .luxury-card,
 html.theme-light .luxury-card {
-  background: rgba(255, 255, 255, 0.74) !important;
-  border: 1.5px solid rgba(15, 23, 42, 0.28) !important;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08) !important;
+  background: #FFFFFF !important;
+  border: 1.5px solid #CBD5E1 !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08) !important;
   color: #000000 !important;
 }
 
-/* Eliminate ALL dark/black/slate card & box backgrounds in Light Mode (excluding body, root, and background image overlay) */
+/* Eliminate ALL dark/black/slate card & box backgrounds in Light Mode */
 html:not(.theme-dark) [class*="bg-black"]:not(body):not(html):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-overlay),
 html:not(.theme-dark) [class*="bg-[#1"]:not(body):not(html):not(.desert-bg-frame):not(.desert-bg-overlay),
 html:not(.theme-dark) [class*="bg-[#0"]:not(body):not(html):not(.desert-bg-frame):not(.desert-bg-overlay),
@@ -71,19 +100,21 @@ html:not(.theme-dark) [class*="from-[#2"]:not(body):not(html):not(.desert-bg-ove
 html:not(.theme-dark) [class*="from-[#1"]:not(body):not(html):not(.desert-bg-overlay),
 html:not(.theme-dark) [class*="to-black"]:not(body):not(html):not(.desert-bg-overlay),
 html:not(.theme-dark) [class*="via-black"]:not(body):not(html):not(.desert-bg-overlay) {
-  background: rgba(255, 255, 255, 0.78) !important;
+  background: #FFFFFF !important;
   background-image: none !important;
-  border-color: rgba(15, 23, 42, 0.25) !important;
+  border-color: #CBD5E1 !important;
   color: #000000 !important;
 }
 
-/* Modal backdrop overlay in Light Mode */
+/* Unified blurred modal backdrop overlay in Light & Dark Mode */
 html:not(.theme-dark) .fixed.inset-0.bg-black\/75,
 html:not(.theme-dark) .fixed.inset-0.bg-black\/80,
 html:not(.theme-dark) .fixed.inset-0.bg-black\/85,
 html:not(.theme-dark) .fixed.inset-0.bg-black\/90,
 html:not(.theme-dark) .fixed.inset-0.bg-\[\#060A14\]\/90 {
-  background: rgba(15, 23, 42, 0.40) !important;
+  background: rgba(0, 0, 0, 0.72) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
 }
 
 /* Borders in Light Mode: crisp slate borders */

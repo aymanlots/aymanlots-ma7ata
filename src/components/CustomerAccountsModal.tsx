@@ -437,218 +437,174 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto animate-fadeIn"
-      dir="rtl"
+      className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-2 bg-black/85 backdrop-blur-md overflow-y-auto overflow-x-hidden animate-fadeIn"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[430px] luxury-card rounded-[24px] p-4 shadow-2xl text-right overflow-hidden relative my-4 max-h-[92vh] flex flex-col"
+        dir="rtl"
+        className="w-[calc(100%-8px)] max-w-[420px] luxury-card rounded-[22px] border-2 border-[#D4AF37]/65 p-3 shadow-2xl text-right overflow-hidden relative my-auto max-h-[95vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/15 pb-3 shrink-0 gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] flex items-center justify-center shrink-0">
-              <Users className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-black text-white">
-                دفتر الزبناء والتجار الأوفياء (Carnet & Tarifs VIP)
-              </h3>
-              <p className="text-[10px] text-white/75">
-                تسعيرات خاصة للكيلو + متابعة الكريدي + كشف حساب PDF وواتساب
-              </p>
-            </div>
+        {/* Compact Header */}
+        <div className="flex items-center justify-between border-b border-white/15 pb-2 mb-2.5 shrink-0 gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-base">📒</span>
+            <h3 className="text-xs sm:text-sm font-black text-white truncate">
+              دفتر الزبناء والتجار ⭐ VIP ({customersList.length})
+            </h3>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn-cancel p-2 rounded-xl transition shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowAddForm((prev) => !prev)}
+              className="btn-gold px-2.5 py-1.5 rounded-xl font-black text-[11px] flex items-center gap-1"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{showAddForm ? 'إغلاق' : '➕ تاجر VIP'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-cancel p-1.5 rounded-xl transition shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto space-y-3.5 py-3.5 pr-0.5 text-xs min-h-0">
-          {/* Summary Metrics */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-black/50 p-2.5 rounded-2xl border border-white/15 text-center">
-              <span className="text-[10px] text-white/70 block">إجمالي الزبناء</span>
-              <span className="text-sm font-black text-[#F5C84C]">
-                {customersList.length} زبون
-              </span>
-            </div>
-            <div className="bg-black/50 p-2.5 rounded-2xl border border-rose-500/30 text-center">
-              <span className="text-[10px] text-rose-300 block">كريدي الدرهم (MAD)</span>
-              <span className="text-sm font-black font-mono text-rose-400" dir="ltr">
-                {hideAmounts ? '••••' : totalDebtMad} MAD
-              </span>
-            </div>
-            <div className="bg-black/50 p-2.5 rounded-2xl border border-amber-500/30 text-center">
-              <span className="text-[10px] text-amber-300 block">كريدي الأوقية (MRU)</span>
-              <span className="text-sm font-black font-mono text-amber-300" dir="ltr">
-                {hideAmounts ? '••••' : totalDebtMru} MRU
-              </span>
-            </div>
-          </div>
-
-          {/* Search, Filter Tabs, and Add Button */}
-          <div className="bg-black/45 p-3 rounded-2xl border border-white/15 space-y-2.5">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="ابحث باسم التاجر / الزبون أو رقم الهاتف..."
-                  className="w-full bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-xs text-white placeholder-white/50 focus:outline-none focus:border-[#F5C84C] pl-8"
-                />
-                <Search className="w-3.5 h-3.5 text-[#F5C84C] absolute left-2.5 top-1/2 -translate-y-1/2" />
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAddForm((prev) => !prev)}
-                className="btn-gold px-3 py-2 rounded-xl font-black text-xs flex items-center gap-1 shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{showAddForm ? 'إغلاق' : 'إضافة تاجر VIP'}</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-1.5">
-              <button
-                type="button"
-                onClick={() => setFilterMode('all')}
-                className={`py-1.5 rounded-xl text-[11px] font-bold border transition ${
-                  filterMode === 'all' ? 'btn-gold font-black' : 'btn-cancel'
-                }`}
-              >
-                الكل ({customersList.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterMode('debt')}
-                className={`py-1.5 rounded-xl text-[11px] font-bold border transition ${
-                  filterMode === 'debt' ? 'btn-gold font-black' : 'btn-cancel'
-                }`}
-              >
-                أصحاب الكريدي (
-                {customersList.filter((c) => c.unpaidMad > 0 || c.unpaidMru > 0).length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterMode('vip')}
-                className={`py-1.5 rounded-xl text-[11px] font-bold border transition ${
-                  filterMode === 'vip' ? 'btn-gold font-black' : 'btn-cancel'
-                }`}
-              >
-                التجار الأوفياء VIP
-              </button>
-            </div>
-
-            {showAddForm && (
-              <form
-                onSubmit={handleAddCustomer}
-                className="pt-2.5 border-t border-white/15 space-y-2 animate-fadeIn"
-              >
-                <span className="font-black text-[#F5C84C] block">
-                  حفظ تاجر / زبون وفي مع تسعيرة VIP خاصة:
-                </span>
-                <div className="grid grid-cols-2 gap-2">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-2.5 text-xs min-h-0">
+          {/* Compact 2-Column Add VIP Customer Form */}
+          {showAddForm && (
+            <form
+              onSubmit={handleAddCustomer}
+              className="bg-black/55 p-2.5 rounded-2xl border border-[#F5C84C]/50 space-y-2 animate-fadeIn"
+            >
+              <div className="grid grid-cols-2 gap-1.5 min-w-0">
+                {/* Right Column: Name + Phone */}
+                <div className="space-y-1.5 min-w-0">
                   <input
                     type="text"
                     required
-                    placeholder="اسم التاجر / الكليان *"
+                    placeholder="👤 اسم التاجر / الزبون *"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    className="bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white text-xs"
+                    className="w-full min-w-0 bg-black/70 border border-white/20 rounded-xl px-2.5 py-2 text-white font-black text-xs"
                   />
                   <input
                     type="tel"
                     required
-                    placeholder="رقم الهاتف / واتساب *"
+                    placeholder="📞 الهاتف / واتساب *"
                     value={newPhone}
                     onChange={(e) => setNewPhone(e.target.value)}
                     dir="ltr"
-                    className="bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white font-mono text-xs"
+                    className="w-full min-w-0 bg-black/70 border border-white/20 rounded-xl px-2.5 py-2 text-white font-mono font-black text-xs"
                   />
-                  <input
-                    type="text"
-                    placeholder="المدينة (الداخلة / نواذيبو)"
-                    value={newCity}
-                    onChange={(e) => setNewCity(e.target.value)}
-                    className="bg-black/60 border border-white/20 rounded-xl px-3 py-2 text-white text-xs"
-                  />
-                  <select
-                    value={newType}
-                    onChange={(e) => setNewType(e.target.value as any)}
-                    className="bg-black/60 border border-white/20 rounded-xl px-2.5 py-2 text-white text-xs font-bold"
-                  >
-                    <option value="merchant">تاجر بضائع معتمد</option>
-                    <option value="vip">زبون وفي (VIP)</option>
-                    <option value="regular">زبون عادي</option>
-                  </select>
                 </div>
 
-                {/* VIP Tariff per Kg */}
-                <div className="bg-black/60 p-2.5 rounded-xl border border-[#F5C84C]/35 space-y-1.5">
-                  <span className="text-[10px] font-black text-[#F5C84C] flex items-center gap-1">
-                    <Scale className="w-3 h-3" />
-                    <span>تسعيرة الكيلوغرام الخاصة بهذا التاجر (Tarif VIP):</span>
-                  </span>
-                  <div className="grid grid-cols-3 gap-1.5">
+                {/* Left Column: City + VIP Rate/Kg */}
+                <div className="space-y-1.5 min-w-0">
+                  <input
+                    type="text"
+                    placeholder="📍 المدينة (الداخلة...)"
+                    value={newCity}
+                    onChange={(e) => setNewCity(e.target.value)}
+                    className="w-full min-w-0 bg-black/70 border border-white/20 rounded-xl px-2.5 py-2 text-white font-black text-xs"
+                  />
+                  <div className="flex items-center gap-1 min-w-0">
                     <input
                       type="number"
                       step="0.5"
                       min="0"
-                      placeholder="ثمن الكيلو (مثال: 12)"
+                      placeholder="⚖️ ثمن/kg"
                       value={newVipRatePerKg}
                       onChange={(e) => setNewVipRatePerKg(e.target.value)}
-                      className="bg-black/70 border border-white/20 rounded-lg px-2 py-1.5 text-white font-mono text-xs"
+                      className="w-full min-w-0 bg-black/70 border border-[#F5C84C]/60 rounded-xl px-2 py-2 text-white font-mono font-black text-xs text-center"
                     />
                     <select
                       value={newVipCurrency}
                       onChange={(e) => setNewVipCurrency(e.target.value as 'MAD' | 'MRU')}
-                      className="bg-black/70 border border-white/20 rounded-lg px-2 py-1.5 text-white font-mono text-xs font-bold"
+                      className="bg-black/70 border border-white/20 rounded-xl px-1.5 py-2 text-white font-mono text-[11px] font-black shrink-0"
                     >
-                      <option value="MAD">MAD / kg</option>
-                      <option value="MRU">MRU / kg</option>
+                      <option value="MAD">MAD</option>
+                      <option value="MRU">MRU</option>
                     </select>
-                    <input
-                      type="number"
-                      min="0"
-                      max="90"
-                      placeholder="تخفيض % (اختياري)"
-                      value={newDiscountPercent}
-                      onChange={(e) => setNewDiscountPercent(e.target.value)}
-                      className="bg-black/70 border border-white/20 rounded-lg px-2 py-1.5 text-white font-mono text-xs"
-                    />
                   </div>
                 </div>
+              </div>
 
-                <button
-                  type="submit"
-                  className="btn-gold w-full py-2 rounded-xl font-black text-xs shadow-md"
-                >
-                  حفظ في دفتر التجار وتفعيل تسعيرة VIP
-                </button>
-              </form>
-            )}
+              <button
+                type="submit"
+                className="btn-gold w-full py-2.5 rounded-xl font-black text-xs shadow-md"
+              >
+                ✅ حفظ التاجر وتفعيل تسعيرة VIP
+              </button>
+            </form>
+          )}
+
+          {/* Summary Metrics + Search & Filter in 1 Compact Block */}
+          <div className="bg-black/45 p-2.5 rounded-2xl border border-white/15 space-y-2">
+            <div className="grid grid-cols-3 gap-1.5">
+              <div className="bg-black/50 p-1.5 rounded-xl border border-white/15 text-center">
+                <span className="text-[10px] text-white/70 block">👥 الزبناء</span>
+                <span className="text-xs sm:text-sm font-black text-[#F5C84C]">
+                  {customersList.length}
+                </span>
+              </div>
+              <div className="bg-black/50 p-1.5 rounded-xl border border-rose-500/30 text-center">
+                <span className="text-[10px] text-rose-300 block">⏳ كريدي MAD</span>
+                <span className="text-xs sm:text-sm font-black font-mono text-rose-400" dir="ltr">
+                  {hideAmounts ? '••••' : totalDebtMad}
+                </span>
+              </div>
+              <div className="bg-black/50 p-1.5 rounded-xl border border-amber-500/30 text-center">
+                <span className="text-[10px] text-amber-300 block">⏳ كريدي MRU</span>
+                <span className="text-xs sm:text-sm font-black font-mono text-amber-300" dir="ltr">
+                  {hideAmounts ? '••••' : totalDebtMru}
+                </span>
+              </div>
+            </div>
+
+            {/* Search + Filter Tabs on 1 Compact Row */}
+            <div className="flex items-center gap-1.5">
+              <div className="relative flex-1 min-w-0">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="🔍 بحث بالاسم أو الهاتف..."
+                  className="w-full bg-black/60 border border-white/20 rounded-xl px-2.5 py-2 text-xs text-white font-black placeholder-white/50 focus:outline-none focus:border-[#F5C84C]"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setFilterMode(filterMode === 'debt' ? 'all' : 'debt')}
+                className={`px-2.5 py-2 rounded-xl text-[11px] font-black border transition shrink-0 ${
+                  filterMode === 'debt' ? 'btn-gold' : 'btn-cancel'
+                }`}
+              >
+                ⏳ كريدي ({customersList.filter((c) => c.unpaidMad > 0 || c.unpaidMru > 0).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterMode(filterMode === 'vip' ? 'all' : 'vip')}
+                className={`px-2 py-2 rounded-xl text-[11px] font-black border transition shrink-0 ${
+                  filterMode === 'vip' ? 'btn-gold' : 'btn-cancel'
+                }`}
+              >
+                ⭐ VIP
+              </button>
+            </div>
           </div>
 
-          {/* Customers List */}
+          {/* Customers List (Compact 2-Row Cards) */}
           {filteredCustomers.length === 0 ? (
-            <div className="bg-black/45 p-6 rounded-2xl border border-white/15 text-center space-y-2">
-              <Users className="w-8 h-8 text-[#F5C84C] mx-auto" />
-              <p className="font-bold text-white">لا توجد حسابات مطابقة للبحث</p>
-              <p className="text-[11px] text-white/65">
-                يتم تجميع الزبائن تلقائياً من الكوليات المسجلة أو يمكنك إضافة تاجر يدوياً.
-              </p>
+            <div className="bg-black/45 p-5 rounded-2xl border border-white/15 text-center">
+              <p className="font-black text-white text-xs">لا توجد حسابات مطابقة للبحث</p>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {filteredCustomers.map((c) => {
                 const hasDebt = c.unpaidMad > 0 || c.unpaidMru > 0;
                 const isExpanded = expandedKey === c.key;
@@ -656,43 +612,37 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                 return (
                   <div
                     key={c.key}
-                    className={`rounded-2xl border p-3.5 transition space-y-2.5 ${
+                    className={`rounded-2xl border p-2.5 transition space-y-2 ${
                       hasDebt
                         ? 'bg-black/60 border-rose-500/45'
                         : 'bg-black/50 border-white/15'
                     }`}
                   >
+                    {/* Row 1: Customer Name, Phone, VIP Badge & Debt */}
                     <div
                       onClick={() => setExpandedKey(isExpanded ? null : c.key)}
                       className="flex items-center justify-between gap-2 cursor-pointer"
                     >
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-black text-sm text-white">{c.name}</span>
-                          {(c.isSaved || c.sentCount + c.receivedCount >= 3) && (
-                            <span className="px-2 py-0.5 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/40 text-[#F5C84C] text-[10px] font-black flex items-center gap-0.5">
-                              <Star className="w-2.5 h-2.5 fill-current" />
-                              <span>{c.type === 'merchant' ? 'تاجر VIP' : 'وفي'}</span>
-                            </span>
-                          )}
+                          <span className="font-black text-xs sm:text-sm text-white truncate">
+                            👤 {c.name}
+                          </span>
                           {c.vipRatePerKg && (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono text-[10px] font-black">
-                              {c.vipRatePerKg} {c.vipCurrency || 'MAD'}/kg
+                            <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono text-[10px] font-black">
+                              ⭐ {c.vipRatePerKg} {c.vipCurrency || 'MAD'}/kg
                             </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2 text-[11px] text-white/75 mt-0.5">
                           <span className="font-mono" dir="ltr">
-                            {c.phone || 'بدون رقم'}
+                            📞 {c.phone || 'بدون رقم'}
                           </span>
-                          <span>•</span>
-                          <span>
-                            أرسل: {c.sentCount} | استلم: {c.receivedCount}
-                          </span>
+                          <span>• 📦 {c.sentCount + c.receivedCount}</span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <div className="text-left">
                           {hasDebt ? (
                             <div className="space-y-0.5">
@@ -701,7 +651,7 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                                   className="block font-mono font-black text-xs text-rose-400"
                                   dir="ltr"
                                 >
-                                  كريدي: {hideAmounts ? '••••' : c.unpaidMad} MAD
+                                  {hideAmounts ? '••••' : c.unpaidMad} MAD
                                 </span>
                               )}
                               {c.unpaidMru > 0 && (
@@ -709,13 +659,13 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                                   className="block font-mono font-black text-xs text-amber-300"
                                   dir="ltr"
                                 >
-                                  كريدي: {hideAmounts ? '••••' : c.unpaidMru} MRU
+                                  {hideAmounts ? '••••' : c.unpaidMru} MRU
                                 </span>
                               )}
                             </div>
                           ) : (
-                            <span className="px-2.5 py-1 rounded-full bg-[#006233]/35 border border-[#2ECC71]/40 text-[#2ECC71] font-black text-[10px]">
-                              ✓ خالص
+                            <span className="px-2 py-0.5 rounded-lg bg-[#006233]/35 border border-[#2ECC71]/40 text-[#2ECC71] font-black text-[10px]">
+                              ✅ خالص
                             </span>
                           )}
                         </div>
@@ -727,24 +677,22 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Quick Actions Row */}
-                    <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-white/10 flex-wrap">
+                    {/* Row 2: Quick Action Shortcuts */}
+                    <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-white/10">
                       <button
                         type="button"
                         onClick={() => handleSendWhatsAppStatement(c)}
-                        className="btn-gold flex-1 py-1.5 px-2.5 rounded-xl font-black text-[10px] flex items-center justify-center gap-1"
+                        className="btn-gold flex-1 py-1.5 px-2 rounded-xl font-black text-[10px] flex items-center justify-center gap-1"
                       >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                        <span>كشف واتساب</span>
+                        <span>💬 واتساب</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => handlePrintCustomerStatementPDF(c)}
-                        className="btn-cancel py-1.5 px-2.5 rounded-xl font-bold text-[10px] flex items-center gap-1"
+                        className="btn-cancel py-1.5 px-2 rounded-xl font-black text-[10px] flex items-center gap-1"
                       >
-                        <Printer className="w-3 h-3 text-[#F5C84C]" />
-                        <span>كشف PDF</span>
+                        <span>🖨️ PDF</span>
                       </button>
 
                       <button
@@ -756,9 +704,9 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                           setNewVipRatePerKg(c.vipRatePerKg ? String(c.vipRatePerKg) : '12');
                           setShowAddForm(true);
                         }}
-                        className="btn-cancel py-1.5 px-2.5 rounded-xl font-bold text-[10px]"
+                        className="btn-cancel py-1.5 px-2 rounded-xl font-black text-[10px]"
                       >
-                        ⭐ تسعيرة VIP
+                        ⭐ VIP
                       </button>
 
                       {c.isSaved && c.savedId && (
@@ -777,9 +725,9 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                     {isExpanded && (
                       <div className="pt-2 border-t border-white/15 space-y-2 animate-fadeIn">
                         {c.unpaidParcels.length > 0 && (
-                          <div className="bg-rose-950/40 border border-rose-500/40 rounded-xl p-2.5 space-y-2">
+                          <div className="bg-rose-950/40 border border-rose-500/40 rounded-xl p-2 space-y-1.5">
                             <span className="font-black text-rose-300 block text-[11px]">
-                              الكوليات غير الخالصة بذمة الزبون ({c.unpaidParcels.length}):
+                              ⏳ كوليات كريدي ({c.unpaidParcels.length}):
                             </span>
                             {c.unpaidParcels.map((up) => {
                               const rem = Math.max(
@@ -791,15 +739,12 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                                   key={up.id}
                                   className="bg-black/50 p-2 rounded-xl border border-white/10 flex items-center justify-between gap-2"
                                 >
-                                  <div>
-                                    <span className="font-mono font-bold text-[#F5C84C]">
-                                      #{up.parcel_number} ({up.tracking_code})
+                                  <div className="min-w-0">
+                                    <span className="font-mono font-bold text-[#F5C84C] text-[11px]">
+                                      #{up.parcel_number} • {up.description}
                                     </span>
-                                    <span className="block text-[10px] text-white/75">
-                                      {up.description} — المتبقي:{' '}
-                                      <strong className="text-rose-300 font-mono">
-                                        {hideAmounts ? '••••' : rem} {up.currency}
-                                      </strong>
+                                    <span className="block text-[10px] text-rose-300 font-mono">
+                                      المتبقي: {hideAmounts ? '••••' : rem} {up.currency}
                                     </span>
                                   </div>
                                   <button
@@ -808,9 +753,7 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                                     onClick={() => handleSettleParcelDebt(up, c.name)}
                                     className="btn-gold px-2.5 py-1.5 rounded-xl font-black text-[10px] shrink-0"
                                   >
-                                    {payingParcelId === up.id
-                                      ? 'جاري التسجيل...'
-                                      : `تصفية الآن (${rem} ${up.currency})`}
+                                    {payingParcelId === up.id ? '...' : `✅ تصفية`}
                                   </button>
                                 </div>
                               );
@@ -818,10 +761,7 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                           </div>
                         )}
 
-                        <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                          <span className="text-[10px] text-white/70 font-bold block">
-                            سجل كوليات الزبون ({c.allParcels.length}):
-                          </span>
+                        <div className="space-y-1 max-h-36 overflow-y-auto">
                           {c.allParcels.slice(0, 10).map((p) => {
                             const rem = Math.max(
                               0,
@@ -830,21 +770,21 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                             return (
                               <div
                                 key={p.id}
-                                className="p-2 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between text-[11px]"
+                                className="p-1.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between text-[11px]"
                               >
-                                <div>
+                                <div className="truncate">
                                   <span className="font-mono font-bold text-white">
                                     #{p.parcel_number}
                                   </span>{' '}
                                   <span className="text-white/80">— {p.description}</span>
                                 </div>
                                 <span
-                                  className={`font-mono font-bold ${
+                                  className={`font-mono font-bold shrink-0 ${
                                     rem > 0 ? 'text-rose-400' : 'text-[#2ECC71]'
                                   }`}
                                   dir="ltr"
                                 >
-                                  {rem > 0 ? `متبقي ${rem} ${p.currency}` : '✓ خالص'}
+                                  {rem > 0 ? `${rem} ${p.currency}` : '✅ خالص'}
                                 </span>
                               </div>
                             );
@@ -857,17 +797,6 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
               })}
             </div>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="pt-3 border-t border-white/15 flex justify-end shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn-cancel w-full sm:w-auto px-6 py-2.5 rounded-xl font-black text-xs"
-          >
-            إغلاق الدفتر
-          </button>
         </div>
       </div>
     </div>

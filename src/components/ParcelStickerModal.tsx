@@ -1166,11 +1166,13 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
     options.showRouteLine &&
     options.showStampBox;
 
+  const [showParcelsSelector, setShowParcelsSelector] = useState(false);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+
   const modalContent = (
     <div
       id="parcel-sticker-portal-root"
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-fadeIn"
-      dir="rtl"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-1 sm:p-2 bg-black/80 backdrop-blur-md overflow-y-auto overflow-x-hidden animate-fadeIn"
     >
       {/* الإطار المخفي المخصص لطباعة دفعة الملصقات بالكامل */}
       <iframe
@@ -1194,51 +1196,125 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
       {/* نافذة الطابعة الحرارية بتصميم التطبيق الفاخر (.luxury-card) ومتوافقة 100% مع شاشة الهاتف */}
       <div
         id="parcel-sticker-dialog-card"
-        className="relative z-10 w-full max-w-[435px] max-h-[93vh] luxury-card rounded-[28px] shadow-2xl text-right flex flex-col overflow-hidden border border-[#F5C84C]/45"
+        dir="rtl"
+        className="relative z-10 w-[calc(100%-8px)] max-w-[420px] max-h-[95vh] luxury-card rounded-[22px] shadow-2xl text-right flex flex-col overflow-hidden border-2 border-[#D4AF37]/65 my-auto"
         onClick={e => e.stopPropagation()}
       >
-        {/* الرأس العلوي */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/15 bg-black/55 shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-[#F5C84C]/20 text-[#F5C84C] flex items-center justify-center font-bold border border-[#F5C84C]/40 shrink-0">
-              <Printer className="w-5 h-5 text-[#F5C84C]" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm font-black text-white truncate">طباعة الملصقات الحرارية</h3>
-              <p className="text-[10px] text-white/75 truncate">
-                معاينة حية وتحكم كامل في المقاس والباركود والمحتوى
-              </p>
-            </div>
+        {/* الرأس العلوي المختصر */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-white/15 bg-black/55 shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-base">🖨️</span>
+            <h3 className="text-xs sm:text-sm font-black text-white truncate">
+              طباعة الملصق الحراري ({totalStickersCount} ملصق)
+            </h3>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="gold-pill px-2.5 py-1 text-[11px] font-black">
-              {totalStickersCount} ملصق
-            </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-cancel p-1.5 rounded-xl transition shrink-0"
+            aria-label="إغلاق"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* شريط الطباعة الفورية والإعدادات السريعة في الأعلى بدون أي سكرول */}
+        <div className="p-2.5 bg-black/65 border-b border-white/15 space-y-2 shrink-0">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={onClose}
-              className="btn-cancel p-2 rounded-xl transition"
-              aria-label="إغلاق"
+              disabled={totalStickersCount === 0 || isPreparingPrint}
+              onClick={handlePrintButtonClick}
+              className="btn-gold flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl disabled:opacity-50 font-black text-xs sm:text-sm transition active:scale-95 shadow-md"
             >
-              <X className="w-4 h-4" />
+              <Printer className="w-4 h-4 stroke-[2.5]" />
+              <span>🖨️ طباعة الآن ({totalStickersCount} ملصق)</span>
+            </button>
+
+            {batchPrintReadyUrl && (
+              <a
+                href={batchPrintReadyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="فتح في تبويب جديد"
+                className="btn-cancel flex items-center justify-center gap-1 py-2.5 px-2.5 rounded-xl font-black text-xs transition shrink-0"
+              >
+                <ExternalLink className="w-4 h-4 text-[#F5C84C]" />
+                <span>تبويب</span>
+              </a>
+            )}
+          </div>
+
+          {/* أزرار سريعة في سطر واحد: عدد النسخ + المقاس + تحديد الكوليات + الإعدادات */}
+          <div className="grid grid-cols-4 gap-1 items-center">
+            {/* عدد النسخ */}
+            <div className="flex items-center justify-between px-1.5 py-1 rounded-xl bg-black/60 border border-[#F5C84C]/40">
+              <button
+                type="button"
+                onClick={() => setCopiesPerParcel(c => Math.max(1, c - 1))}
+                className="w-4 h-4 rounded bg-white/10 text-white font-black text-xs flex items-center justify-center"
+              >
+                -
+              </button>
+              <span className="text-[11px] font-mono font-black text-[#F5C84C]">{copiesPerParcel}نسخ</span>
+              <button
+                type="button"
+                onClick={() => setCopiesPerParcel(c => Math.min(200, c + 1))}
+                className="w-4 h-4 rounded bg-[#F5C84C]/30 text-white font-black text-xs flex items-center justify-center"
+              >
+                +
+              </button>
+            </div>
+
+            {/* تبديل المقاس السريع */}
+            <button
+              type="button"
+              onClick={() =>
+                setOptions(o => ({
+                  ...o,
+                  paperFormat: o.paperFormat === '100x100' ? 'a4_4up' : '100x100',
+                }))
+              }
+              className="py-1.5 px-1.5 rounded-xl btn-cancel text-[10px] font-black truncate text-center"
+            >
+              📏 {options.paperFormat === '100x100' ? '100×100' : 'ورقة A4'}
+            </button>
+
+            {/* زر فتح/طي تحديد الكوليات */}
+            <button
+              type="button"
+              onClick={() => setShowParcelsSelector(prev => !prev)}
+              className={`py-1.5 px-1.5 rounded-xl text-[10px] font-black truncate text-center ${
+                showParcelsSelector ? 'btn-gold' : 'btn-cancel'
+              }`}
+            >
+              📦 كوليات ({selectedParcels.length})
+            </button>
+
+            {/* زر فتح/طي خيارات الملصق */}
+            <button
+              type="button"
+              onClick={() => setShowAdvancedOptions(prev => !prev)}
+              className={`py-1.5 px-1.5 rounded-xl text-[10px] font-black truncate text-center ${
+                showAdvancedOptions ? 'btn-gold' : 'btn-cancel'
+              }`}
+            >
+              ⚙️ الخيارات
             </button>
           </div>
         </div>
 
-        {/* الجسم الرئيسي القابل للتمرير بنسق التطبيق المحمول */}
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5">
+        {/* الجسم الرئيسي المختصر بدون سكرول طويل */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-2.5 space-y-2.5">
           {/* ================================================================= */}
-          {/* 1. المعاينة الحية للملصق الحراري (أسود على أبيض واضح 100%)        */}
+          {/* 1. المعاينة الحية المصغرة للملصق الحراري (تظهر كاملة بلا سكرول)   */}
           {/* ================================================================= */}
-          <div className="bg-black/60 border border-[#F5C84C]/35 rounded-2xl p-3 space-y-2.5">
-            <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2">
-              <div className="flex items-center gap-1.5">
-                <Printer className="w-4 h-4 text-[#F5C84C]" />
-                <span className="text-xs font-black text-white">
-                  المعاينة الحية ({totalStickersCount} ملصق)
-                </span>
-              </div>
+          <div className="bg-black/60 border border-[#F5C84C]/35 rounded-2xl p-2 space-y-1.5">
+            <div className="flex items-center justify-between gap-2 px-1">
+              <span className="text-[11px] font-black text-white flex items-center gap-1">
+                👁️ معاينة الملصق ({totalStickersCount})
+              </span>
               <span className="text-[10px] font-mono text-[#F5C84C] bg-[#F5C84C]/15 px-2 py-0.5 rounded-lg border border-[#F5C84C]/30">
                 {options.paperFormat === '100x100'
                   ? '100×100 مم'
@@ -1249,52 +1325,50 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
             </div>
 
             {expandedStickers.length === 0 ? (
-              <div className="py-8 text-center space-y-1.5 text-white/70">
-                <Printer className="w-8 h-8 text-[#F5C84C]/60 mx-auto" />
+              <div className="py-4 text-center space-y-1 text-white/70">
                 <p className="text-xs font-black text-white">لم يتم تحديد أي كولي للطباعة</p>
-                <p className="text-[10px] text-white/70">
-                  اختر كولياً واحداً أو أكثر من قسم التحديد بالأسفل
-                </p>
               </div>
             ) : (
-              <div className="max-h-[340px] overflow-y-auto space-y-3 py-1">
+              <div className="max-h-[210px] overflow-y-auto overflow-x-hidden space-y-2">
                 {expandedStickers.slice(0, 20).map((item, idx) => (
-                  <div key={`${item.id}-copy-${idx}`} className="flex flex-col items-center gap-1">
-                    <span className="text-[10px] font-mono text-[#F5C84C] font-bold">
-                      ملصق {idx + 1} من {totalStickersCount} — كولي #{item.parcel_number}
+                  <div key={`${item.id}-copy-${idx}`} className="flex flex-col items-center">
+                    <span className="text-[10px] font-mono text-[#F5C84C] font-bold mb-0.5">
+                      ملصق {idx + 1}/{totalStickersCount} — #{item.parcel_number}
                     </span>
-                    <div
-                      className="shadow-2xl max-w-full overflow-x-auto flex justify-center"
-                      dangerouslySetInnerHTML={{
-                        __html: buildSingleStickerHtml(
-                          item,
-                          qrMap[item.tracking_code] || '',
-                          options,
-                          previewDimensions,
-                          effectiveBranding
-                        ),
-                      }}
-                    />
+                    <div className="w-full h-[185px] flex items-center justify-center overflow-hidden">
+                      <div
+                        className="shadow-xl flex justify-center shrink-0"
+                        style={{
+                          transform: 'scale(0.55)',
+                          transformOrigin: 'center center',
+                        }}
+                        dangerouslySetInnerHTML={{
+                          __html: buildSingleStickerHtml(
+                            item,
+                            qrMap[item.tracking_code] || '',
+                            options,
+                            previewDimensions,
+                            effectiveBranding
+                          ),
+                        }}
+                      />
+                    </div>
                   </div>
                 ))}
-                {expandedStickers.length > 20 && (
-                  <div className="text-center py-2 px-3 text-[11px] text-[#F5C84C] bg-[#F5C84C]/15 rounded-xl border border-[#F5C84C]/30 font-bold">
-                    يتم عرض أول 20 ملصقاً في المعاينة — عند الضغط على «طباعة الآن» سيتم طباعة جميع الـ {totalStickersCount} ملصق بالكامل.
-                  </div>
-                )}
               </div>
             )}
           </div>
 
           {/* ================================================================= */}
-          {/* 2. قسم تحديد الكوليات + جميع كوليات هذا المرسل                    */}
+          {/* 2. قسم تحديد الكوليات (مخفي افتراضياً ويفتح بزر 📦 كوليات)        */}
           {/* ================================================================= */}
-          <div className="bg-black/55 border border-white/15 rounded-2xl p-3 space-y-2.5">
+          {showParcelsSelector && (
+          <div className="bg-black/55 border border-white/15 rounded-2xl p-2.5 space-y-2 animate-fadeIn">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-black text-[#F5C84C] flex items-center gap-1.5">
                 <CheckSquare className="w-4 h-4" />
                 <span>
-                  1. تحديد الكوليات ({selectedParcels.length} من {availableParcels.length})
+                  تحديد الكوليات ({selectedParcels.length} من {availableParcels.length})
                 </span>
               </span>
 
@@ -1399,59 +1473,16 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
               )}
             </div>
           </div>
+          )}
 
           {/* ================================================================= */}
-          {/* 3. عدد النسخ لكل كولي (COPIES)                                   */}
+          {/* 3. خيارات المقاس والباركود والمحتوى (تفتح بزر ⚙️ الخيارات)        */}
           {/* ================================================================= */}
-          <div className="bg-black/55 border border-white/15 rounded-2xl p-3 flex items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-black text-[#F5C84C] block">
-                2. عدد النسخ لكل كولي
-              </span>
-              <span className="text-[10px] text-white/75">
-                يُطبع هذا العدد من الملصقات لكل كولي محدد
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCopiesPerParcel(c => Math.max(1, c - 1))}
-                className="btn-cancel w-9 h-9 rounded-xl flex items-center justify-center transition active:scale-95"
-                aria-label="إنقاص عدد النسخ"
-              >
-                <Minus className="w-4 h-4" />
-              </button>
-
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={copiesPerParcel}
-                onChange={e =>
-                  setCopiesPerParcel(Math.max(1, Math.min(200, Number(e.target.value) || 1)))
-                }
-                className="w-14 text-center bg-black/70 border border-[#F5C84C]/50 rounded-xl py-1.5 text-sm font-mono font-black text-[#F5C84C] focus:outline-none"
-              />
-
-              <button
-                type="button"
-                onClick={() => setCopiesPerParcel(c => Math.min(200, c + 1))}
-                className="btn-gold w-9 h-9 rounded-xl flex items-center justify-center font-bold transition active:scale-95"
-                aria-label="زيادة عدد النسخ"
-              >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-              </button>
-            </div>
-          </div>
-
-          {/* ================================================================= */}
-          {/* 4. مقاس الورق، نوع الكود، والتحكم الكامل في محتوى الملصق           */}
-          {/* ================================================================= */}
-          <div className="bg-black/55 border border-white/15 rounded-2xl p-3 space-y-3 text-xs">
+          {showAdvancedOptions && (
+          <div className="bg-black/55 border border-white/15 rounded-2xl p-2.5 space-y-2.5 text-xs animate-fadeIn">
             <div className="flex items-center gap-1.5 text-[#F5C84C] font-black">
               <Settings2 className="w-4 h-4" />
-              <span>3. خيارات المقاس والباركود والمحتوى (تُحفظ تلقائياً)</span>
+              <span>خيارات المقاس والباركود والمحتوى (تُحفظ تلقائياً)</span>
             </div>
 
             {/* حجم الورق */}
@@ -1773,6 +1804,7 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* ================================================================= */}

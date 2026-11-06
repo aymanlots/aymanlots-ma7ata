@@ -280,12 +280,7 @@ export const DailyFinancialReportModal: React.FC<DailyFinancialReportModalProps>
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-[24px] p-4 sm:p-5 shadow-2xl text-right overflow-hidden relative my-4 max-h-[92vh] flex flex-col"
-        style={{
-          background: 'rgba(0, 0, 0, 0.55)',
-          border: '1px solid rgba(255, 255, 255, 0.18)',
-          boxShadow: '0 12px 35px rgba(0, 0, 0, 0.85)',
-        }}
+        className="w-[calc(100%-8px)] max-w-[420px] rounded-[22px] luxury-card border-2 border-[#D4AF37]/65 p-3 sm:p-4 shadow-2xl text-right overflow-hidden relative my-auto max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Fixed Top Header with Arabic Title & Always-Visible Close Button (X) */}
