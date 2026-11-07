@@ -76,6 +76,188 @@ const MainApp: React.FC = () => {
     }
   }, []);
 
+  // Universal Semantic Button & Active-State Classifier
+  // 1) Applies data-btn-role="add" | "remove" | "info" to every <button>
+  // 2) Applies data-btn-active="true" | "false" to all multi-choice / tab / filter / toggle groups
+  useEffect(() => {
+    const isChoiceButtonActiveByClass = (btn: HTMLButtonElement): boolean => {
+      const cls = btn.className || '';
+      return (
+        btn.classList.contains('btn-gold') ||
+        cls.includes('from-[#F5B05B]') ||
+        cls.includes('bg-[#F5C84C]') ||
+        cls.includes('bg-amber-400') ||
+        cls.includes('bg-amber-500') ||
+        cls.includes('bg-emerald-500') ||
+        cls.includes('bg-purple-500') ||
+        cls.includes('bg-rose-500') ||
+        cls.includes('border-amber-500') ||
+        cls.includes('border-emerald-500') ||
+        cls.includes('border-rose-500')
+      );
+    };
+
+    const classifyButtonRole = (btn: HTMLButtonElement): 'add' | 'remove' | 'info' => {
+      if (btn.dataset.btnRoleFixed === 'true' && btn.dataset.btnRole) {
+        return btn.dataset.btnRole as 'add' | 'remove' | 'info';
+      }
+
+      const rawText = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+      const metaText = (
+        (btn.getAttribute('title') || '') +
+        ' ' +
+        (btn.getAttribute('aria-label') || '')
+      )
+        .replace(/\s+/g, ' ')
+        .trim();
+      const fullText = `${rawText} ${metaText}`.trim();
+
+      // 1. Explicit special cases
+      if (/عملية فلاكيس/.test(rawText)) return 'add';
+      if (/حوالة خارجة/.test(fullText)) return 'remove';
+      if (/حوالة داخلة/.test(fullText)) return 'add';
+      if (/الشراكة|شراكة/.test(fullText) && !/سلعة/.test(rawText)) return 'add';
+      if (/صرف عملة|صرف العملة/.test(fullText) && !/تأكيد|تاكيد|حفظ/.test(rawText)) {
+        return 'info';
+      }
+      if (
+        /^📋|سجل عمليات|سجل كوليات|سجل رحلات|سجل التتبع|سجل إقفالات|تتبع شحنة|سجل الحوالات|كل الحوالات|البحث|فلاتر|فلتر|تفاصيل|تعديل|عرض|سجل العمليات|إدارة|الصناديق|الرئيسية|الطرود|الكوليات|الإعدادات|العين|القائمة|وضع الليل|وضع النهار|^🌙|^☀️/.test(
+          rawText
+        ) &&
+        !/تأكيد|تاكيد|حفظ|\+|➕/.test(rawText)
+      ) {
+        return 'info';
+      }
+
+      // 2. Subtract / Exit / Delete / Cancel -> Red #C1272D
+      if (
+        btn.classList.contains('btn-delete') ||
+        /سحب|حذف|إلغاء|الغاء|حوالة خارجة|رفض|خروج|إغلاق|اغلاق|تراجع|توقيف|تعليق|إرجاع|ارجاع|📦\s*سلع|ثمن السلع|رصيد سالب/.test(
+          fullText
+        ) ||
+        (/^مسح/.test(rawText) && !/باركود|كود|متتالي|فردي/.test(fullText))
+      ) {
+        return 'remove';
+      }
+
+      if (
+        rawText === '' &&
+        btn.querySelector(
+          '.lucide-x, .lucide-trash-2, .lucide-trash, .lucide-log-out, .lucide-minus'
+        )
+      ) {
+        return 'remove';
+      }
+
+      // 3. Add / Enter / Confirm -> Green #006233
+      if (
+        btn.classList.contains('btn-add') ||
+        /\+|➕|إضافة|اضافة|أضف|جديد|إيداع|ايداع|زيادة|قبض|حوالة|الشراكة|شراكة|تأكيد|تاكيد|حفظ|تسليم|تم التسليم|تم الاستلام|استلام|وصل|للستوك|قبول|شحن|إنشاء|انشاء|إرسال|ارسال|تفعيل|تسجيل الدخول|دخول مباشر|متابعة|إتمام|موافق/.test(
+          rawText
+        )
+      ) {
+        // Exception: choice toggle buttons like "مستلم واحد / عدة مستلمين" or "المرسل / المستلم" are info toggles, not confirm actions
+        if (!/مستلم واحد|عدة مستلمين|عند الاستلام|خالص/.test(rawText)) {
+          return 'add';
+        }
+      }
+
+      if (rawText === '' && btn.querySelector('.lucide-plus, .lucide-check')) {
+        return 'add';
+      }
+
+      // 4. Everything else (Info / Search / Browse / Navigation / Filters / Toggles) -> Blue #1565C0 in Day, Black #111111 + Gold #D4AF37 in Night
+      return 'info';
+    };
+
+    const applyButtonRolesAndActiveState = () => {
+      const buttons = document.querySelectorAll<HTMLButtonElement>('button');
+      const visitedParents = new Set<HTMLElement>();
+
+      buttons.forEach((btn) => {
+        const role = classifyButtonRole(btn);
+        if (btn.getAttribute('data-btn-role') !== role) {
+          btn.setAttribute('data-btn-role', role);
+        }
+
+        const rawText = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+        const isLargePrimaryAction =
+          btn.getAttribute('type') === 'submit' ||
+          btn.classList.contains('btn-hero-action') ||
+          /\+\s*إيداع|➕\s*إيداع|\+\s*زيادة|−\s*سحب|➖\s*سحب|-\s*سحب|تسجيل كولي جديد|كولي جديد|عملية فلاكيس|إضافة محطة|تسجيل الدخول|إنشاء حساب|تأكيد وإرسال|حفظ ونشر|تأكيد العملية|اعتماد وحفظ|حوالة داخلة|حوالة خارجة|سجل العمليات|سجل عمليات|سجل الحوالات/.test(
+            rawText
+          );
+
+        if (isLargePrimaryAction) {
+          if (btn.getAttribute('data-btn-size') !== 'large') {
+            btn.setAttribute('data-btn-size', 'large');
+          }
+        } else if (btn.hasAttribute('data-btn-size')) {
+          btn.removeAttribute('data-btn-size');
+        }
+
+        const parent = btn.parentElement;
+        if (parent && !visitedParents.has(parent)) {
+          visitedParents.add(parent);
+          const directButtons = Array.from(parent.children).filter(
+            (el): el is HTMLButtonElement =>
+              el instanceof HTMLButtonElement && el.dataset.btnActiveFixed !== 'true'
+          );
+
+          if (directButtons.length >= 2) {
+            const hasFormSubmitOrCancel = directButtons.some((b) => {
+              const txt = (b.textContent || '').replace(/\s+/g, ' ').trim();
+              return (
+                b.getAttribute('type') === 'submit' ||
+                /إلغاء|الغاء|إغلاق|اغلاق|تراجع|رجوع|حذف|خروج|تصفير|إعادة ضبط|طباعة|واتساب|PDF/.test(
+                  txt
+                )
+              );
+            });
+
+            if (!hasFormSubmitOrCancel) {
+              const activeFlags = directButtons.map((b) => isChoiceButtonActiveByClass(b));
+              const activeCount = activeFlags.filter(Boolean).length;
+
+              if (activeCount >= 1 && activeCount < directButtons.length) {
+                directButtons.forEach((b, idx) => {
+                  const targetVal = activeFlags[idx] ? 'true' : 'false';
+                  if (b.getAttribute('data-btn-active') !== targetVal) {
+                    b.setAttribute('data-btn-active', targetVal);
+                  }
+                });
+                return;
+              }
+            }
+
+            // Not a toggle/choice group with active/inactive split -> clear auto data-btn-active
+            directButtons.forEach((b) => {
+              if (b.hasAttribute('data-btn-active')) {
+                b.removeAttribute('data-btn-active');
+              }
+            });
+          }
+        }
+      });
+    };
+
+    applyButtonRolesAndActiveState();
+
+    const observer = new MutationObserver(() => {
+      applyButtonRolesAndActiveState();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    return () => observer.disconnect();
+  }, [themeMode]);
+
   // Launch Guided Tour strictly ONCE for new manager accounts - never repeats automatically
   useEffect(() => {
     if (!currentUser || !currentWorkspace) return;
@@ -127,7 +309,7 @@ const MainApp: React.FC = () => {
     );
   };
 
-  // If user is not logged in, prompt Auth modal (plus Public Tracking modal if open)
+  // If user is not logged in, prompt Auth modal over the visible Desert Background
   if (!currentUser) {
     return (
       <div
@@ -137,7 +319,13 @@ const MainApp: React.FC = () => {
         dir={dir}
       >
         {renderDesertFrameBackground()}
-        <div className="w-full max-w-[430px] min-h-screen relative z-10 flex items-center justify-center p-2">
+        <div
+          className={`w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
+            themeMode === 'dark'
+              ? 'text-[#FFF8EB] border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)]'
+              : 'bg-transparent text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
+          }`}
+        >
           <AuthModal
             isOpen={true}
             onOpenPublicTracking={() => setShowPublicTracking(true)}
@@ -153,7 +341,7 @@ const MainApp: React.FC = () => {
     );
   }
 
-  // If user has no workspace, prompt Onboarding modal
+  // If user has no workspace, prompt Onboarding modal over the visible Desert Background
   if (!currentWorkspace) {
     return (
       <div
@@ -163,7 +351,13 @@ const MainApp: React.FC = () => {
         dir={dir}
       >
         {renderDesertFrameBackground()}
-        <div className="w-full max-w-[430px] min-h-screen relative z-10 flex items-center justify-center p-2">
+        <div
+          className={`w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
+            themeMode === 'dark'
+              ? 'text-[#FFF8EB] border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)]'
+              : 'bg-transparent text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
+          }`}
+        >
           <OnboardingModal isOpen={true} />
           <Toast />
         </div>

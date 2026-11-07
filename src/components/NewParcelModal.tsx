@@ -677,24 +677,24 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-2 bg-black/80 backdrop-blur-md animate-fadeIn overflow-y-auto overflow-x-hidden"
+      className="fixed inset-0 z-50 flex justify-center items-stretch p-0 m-0 bg-black/85 backdrop-blur-md animate-fadeIn overflow-hidden"
       onClick={onClose}
     >
       <div
         dir="rtl"
-        className="w-[calc(100%-8px)] max-w-[420px] rounded-[22px] luxury-card border-2 border-[#D4AF37]/65 p-2.5 sm:p-3 shadow-2xl text-right overflow-x-hidden overflow-y-auto relative z-10 my-auto space-y-2.5 max-h-[96vh] flex flex-col"
+        className="w-full max-w-[430px] h-[100dvh] min-h-[100dvh] max-h-[100dvh] rounded-none luxury-card border-x-2 border-y-0 border-[#D4AF37]/65 p-2.5 shadow-2xl text-right overflow-hidden relative z-10 m-0 flex flex-col justify-between"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Compact Header: Title + Mode Switcher + Close on ONE Row */}
-        <div className="flex items-center justify-between gap-2 border-b border-[#D4AF37]/30 pb-2 shrink-0">
+        <div className="flex items-center justify-between gap-2 border-b border-[#D4AF37]/30 pb-1.5 shrink-0">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-xl leading-none">📦</span>
+            <span className="text-lg leading-none">📦</span>
             <h2 className="text-sm sm:text-base font-black text-[#F5D799] truncate">
               تسجيل كولي جديد
             </h2>
             <HelpPopover
               title="تسجيل الكوليات"
-              text="اليمين: محطة الانطلاق + المرسل. اليسار: محطة الوصول + المستلم. لتحت: العدد + الوصف + الثمن + زر التسجيل والطباعة."
+              text="الخانات مستفين وحدة تحت وحدة بلا سكرول: محطة الانطلاق، المرسل، محطة الوصول، المستلم، البضاعة، الثمن، وزر التسجيل والطباعة."
             />
           </div>
 
@@ -721,7 +721,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="إغلاق"
-              className="btn-cancel p-1.5 rounded-xl"
+              className="btn-delete p-1.5 rounded-xl"
             >
               <X className="w-4 h-4" />
             </button>
@@ -729,11 +729,11 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
         </div>
 
         {registrationMode === 'multi' && (
-          <div className="grid grid-cols-2 gap-2 shrink-0 animate-fadeIn">
+          <div className="grid grid-cols-2 gap-1.5 pt-1 shrink-0 animate-fadeIn">
             <button
               type="button"
               onClick={() => setMultiSubMode('one_receiver')}
-              className={`py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition ${
+              className={`py-1.5 px-2 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition ${
                 multiSubMode === 'one_receiver' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
@@ -742,7 +742,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <button
               type="button"
               onClick={() => setMultiSubMode('multi_receivers')}
-              className={`py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition ${
+              className={`py-1.5 px-2 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition ${
                 multiSubMode === 'multi_receivers' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
@@ -753,322 +753,315 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
         {/* Error message */}
         {errorMessage && (
-          <div className="bg-rose-950/60 border border-rose-500/40 p-2 rounded-xl text-xs text-rose-300 flex items-center gap-2 font-black shrink-0">
+          <div className="bg-rose-950/60 border border-rose-500/40 p-1.5 rounded-xl text-xs text-rose-300 flex items-center gap-1.5 font-black shrink-0 mt-1">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMessage}</span>
+            <span className="truncate">{errorMessage}</span>
           </div>
         )}
 
-        {/* Form Body — Zero Horizontal Overflow */}
-        <form onSubmit={handleSubmit} className="space-y-2.5 overflow-y-auto overflow-x-hidden text-xs sm:text-sm flex-1 min-w-0">
-          {/* =====================================================================
-              جوج أعمدة: المرسل فاليمين (فوقو محطتو) | المستلم فاليسار (فوقو محطتو)
-             ===================================================================== */}
-          <div className="grid grid-cols-2 gap-1.5 sm:gap-2 items-stretch min-w-0">
-            {/* RIGHT COLUMN (اليمين): محطة الانطلاق + المرسل */}
-            <div className="bg-[#1a0f00]/80 p-2 rounded-2xl border border-[#D4AF37]/50 space-y-2 flex flex-col justify-between min-w-0 overflow-hidden">
-              <div className="min-w-0">
-                <label className="block text-[#F5D799] font-black text-xs mb-1 truncate">
-                  📍 من محطة (المرسل)
-                </label>
-                <select
-                  value={originStationId}
-                  disabled={userRole === 'worker'}
-                  onChange={(e) => setOriginStationId(e.target.value)}
-                  className="w-full min-w-0 max-w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2.5 text-[#FFF8EB] font-black text-xs focus:outline-none disabled:opacity-70 truncate"
-                  required
-                >
-                  {stations.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.name} ({st.city})
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {/* Form Body — 100% Full Screen Vertical Stack (وحدة تحت وحدة بلا سكرول) */}
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 flex flex-col justify-between gap-1.5 py-1.5 min-h-0 overflow-hidden text-xs sm:text-sm"
+        >
+          {/* 1. محطة الانطلاق */}
+          <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-center shrink-0">
+            <label className="block text-[#F5D799] font-black text-xs mb-1 truncate">
+              📍 من محطة الانطلاق (المرسل)
+            </label>
+            <select
+              value={originStationId}
+              disabled={userRole === 'worker'}
+              onChange={(e) => setOriginStationId(e.target.value)}
+              className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-[#FFF8EB] font-black text-xs focus:outline-none disabled:opacity-70 truncate"
+              required
+            >
+              {stations.map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.name} ({st.city})
+                </option>
+              ))}
+            </select>
+          </div>
 
-              <div className="min-w-0">
-                <span className="font-black text-[#F5D799] block text-xs mb-1 truncate">
-                  👤 المرسل (الاسم + 📞 الهاتف)
-                </span>
-                <div className="grid grid-cols-2 gap-1 min-w-0">
-                  <input
-                    type="text"
-                    placeholder="👤 الاسم *"
-                    required
-                    value={senderName}
-                    onChange={(e) => setSenderName(e.target.value)}
-                    className="w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2.5 text-white font-black text-xs focus:outline-none"
-                  />
-                  <input
-                    type="tel"
-                    placeholder="📞 الهاتف *"
-                    required
-                    value={senderPhone}
-                    onChange={(e) => setSenderPhone(e.target.value)}
-                    dir="ltr"
-                    className="w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2.5 text-white font-mono font-black text-xs focus:outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* LEFT COLUMN (اليسار): محطة الوصول + المستلم */}
-            <div className="bg-[#1a0f00]/80 p-2 rounded-2xl border border-[#D4AF37]/50 space-y-2 flex flex-col justify-between min-w-0 overflow-hidden">
-              <div className="min-w-0">
-                <div className="flex items-center justify-between gap-1 mb-1 min-w-0">
-                  <label className="block text-[#F5D799] font-black text-xs truncate">
-                    📍 إلى محطة (المستلم)
-                  </label>
-                  {selectedPartnerDest && (
-                    <span className="px-1 py-0.5 rounded bg-purple-950/80 border border-purple-400/50 text-purple-200 text-[9px] font-black truncate max-w-[65px] shrink-0">
-                      🤝 شريك
-                    </span>
-                  )}
-                </div>
-                <select
-                  value={destinationStationId}
-                  onChange={(e) => {
-                    const newDest = e.target.value;
-                    setDestinationStationId(newDest);
-                    setMultiItems((prev) =>
-                      prev.map((it) => ({ ...it, destinationStationId: newDest }))
-                    );
-                  }}
-                  className="w-full min-w-0 max-w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2.5 text-[#FFF8EB] font-black text-xs focus:outline-none truncate"
-                  required
-                >
-                  {stations.length > 0 && (
-                    <optgroup label="🏠 محطاتنا">
-                      {stations.map((st) => (
-                        <option key={st.id} value={st.id}>
-                          🏠 {st.name} ({st.city})
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {partnerDestinationStations.length > 0 && (
-                    <optgroup label="🤝 محطات الشركاء">
-                      {partnerDestinationStations.map((pst) => (
-                        <option key={pst.id} value={pst.id}>
-                          🤝 {pst.name} ({pst.city})
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-              </div>
-
-              {registrationMode === 'single' || multiSubMode === 'one_receiver' ? (
-                <div className="min-w-0">
-                  <span className="font-black text-[#E6C37A] block text-xs mb-1 truncate">
-                    👤 المستلم (الاسم + 📞 الهاتف)
-                  </span>
-                  <div className="grid grid-cols-2 gap-1 min-w-0">
-                    <input
-                      type="text"
-                      placeholder="👤 الاسم *"
-                      required
-                      value={receiverName}
-                      onChange={(e) => setReceiverName(e.target.value)}
-                      className="w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2.5 text-white font-black text-xs focus:outline-none"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="📞 الهاتف *"
-                      required
-                      value={receiverPhone}
-                      onChange={(e) => setReceiverPhone(e.target.value)}
-                      dir="ltr"
-                      className="w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2.5 text-white font-mono font-black text-xs focus:outline-none"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="text-xs font-black text-[#E6C37A] py-2 text-center">
-                  👥 كل كولية لتحت عندها مستلم ديالها
-                </div>
-              )}
+          {/* 2. بيانات المرسل */}
+          <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-center shrink-0">
+            <span className="font-black text-[#F5D799] block text-xs mb-1 truncate">
+              👤 المرسل (الاسم + 📞 الهاتف)
+            </span>
+            <div className="grid grid-cols-2 gap-1.5">
+              <input
+                type="text"
+                placeholder="👤 اسم المرسل *"
+                required
+                value={senderName}
+                onChange={(e) => setSenderName(e.target.value)}
+                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-white font-black text-xs focus:outline-none"
+              />
+              <input
+                type="tel"
+                placeholder="📞 هاتف المرسل *"
+                required
+                value={senderPhone}
+                onChange={(e) => setSenderPhone(e.target.value)}
+                dir="ltr"
+                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-white font-mono font-black text-xs focus:outline-none"
+              />
             </div>
           </div>
 
-          {/* =====================================================================
-              لتحت: العدد + الوصف + الثمن + العملة + خالص/كريدي + زر التسجيل والطباعة
-             ===================================================================== */}
-          {registrationMode === 'single' ? (
-            <div className="bg-[#1a0f00]/80 p-2.5 rounded-2xl border border-[#D4AF37]/50 space-y-2 min-w-0 overflow-hidden">
-              <div className="flex items-center justify-between text-xs font-black text-[#F5D799] px-0.5">
-                <span>📦 الكولية + 💰 الفلوس + ✅ التسجيل والطباعة</span>
-                {(parseInt(itemsCount, 10) || 1) > 1 && (
-                  <span className="text-[11px] font-black">
-                    🖨️ {itemsCount} تيكيتات
-                  </span>
-                )}
-              </div>
-
-              {/* Row 1: Count + Description + Price + Currency + Paid/Credit (12-col grid, 0 overflow) */}
-              <div className="grid grid-cols-12 gap-1 items-center min-w-0">
-                {/* 1. العدد */}
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  required
-                  title="شحال من كولية (العدد)"
-                  placeholder="🔢1"
-                  value={itemsCount}
-                  onChange={(e) => setItemsCount(e.target.value)}
-                  className="col-span-2 w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1 py-2.5 text-center text-[#F5C84C] font-mono font-black text-xs focus:outline-none"
-                />
-
-                {/* 2. الوصف */}
-                <input
-                  type="text"
-                  placeholder="📦 الوصف *"
-                  required
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="col-span-4 w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2.5 text-white font-black text-xs focus:outline-none"
-                />
-
-                {/* 3. الثمن */}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  required
-                  placeholder="💰 الثمن"
-                  value={amountDue}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9.]/g, '');
-                    setAutoApplyPrice(false);
-                    handleAmountDueChange(val);
-                  }}
-                  className="col-span-2 w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1 py-2.5 text-center text-white font-mono font-black text-xs focus:outline-none"
-                />
-
-                {/* 4. العملة */}
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="col-span-2 w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-0.5 py-2.5 text-white font-mono font-black text-[11px] focus:outline-none"
-                >
-                  {currencies.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.code}
+          {/* 3. محطة الوصول */}
+          <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-center shrink-0">
+            <div className="flex items-center justify-between gap-1 mb-1">
+              <label className="block text-[#F5D799] font-black text-xs truncate">
+                📍 إلى محطة الوصول (المستلم)
+              </label>
+              {selectedPartnerDest && (
+                <span className="px-1.5 py-0.5 rounded bg-purple-950/80 border border-purple-400/50 text-purple-200 text-[9px] font-black truncate shrink-0">
+                  🤝 شريك
+                </span>
+              )}
+            </div>
+            <select
+              value={destinationStationId}
+              onChange={(e) => {
+                const newDest = e.target.value;
+                setDestinationStationId(newDest);
+                setMultiItems((prev) =>
+                  prev.map((it) => ({ ...it, destinationStationId: newDest }))
+                );
+              }}
+              className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-[#FFF8EB] font-black text-xs focus:outline-none truncate"
+              required
+            >
+              {stations.length > 0 && (
+                <optgroup label="🏠 محطاتنا">
+                  {stations.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      🏠 {st.name} ({st.city})
                     </option>
                   ))}
-                </select>
+                </optgroup>
+              )}
+              {partnerDestinationStations.length > 0 && (
+                <optgroup label="🤝 محطات الشركاء">
+                  {partnerDestinationStations.map((pst) => (
+                    <option key={pst.id} value={pst.id}>
+                      🤝 {pst.name} ({pst.city})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
 
-                {/* 5. خالص / كريدي */}
-                <button
-                  type="button"
-                  onClick={() => handlePayerChange(payer === 'sender' ? 'receiver' : 'sender')}
-                  title="اضغط للتبديل بين خالص وكريدي"
-                  className={`col-span-2 w-full py-2.5 px-1 rounded-xl text-[11px] font-black truncate cursor-pointer ${
-                    payer === 'sender' ? 'btn-gold' : 'btn-cancel'
-                  }`}
-                >
-                  {payer === 'sender' ? '✅خالص' : '⏳كريدي'}
-                </button>
+          {/* 4. بيانات المستلم */}
+          {(registrationMode === 'single' || multiSubMode === 'one_receiver') && (
+            <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-center shrink-0">
+              <span className="font-black text-[#E6C37A] block text-xs mb-1 truncate">
+                👤 المستلم (الاسم + 📞 الهاتف)
+              </span>
+              <div className="grid grid-cols-2 gap-1.5">
+                <input
+                  type="text"
+                  placeholder="👤 اسم المستلم *"
+                  required
+                  value={receiverName}
+                  onChange={(e) => setReceiverName(e.target.value)}
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-white font-black text-xs focus:outline-none"
+                />
+                <input
+                  type="tel"
+                  placeholder="📞 هاتف المستلم *"
+                  required
+                  value={receiverPhone}
+                  onChange={(e) => setReceiverPhone(e.target.value)}
+                  dir="ltr"
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-white font-mono font-black text-xs focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {registrationMode === 'single' ? (
+            <>
+              {/* 5. البضاعة والعدد */}
+              <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-center shrink-0">
+                <div className="flex items-center justify-between text-xs font-black text-[#F5D799] mb-1">
+                  <span>📦 وصف البضاعة + 🔢 العدد</span>
+                  {(parseInt(itemsCount, 10) || 1) > 1 && (
+                    <span className="text-[11px] font-black">🖨️ {itemsCount} تيكيتات</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-12 gap-1.5 items-center">
+                  <input
+                    type="text"
+                    placeholder="📦 وصف البضاعة *"
+                    required
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="col-span-9 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2.5 py-2 text-white font-black text-xs focus:outline-none"
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    required
+                    title="شحال من كولية (العدد)"
+                    placeholder="🔢1"
+                    value={itemsCount}
+                    onChange={(e) => setItemsCount(e.target.value)}
+                    className="col-span-3 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2 text-center text-[#F5C84C] font-mono font-black text-xs focus:outline-none"
+                  />
+                </div>
               </div>
 
-              {/* Row 2: Full-width Confirm & Print Button */}
+              {/* 6. الثمن + العملة + خالص/كريدي */}
+              <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-center shrink-0">
+                <span className="font-black text-[#F5D799] block text-xs mb-1 truncate">
+                  💰 الثمن + 💱 العملة + حالة الخلاص
+                </span>
+                <div className="grid grid-cols-12 gap-1.5 items-center">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    required
+                    placeholder="💰 الثمن"
+                    value={amountDue}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9.]/g, '');
+                      setAutoApplyPrice(false);
+                      handleAmountDueChange(val);
+                    }}
+                    className="col-span-5 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-center text-white font-mono font-black text-xs focus:outline-none"
+                  />
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="col-span-3 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2 text-white font-mono font-black text-xs focus:outline-none"
+                  >
+                    {currencies.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    data-btn-role={payer === 'sender' ? 'add' : 'remove'}
+                    data-btn-role-fixed="true"
+                    onClick={() => handlePayerChange(payer === 'sender' ? 'receiver' : 'sender')}
+                    title="اضغط للتبديل بين خالص وكريدي"
+                    className={`col-span-4 w-full py-2 px-2 rounded-xl text-xs font-black truncate cursor-pointer ${
+                      payer === 'sender' ? 'btn-add' : 'btn-delete'
+                    }`}
+                  >
+                    {payer === 'sender' ? '✅ خالص' : '⏳ كريدي'}
+                  </button>
+                </div>
+              </div>
+
+              {/* 7. زر التسجيل والطباعة الكبير فالتحت */}
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="btn-gold w-full py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow active:scale-[0.98] transition disabled:opacity-50 cursor-pointer"
+                data-btn-role="add"
+                data-btn-role-fixed="true"
+                className="btn-add w-full py-3 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-1.5 shadow disabled:opacity-50 cursor-pointer shrink-0"
               >
                 <span>{isSubmitting ? '⏳ جاري التسجيل...' : '✅ تسجيل الكولية وطباعة الملصق 🖨️'}</span>
               </button>
-            </div>
+            </>
           ) : (
-            /* MULTI-PARCEL COMPACT ROWS + BOTTOM BAR */
-            <div className="space-y-1.5 min-w-0 overflow-hidden">
-              {multiItems.map((item, idx) => (
-                <div
-                  key={item.id}
-                  className="bg-[#1a0f00]/95 p-2 rounded-2xl border border-[#D4AF37]/60 space-y-1.5 min-w-0 overflow-hidden"
-                >
-                  {multiSubMode === 'multi_receivers' && (
-                    <div className="grid grid-cols-2 gap-1 min-w-0">
+            /* MULTI-PARCEL STACKED LIST */
+            <div className="flex-1 flex flex-col justify-between gap-1.5 min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto space-y-1.5 min-h-0">
+                {multiItems.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className="bg-[#1a0f00]/95 p-2 rounded-xl border border-[#D4AF37]/60 space-y-1.5"
+                  >
+                    {multiSubMode === 'multi_receivers' && (
+                      <div className="grid grid-cols-2 gap-1">
+                        <input
+                          type="text"
+                          required
+                          placeholder={`👤 مستلم #${idx + 1} *`}
+                          value={item.receiverName}
+                          onChange={(e) => updateMultiItem(item.id, { receiverName: e.target.value })}
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-1.5 text-white font-black text-xs"
+                        />
+                        <input
+                          type="tel"
+                          required
+                          dir="ltr"
+                          placeholder="📞 الهاتف *"
+                          value={item.receiverPhone}
+                          onChange={(e) => updateMultiItem(item.id, { receiverPhone: e.target.value })}
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-1.5 text-white font-mono font-black text-xs"
+                        />
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-12 gap-1 items-center">
+                      <span className="col-span-1 text-[11px] font-black text-[#F5D799] text-center">
+                        #{idx + 1}
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        placeholder="🔢"
+                        value={item.itemsCount}
+                        onChange={(e) => updateMultiItem(item.id, { itemsCount: e.target.value })}
+                        className="col-span-2 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1 py-1.5 text-white font-mono font-black text-xs text-center"
+                      />
                       <input
                         type="text"
                         required
-                        placeholder={`👤 مستلم #${idx + 1} *`}
-                        value={item.receiverName}
-                        onChange={(e) => updateMultiItem(item.id, { receiverName: e.target.value })}
-                        className="w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-white font-black text-xs"
+                        placeholder="📦 الوصف *"
+                        value={item.description}
+                        onChange={(e) => updateMultiItem(item.id, { description: e.target.value })}
+                        className="col-span-4 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-1.5 text-white font-black text-xs"
                       />
                       <input
-                        type="tel"
-                        required
-                        dir="ltr"
-                        placeholder="📞 الهاتف *"
-                        value={item.receiverPhone}
-                        onChange={(e) => updateMultiItem(item.id, { receiverPhone: e.target.value })}
-                        className="w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-white font-mono font-black text-xs"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="💰 الثمن"
+                        value={item.amountDue}
+                        onChange={(e) => updateMultiItem(item.id, { amountDue: e.target.value })}
+                        className="col-span-2 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1 py-1.5 text-white font-mono font-black text-xs text-center"
                       />
-                    </div>
-                  )}
-
-                  {/* Row for each parcel item */}
-                  <div className="grid grid-cols-12 gap-1 items-center min-w-0">
-                    <span className="col-span-1 text-[11px] font-black text-[#F5D799] text-center">
-                      #{idx + 1}
-                    </span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      placeholder="🔢"
-                      value={item.itemsCount}
-                      onChange={(e) => updateMultiItem(item.id, { itemsCount: e.target.value })}
-                      className="col-span-2 w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1 py-2 text-white font-mono font-black text-xs text-center"
-                    />
-                    <input
-                      type="text"
-                      required
-                      placeholder="📦 الوصف *"
-                      value={item.description}
-                      onChange={(e) => updateMultiItem(item.id, { description: e.target.value })}
-                      className="col-span-4 w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2 text-white font-black text-xs"
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="💰 الثمن"
-                      value={item.amountDue}
-                      onChange={(e) => updateMultiItem(item.id, { amountDue: e.target.value })}
-                      className="col-span-2 w-full min-w-0 bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1 py-2 text-white font-mono font-black text-xs text-center"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateMultiItem(item.id, {
-                          payer: item.payer === 'sender' ? 'receiver' : 'sender',
-                        })
-                      }
-                      className={`col-span-2 py-2 px-1 rounded-xl text-[11px] font-black truncate cursor-pointer ${
-                        item.payer === 'sender' ? 'btn-gold' : 'btn-cancel'
-                      }`}
-                    >
-                      {item.payer === 'sender' ? '✅خالص' : '⏳كريدي'}
-                    </button>
-                    {multiItems.length > 1 && (
                       <button
                         type="button"
-                        onClick={() => handleRemoveMultiItem(item.id)}
-                        className="col-span-1 btn-delete p-1.5 rounded-xl text-xs font-bold flex items-center justify-center"
+                        onClick={() =>
+                          updateMultiItem(item.id, {
+                            payer: item.payer === 'sender' ? 'receiver' : 'sender',
+                          })
+                        }
+                        className={`col-span-2 py-1.5 px-1 rounded-xl text-[11px] font-black truncate cursor-pointer ${
+                          item.payer === 'sender' ? 'btn-add' : 'btn-delete'
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        {item.payer === 'sender' ? '✅خالص' : '⏳كريدي'}
                       </button>
-                    )}
+                      {multiItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMultiItem(item.id)}
+                          className="col-span-1 btn-delete p-1.5 rounded-xl text-xs font-bold flex items-center justify-center"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
 
               {/* Bottom Bar for Multi Mode */}
-              <div className="bg-black/55 p-2 rounded-2xl border border-[#F5C84C]/40 space-y-1.5 min-w-0">
+              <div className="bg-black/55 p-2 rounded-xl border border-[#F5C84C]/40 space-y-1.5 shrink-0">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <input
@@ -1083,7 +1076,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     <button
                       type="button"
                       onClick={handleAddMultiItem}
-                      className="btn-cancel px-2.5 py-1.5 rounded-xl font-black text-xs shrink-0"
+                      className="btn-add px-2.5 py-1.5 rounded-xl font-black text-xs shrink-0"
                     >
                       + زيد كولية
                     </button>
@@ -1097,7 +1090,9 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="btn-gold w-full py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                  data-btn-role="add"
+                  data-btn-role-fixed="true"
+                  className="btn-add w-full py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <span>
                     {isSubmitting ? '⏳ جاري التسجيل...' : `✅ تأكيد وتسجيل (${multiItems.length}) كوليات وطباعة 🖨️`}

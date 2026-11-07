@@ -559,19 +559,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return fallback !== undefined ? fallback : key;
   };
 
-  // Theme Mode: Light Mode ('light') is the default on first visit; Dark Mode ('dark') preserved intact
+  // Theme Mode: Dark Mode ('dark') is the default on first visit
   const [themeMode, setThemeModeState] = useState<'light' | 'dark'>(() => {
     try {
-      const saved = localStorage.getItem('sahara_theme_mode_v2');
+      const saved = localStorage.getItem('sahara_theme_mode_v3');
       if (saved === 'dark' || saved === 'light') return saved;
     } catch {}
-    return 'light';
+    return 'dark';
   });
 
   const setThemeMode = useCallback((mode: 'light' | 'dark') => {
     setThemeModeState(mode);
     try {
-      localStorage.setItem('sahara_theme_mode_v2', mode);
+      localStorage.setItem('sahara_theme_mode_v3', mode);
     } catch {}
   }, []);
 
@@ -579,7 +579,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setThemeModeState((prev) => {
       const next = prev === 'light' ? 'dark' : 'light';
       try {
-        localStorage.setItem('sahara_theme_mode_v2', next);
+        localStorage.setItem('sahara_theme_mode_v3', next);
       } catch {}
       return next;
     });
@@ -5362,10 +5362,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: msg };
     }
 
-    // قيد صارم لصلاحية التحكم في الوصول والتسليم (المشكل 1 + المشكل 2 + المشكل 4):
-    // 1. إذا كانت الكولية مرسلة لشريك آخر في غرفة الشراكة، المرسل لا يملك الحق في تأكيد وصولها أو تسليمها نهائياً!
-    // 2. إذا كانت واردة من شريك، يجب قبولها أولاً قبل إدخالها للستوك أو تسليمها.
-    // 3. العامل لا يتحكم إلا في محطته المخصصة فقط.
+    // قيد صارم لصلاحية التحكم في الوصول والتسليم والشحن في غرفة الشراكة والمحطات:
+    // 1. عندما يسجل المرسل الكولية (registered)، تبقى في ستوك المرسل فقط.
+    // 2. بعد قبول المدير الشريك للكولية، لا يمكن للمدير الشريك تأكيد الوصول (arrived) أو التسليم (delivered) إلا بعد أن يقوم الأدمين المرسل بشحنها (in_transit).
+    // 3. المرسل لا يملك الحق في تأكيد وصولها أو تسليمها نهائياً.
     if (status === 'arrived' || status === 'delivered') {
       if (parcel.partner_acceptance_status === 'rejected') {
         const msg = `هذه الكولية مرفوضة في غرفة الشراكة ولا يمكن إدخالها للستوك أو تسليمها.`;
@@ -5397,6 +5397,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
+
+      // منع تأكيد الوصول (وصلات / للستوك) إذا لم يقم الأدمين المرسل بشحن الكولية بعد (لا تزال مسجلة في محطة الانطلاق)
+      if (status === 'arrived' && (parcel.status === 'registered' || parcel.status === 'pending')) {
+        const isIncomingPartner = Boolean(
+          parcel.is_collaborator_data ||
+            (parcel.partner_origin_workspace_id &&
+              parcel.partner_origin_workspace_id !== currentWorkspace?.id)
+        );
+        const msg = isIncomingPartner
+          ? `تنبيه: لا يمكن تأكيد وصول الكولية #${parcel.parcel_number} أو إدخالها للستوك الآن! يجب أولاً أن يقوم الأدمين المرسل (${parcel.partner_origin_workspace_name || 'المرسل'}) بالضغط على "🚚 شحن" لإطلاق الكولية من محطة "${parcel.origin_station_name}".`
+          : `تنبيه: لا يمكن تأكيد وصول الكولي #${parcel.parcel_number} لأنه لا يزال مسجلاً في محطة الانطلاق "${parcel.origin_station_name}" ولم يتم شحنه بعد! يجب الضغط على "🚚 شحن" أولاً.`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
     }
 
     if (status === 'in_transit') {
@@ -5405,8 +5419,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
+      if (parcel.is_partnership_parcel && parcel.partner_acceptance_status === 'pending_approval') {
+        const msg = `يرجى الانتظار حتى يضغط المدير الشريك (${parcel.partner_workspace_name || 'الشريك'}) على «قبول الكولية» في غرفة الشراكة قبل شحنها.`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
       if (!canControlParcelOrigin(parcel, currentWorkspace?.id, userRole, userAssignedStationId)) {
-        const msg = `لا يمكنك إطلاق هذا الكولي لأنه صادر من محطة "${parcel.origin_station_name}" فقط`;
+        const msg = `لا يمكنك شحن هذا الكولي لأنه صادر من محطة "${parcel.origin_station_name}" فقط`;
         showToast(msg, 'error');
         return { success: false, error: msg };
       }

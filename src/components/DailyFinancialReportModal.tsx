@@ -55,6 +55,8 @@ export const DailyFinancialReportModal: React.FC<DailyFinancialReportModalProps>
   const [handedOverToName, setHandedOverToName] = useState<string>('');
   const [closingNotes, setClosingNotes] = useState<string>('');
   const [closingHistory, setClosingHistory] = useState<ShiftClosingRecord[]>([]);
+  const [isDailyOpsLogOpen, setIsDailyOpsLogOpen] = useState<boolean>(false);
+  const [isClosingsLogOpen, setIsClosingsLogOpen] = useState<boolean>(false);
 
   const storageKey = `alittihadia_shift_closings_${currentWorkspace?.id || 'default'}`;
 
@@ -541,90 +543,105 @@ export const DailyFinancialReportModal: React.FC<DailyFinancialReportModalProps>
                 </span>
               </div>
 
-              {/* Operations List or Empty State */}
-              <div className="bg-black/45 p-3.5 rounded-2xl border border-white/15 space-y-2.5">
-                <h4 className="font-black text-xs text-[#F5C84C] flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4" />
-                  <span>تفاصيل عمليات اليوم ({filteredTxs.length})</span>
-                </h4>
+              {/* Standalone Toggle Button for Daily Operations Log */}
+              <button
+                type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
+                data-btn-active={isDailyOpsLogOpen ? 'true' : 'false'}
+                data-btn-active-fixed="true"
+                onClick={() => setIsDailyOpsLogOpen((prev) => !prev)}
+                className="w-full py-2.5 px-3.5 rounded-2xl font-black text-xs flex items-center justify-between gap-2 cursor-pointer transition shadow-md"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 shrink-0" />
+                  <span>📋 سجل عمليات اليوم ({filteredTxs.length})</span>
+                </span>
+                <span className="text-[11px] font-black">
+                  {isDailyOpsLogOpen ? 'إخفاء السجل ▲' : 'عرض السجل ▼'}
+                </span>
+              </button>
 
-                {filteredTxs.length === 0 ? (
-                  <div className="py-8 px-4 text-center space-y-2.5 bg-black/40 rounded-xl border border-white/10">
-                    <div className="w-11 h-11 rounded-2xl bg-[#F5C84C]/15 border border-[#F5C84C]/35 text-[#F5C84C] flex items-center justify-center mx-auto">
-                      <Inbox className="w-5 h-5" />
+              {isDailyOpsLogOpen && (
+                <div className="bg-black/45 p-3.5 rounded-2xl border border-white/15 space-y-2.5 animate-fadeIn">
+                  {filteredTxs.length === 0 ? (
+                    <div className="py-8 px-4 text-center space-y-2.5 bg-black/40 rounded-xl border border-white/10">
+                      <div className="w-11 h-11 rounded-2xl bg-[#F5C84C]/15 border border-[#F5C84C]/35 text-[#F5C84C] flex items-center justify-center mx-auto">
+                        <Inbox className="w-5 h-5" />
+                      </div>
+                      <p className="text-sm font-black text-white">لا توجد عمليات اليوم</p>
+                      <p className="text-[11px] text-white/70">
+                        لم يتم تسجيل أي حركات مالية في هذا التاريخ للمحطة المحددة.
+                      </p>
                     </div>
-                    <p className="text-sm font-black text-white">لا توجد عمليات اليوم</p>
-                    <p className="text-[11px] text-white/70">
-                      لم يتم تسجيل أي حركات مالية في هذا التاريخ للمحطة المحددة.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {filteredTxs.map((t) => {
-                      const isInflow =
-                        t.type === 'cash_in' ||
-                        t.type === 'parcel_shipping_fee' ||
-                        t.type === 'parcel_cod_collection';
-                      return (
-                        <div
-                          key={t.id}
-                          className="p-2.5 rounded-xl bg-black/45 border border-white/15 flex items-center justify-between gap-2"
-                        >
-                          <div className="min-w-0 flex-1 space-y-0.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span
-                                className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                                  isInflow
-                                    ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-500/40'
-                                    : 'bg-rose-950/70 text-rose-300 border border-rose-500/40'
-                                }`}
-                              >
-                                {isInflow ? 'قبض' : 'صرف'}
-                              </span>
-                              <span className="text-xs font-bold text-white line-clamp-2 break-words">
-                                {t.reason || t.note || 'عملية صندوق'}
-                              </span>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredTxs.map((t) => {
+                        const isInflow =
+                          t.type === 'cash_in' ||
+                          t.type === 'parcel_shipping_fee' ||
+                          t.type === 'parcel_cod_collection';
+                        return (
+                          <div
+                            key={t.id}
+                            className="p-2.5 rounded-xl bg-black/45 border border-white/15 flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span
+                                  className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                    isInflow
+                                      ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-500/40'
+                                      : 'bg-rose-950/70 text-rose-300 border border-rose-500/40'
+                                  }`}
+                                >
+                                  {isInflow ? 'قبض' : 'صرف'}
+                                </span>
+                                <span className="text-xs font-bold text-white line-clamp-2 break-words">
+                                  {t.reason || t.note || 'عملية صندوق'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-white/70">
+                                <span>{t.station_name || 'المحطة'}</span>
+                                <span>•</span>
+                                <span>{t.creator_name || 'موظف'}</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2 text-[10px] text-white/70">
-                              <span>{t.station_name || 'المحطة'}</span>
-                              <span>•</span>
-                              <span>{t.creator_name || 'موظف'}</span>
-                            </div>
-                          </div>
 
-                          <div className="text-left shrink-0">
-                            <span
-                              className={`font-mono font-black text-xs block ${
-                                isInflow ? 'text-emerald-400' : 'text-rose-400'
-                              }`}
-                              dir="ltr"
-                              style={{ direction: 'ltr', unicodeBidi: 'isolate' }}
-                            >
-                              <span className="print:hidden">
-                                {isInflow ? '+' : '−'}
-                                {hideAmounts ? '••••' : t.amount} {t.currency}
+                            <div className="text-left shrink-0">
+                              <span
+                                className={`font-mono font-black text-xs block ${
+                                  isInflow ? 'text-emerald-400' : 'text-rose-400'
+                                }`}
+                                dir="ltr"
+                                style={{ direction: 'ltr', unicodeBidi: 'isolate' }}
+                              >
+                                <span className="print:hidden">
+                                  {isInflow ? '+' : '−'}
+                                  {hideAmounts ? '••••' : t.amount} {t.currency}
+                                </span>
+                                <span className="hidden print:inline">
+                                  {isInflow ? `+${t.amount}` : `−${t.amount}`} {t.currency}
+                                </span>
                               </span>
-                              <span className="hidden print:inline">
-                                {isInflow ? `+${t.amount}` : `−${t.amount}`} {t.currency}
+                              <span
+                                className="font-mono text-[10px] text-white/65 block mt-0.5"
+                                dir="ltr"
+                                style={{ direction: 'ltr', unicodeBidi: 'isolate' }}
+                              >
+                                {new Date(t.created_at).toLocaleTimeString('ar-MA', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
                               </span>
-                            </span>
-                            <span
-                              className="font-mono text-[10px] text-white/65 block mt-0.5"
-                              dir="ltr"
-                              style={{ direction: 'ltr', unicodeBidi: 'isolate' }}
-                            >
-                              {new Date(t.created_at).toLocaleTimeString('ar-MA', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             /* ===================================================================== */
@@ -803,62 +820,77 @@ export const DailyFinancialReportModal: React.FC<DailyFinancialReportModalProps>
                 </div>
               </form>
 
-              {/* Previous Shift Closings Log */}
-              <div className="bg-black/45 p-3.5 rounded-2xl border border-white/15 space-y-2.5">
-                <h4 className="font-black text-xs text-[#F5C84C] flex items-center gap-1.5">
-                  <UserCheck className="w-4 h-4" />
-                  <span>سجل إقفالات الصندوق وتسليم النوبات ({closingHistory.length})</span>
-                </h4>
+              {/* Standalone Toggle Button for Shift Closings Log */}
+              <button
+                type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
+                data-btn-active={isClosingsLogOpen ? 'true' : 'false'}
+                data-btn-active-fixed="true"
+                onClick={() => setIsClosingsLogOpen((prev) => !prev)}
+                className="w-full py-2.5 px-3.5 rounded-2xl font-black text-xs flex items-center justify-between gap-2 cursor-pointer transition shadow-md"
+              >
+                <span className="flex items-center gap-1.5">
+                  <UserCheck className="w-4 h-4 shrink-0" />
+                  <span>📋 سجل إقفالات الصندوق وتسليم النوبات ({closingHistory.length})</span>
+                </span>
+                <span className="text-[11px] font-black">
+                  {isClosingsLogOpen ? 'إخفاء السجل ▲' : 'عرض السجل ▼'}
+                </span>
+              </button>
 
-                {closingHistory.length === 0 ? (
-                  <p className="text-[11px] text-white/65 text-center py-4">
-                    لم يتم تسجيل أي محضر إقفال صندوق بعد.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {closingHistory.slice(0, 10).map((rec) => (
-                      <div
-                        key={rec.id}
-                        className="p-2.5 rounded-xl bg-black/55 border border-white/15 space-y-1.5 text-[11px]"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-black text-white">
-                            {rec.station_name} • المسلِّم: {rec.closed_by_name}
-                            {rec.handed_over_to_name ? ` ⬅ ${rec.handed_over_to_name}` : ''}
-                          </span>
-                          <span className="font-mono text-[10px] text-white/65" dir="ltr">
-                            {new Date(rec.created_at).toLocaleString('ar-MA', {
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 font-mono text-[10px]">
-                          <div className="bg-black/40 p-1.5 rounded-lg border border-white/10">
-                            <span className="text-white/70 block">درهم (MAD):</span>
-                            <span className="text-[#F5C84C] font-bold">
-                              الفعلي: {rec.physical_cash_mad} | الفرق: {rec.difference_mad}
+              {isClosingsLogOpen && (
+                <div className="bg-black/45 p-3.5 rounded-2xl border border-white/15 space-y-2.5 animate-fadeIn">
+                  {closingHistory.length === 0 ? (
+                    <p className="text-[11px] text-white/65 text-center py-4">
+                      لم يتم تسجيل أي محضر إقفال صندوق بعد.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {closingHistory.slice(0, 10).map((rec) => (
+                        <div
+                          key={rec.id}
+                          className="p-2.5 rounded-xl bg-black/55 border border-white/15 space-y-1.5 text-[11px]"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-white">
+                              {rec.station_name} • المسلِّم: {rec.closed_by_name}
+                              {rec.handed_over_to_name ? ` ⬅ ${rec.handed_over_to_name}` : ''}
+                            </span>
+                            <span className="font-mono text-[10px] text-white/65" dir="ltr">
+                              {new Date(rec.created_at).toLocaleString('ar-MA', {
+                                month: '2-digit',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
                             </span>
                           </div>
-                          <div className="bg-black/40 p-1.5 rounded-lg border border-white/10">
-                            <span className="text-white/70 block">أوقية (MRU):</span>
-                            <span className="text-[#2ECC71] font-bold">
-                              الفعلي: {rec.physical_cash_mru} | الفرق: {rec.difference_mru}
-                            </span>
-                          </div>
-                        </div>
 
-                        {rec.notes && (
-                          <p className="text-[10px] text-white/80 italic">ملاحظة: {rec.notes}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                          <div className="grid grid-cols-2 gap-2 font-mono text-[10px]">
+                            <div className="bg-black/40 p-1.5 rounded-lg border border-white/10">
+                              <span className="text-white/70 block">درهم (MAD):</span>
+                              <span className="text-[#F5C84C] font-bold">
+                                الفعلي: {rec.physical_cash_mad} | الفرق: {rec.difference_mad}
+                              </span>
+                            </div>
+                            <div className="bg-black/40 p-1.5 rounded-lg border border-white/10">
+                              <span className="text-white/70 block">أوقية (MRU):</span>
+                              <span className="text-[#2ECC71] font-bold">
+                                الفعلي: {rec.physical_cash_mru} | الفرق: {rec.difference_mru}
+                              </span>
+                            </div>
+                          </div>
+
+                          {rec.notes && (
+                            <p className="text-[10px] text-white/80 italic">ملاحظة: {rec.notes}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

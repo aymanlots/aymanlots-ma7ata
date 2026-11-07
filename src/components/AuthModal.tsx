@@ -35,7 +35,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
     verifyRegistrationEmailOtp, 
     t,
     accountTerminatedNotice,
-    dismissAccountTerminatedNotice 
+    dismissAccountTerminatedNotice,
+    themeMode,
+    toggleThemeMode
   } = useApp();
   const dir = 'rtl';
   const [isSignUp, setIsSignUp] = useState(false); // Default to Login directly
@@ -368,9 +370,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black animate-fadeIn overflow-y-auto" dir={dir}>
+    <div className="w-full flex-1 flex flex-col items-center justify-center p-3 bg-transparent animate-fadeIn overflow-y-auto" dir={dir}>
+      {/* Top Bar over Desert Background with Night/Day Toggle */}
+      <div className="w-full max-w-[390px] flex items-center justify-between mb-2 px-1">
+        <span className="text-xs font-black px-3 py-1 rounded-full bg-[#1a0f00]/85 text-[#F5D799] border border-[#D4AF37]/50 backdrop-blur-md shadow-md">
+          Sahara📦 Express
+        </span>
+        <button
+          type="button"
+          onClick={toggleThemeMode}
+          className="btn-cancel flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black transition active:scale-95 cursor-pointer shadow-lg"
+          title={themeMode === 'light' ? 'التبديل إلى وضع الليل (Dark Mode)' : 'التبديل إلى وضع النهار (Light Mode)'}
+        >
+          <span>{themeMode === 'light' ? '🌙 وضع الليل' : '☀️ وضع النهار'}</span>
+        </button>
+      </div>
+
       <div 
-        className="w-full max-w-[390px] rounded-[24px] bg-[#1a0f00]/95 border border-[#D4AF37]/65 p-5 shadow-2xl text-right overflow-hidden relative z-10 my-4"
+        className="w-full max-w-[390px] rounded-[24px] bg-[#1a0f00]/80 backdrop-blur-md border border-[#D4AF37]/65 p-5 shadow-2xl text-right overflow-hidden relative z-10 my-2"
         onClick={e => e.stopPropagation()}
       >
         {/* Subtle Gold Accent Stripe */}
@@ -441,20 +458,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
+                data-btn-active={isOwnerRole ? 'true' : 'false'}
+                data-btn-active-fixed="true"
                 onClick={() => {
                   setIsOwnerRole(true);
                   setError(null);
                 }}
                 className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                  isOwnerRole
-                    ? 'bg-gradient-to-r from-[#F5B05B] to-[#D4882A] border-[#F8C885] text-[#1a0f00] font-black shadow-md'
-                    : 'bg-[#120a00] border-[#D4AF37]/35 text-[#C8B08A] hover:border-[#D4AF37]/60'
+                  isOwnerRole ? 'btn-gold' : 'btn-cancel'
                 }`}
               >
                 👑 {t('authAdminTab', 'أدمين (مدير المحطة)')}
               </button>
               <button
                 type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
+                data-btn-active={!isOwnerRole ? 'true' : 'false'}
+                data-btn-active-fixed="true"
                 onClick={() => {
                   setIsOwnerRole(false);
                   setIsSignUp(false);
@@ -462,9 +485,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                   setError(null);
                 }}
                 className={`py-2.5 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                  !isOwnerRole
-                    ? 'bg-gradient-to-r from-[#F5B05B] to-[#D4882A] border-[#F8C885] text-[#1a0f00] font-black shadow-md'
-                    : 'bg-[#120a00] border-[#D4AF37]/35 text-[#C8B08A] hover:border-[#D4AF37]/60'
+                  !isOwnerRole ? 'btn-gold' : 'btn-cancel'
                 }`}
               >
                 💼 {t('authWorkerTab', 'عامل (موظف محطة)')}

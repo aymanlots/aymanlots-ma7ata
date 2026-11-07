@@ -86,6 +86,7 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [copiedTrackingUrl, setCopiedTrackingUrl] = useState(false);
   const [copiedNumericCode, setCopiedNumericCode] = useState(false);
+  const [isTimelineLogOpen, setIsTimelineLogOpen] = useState(false);
 
   // Return Parcel state
   const [returnReason, setReturnReason] = useState(RETURN_REASONS[0]);
@@ -672,6 +673,17 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                     const isBlockedByPermission =
                       (isOriginStage && !canOrigin) || (isDestStage && !canDest);
 
+                    const isArrivalBlocked =
+                      st === 'arrived' &&
+                      (parcel.status === 'registered' || parcel.status === 'pending');
+
+                    const isTransitBlockedByPendingPartner =
+                      st === 'in_transit' &&
+                      Boolean(
+                        parcel.is_partnership_parcel &&
+                          parcel.partner_acceptance_status === 'pending_approval'
+                      );
+
                     const isDeliveryBlocked =
                       st === 'delivered' &&
                       parcel.status !== 'arrived' &&
@@ -681,10 +693,19 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                       <button
                         key={st}
                         type="button"
-                        disabled={isBlockedByPermission || isDeliveryBlocked}
+                        disabled={
+                          isBlockedByPermission ||
+                          isArrivalBlocked ||
+                          isTransitBlockedByPendingPartner ||
+                          isDeliveryBlocked
+                        }
                         title={
                           isBlockedByPermission
                             ? 'هذه المرحلة خاصة بمحطة الاستلام / الشريك المستقبل فقط'
+                            : isTransitBlockedByPendingPartner
+                            ? 'يرجى الانتظار حتى يضغط المدير الشريك على «قبول الكولية» في غرفة الشراكة قبل شحنها'
+                            : isArrivalBlocked
+                            ? 'لا يمكن تأكيد الوصول للستوك إلا بعد أن يقوم الأدمين المرسل بشحن الكولي (في الطريق 🚚)'
                             : isDeliveryBlocked
                             ? 'لا يمكن تسليم الكولي للزبون إلا بعد وصوله وتأكيد دخوله لستوك المحطة (وصلت إلى محطة الوجهة)'
                             : undefined
@@ -775,31 +796,50 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                 )}
               </form>
 
-              {/* Golden Timeline List */}
-              <div className="bg-[#1a0f00]/80 p-3.5 rounded-2xl border border-[#D4AF37]/45 space-y-3">
-                <span className="font-bold text-[#F5D799] block text-[11px]">سجل التتبع والمراحل:</span>
-                
-                <div className="space-y-3 relative before:absolute before:right-2.5 before:top-2 before:bottom-2 before:w-[1.5px] before:bg-[#D4AF37]/60">
-                  {(parcel.status_history || []).map((entry, idx) => (
-                    <div key={idx} className="relative pr-7 space-y-1">
-                      <div className="absolute right-0.5 top-0.5 w-4 h-4 rounded-full bg-[#F39C3D] text-[#1a0f00] flex items-center justify-center text-[9px] font-black">
-                        ✓
+              {/* Standalone Toggle Button for Parcel Timeline Log */}
+              <button
+                type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
+                data-btn-active={isTimelineLogOpen ? 'true' : 'false'}
+                data-btn-active-fixed="true"
+                onClick={() => setIsTimelineLogOpen(prev => !prev)}
+                className="w-full py-2.5 px-3.5 rounded-2xl font-black text-xs flex items-center justify-between gap-2 cursor-pointer transition shadow-md"
+              >
+                <span>
+                  📋 سجل عمليات التتبع والمراحل ({(parcel.status_history || []).length})
+                </span>
+                <span className="text-[11px] font-black">
+                  {isTimelineLogOpen ? 'إخفاء السجل ▲' : 'عرض السجل ▼'}
+                </span>
+              </button>
+
+              {isTimelineLogOpen && (
+                <div className="bg-[#1a0f00]/80 p-3.5 rounded-2xl border border-[#D4AF37]/45 space-y-3 animate-fadeIn">
+                  <span className="font-bold text-[#F5D799] block text-[11px]">سجل التتبع والمراحل:</span>
+                  
+                  <div className="space-y-3 relative before:absolute before:right-2.5 before:top-2 before:bottom-2 before:w-[1.5px] before:bg-[#D4AF37]/60">
+                    {(parcel.status_history || []).map((entry, idx) => (
+                      <div key={idx} className="relative pr-7 space-y-1">
+                        <div className="absolute right-0.5 top-0.5 w-4 h-4 rounded-full bg-[#F39C3D] text-[#1a0f00] flex items-center justify-center text-[9px] font-black">
+                          ✓
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-[#FFF8EB]">{statusNames[entry.status] || entry.status}</span>
+                          <span className="text-[10px] text-[#C8B08A] font-mono shrink-0" dir="ltr">
+                            {formatDateTimeStandard(entry.timestamp)}
+                          </span>
+                        </div>
+                        {entry.notes && (
+                          <p className="text-[11px] text-[#F5D799] bg-[#120a00] p-2 rounded-lg mt-1 border border-[#D4AF37]/30">
+                            {entry.notes}
+                          </p>
+                        )}
                       </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-[#FFF8EB]">{statusNames[entry.status] || entry.status}</span>
-                        <span className="text-[10px] text-[#C8B08A] font-mono shrink-0" dir="ltr">
-                          {formatDateTimeStandard(entry.timestamp)}
-                        </span>
-                      </div>
-                      {entry.notes && (
-                        <p className="text-[11px] text-[#F5D799] bg-[#120a00] p-2 rounded-lg mt-1 border border-[#D4AF37]/30">
-                          {entry.notes}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 

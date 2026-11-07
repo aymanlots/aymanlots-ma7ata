@@ -51,6 +51,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
     dispatchParcelToPartner,
     respondToPartnerParcel,
     acceptAllPendingPartnerParcels,
+    updateParcelStatus,
     showToast,
   } = useApp();
 
@@ -82,6 +83,8 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
 
   // Mutual parcels sub-filter: 'sent' vs 'received'
   const [parcelFilterDirection, setParcelFilterDirection] = useState<'sent' | 'received'>('sent');
+  const [isPartnerParcelsLogOpen, setIsPartnerParcelsLogOpen] = useState(false);
+  const [isSettlementsLogOpen, setIsSettlementsLogOpen] = useState(false);
 
   // Load registered managers directory when modal opens and keep it synced in real-time with Firebase
   useEffect(() => {
@@ -961,8 +964,26 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                       </div>
                     </div>
 
-                    {/* Mutual Parcels List (Sent vs Received) */}
-                    <div className="bg-[#120a00] rounded-2xl border border-[#D4AF37]/35 p-3 space-y-2.5">
+                    {/* Mutual Parcels List (Hidden by default behind standalone button) */}
+                    <button
+                      type="button"
+                      data-btn-role="info"
+                      data-btn-role-fixed="true"
+                      data-btn-active={isPartnerParcelsLogOpen ? 'true' : 'false'}
+                      data-btn-active-fixed="true"
+                      onClick={() => setIsPartnerParcelsLogOpen(prev => !prev)}
+                      className="w-full py-2.5 px-3.5 rounded-2xl font-black text-xs flex items-center justify-between gap-2 cursor-pointer transition shadow-md"
+                    >
+                      <span>
+                        📋 سجل عمليات الكوليات المشتركة ({sentParcels.length + receivedParcels.length})
+                      </span>
+                      <span className="text-[11px] font-black">
+                        {isPartnerParcelsLogOpen ? 'إخفاء السجل ▲' : 'عرض السجل ▼'}
+                      </span>
+                    </button>
+
+                    {isPartnerParcelsLogOpen && (
+                    <div className="bg-[#120a00] rounded-2xl border border-[#D4AF37]/35 p-3 space-y-2.5 animate-fadeIn">
                       <div className="grid grid-cols-2 gap-1.5 bg-black/50 p-1 rounded-xl border border-white/10">
                         <button
                           type="button"
@@ -1094,10 +1115,61 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                                     </div>
                                   )}
 
-                                  {/* Read-only notice for sender */}
+                                  {/* Receiver actions AFTER accepting the parcel */}
+                                  {parcelFilterDirection === 'received' && p.partner_acceptance_status === 'accepted' && (
+                                    <div className="pt-1.5 border-t border-white/10">
+                                      {p.status === 'registered' || p.status === 'pending' ? (
+                                        <div className="text-[10px] font-black text-amber-300 bg-amber-950/60 border border-amber-500/40 rounded-lg px-2.5 py-1.5">
+                                          ⏳ تم قبول الكولية — لا يمكن تأكيد الوصول أو التسليم حتى يقوم الأدمين المرسل بشحنها (🚚 شحن)
+                                        </div>
+                                      ) : p.status === 'in_transit' ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateParcelStatus(
+                                              p.id,
+                                              'arrived',
+                                              'تم تأكيد وصول كولية الشراكة وإدخالها لستوك المحطة'
+                                            )
+                                          }
+                                          className="w-full py-1.5 px-2.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-black text-[11px] transition cursor-pointer"
+                                        >
+                                          📥 وصلات (إدخال الكولية لستوك محطتنا الآن)
+                                        </button>
+                                      ) : p.status === 'arrived' ? (
+                                        <div className="text-[10px] font-black text-emerald-300 bg-emerald-950/60 border border-emerald-500/40 rounded-lg px-2.5 py-1.5">
+                                          📦 وصلت لستوك محطتنا — جاهزة للتسليم للزبون من قسم الكوليات
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  )}
+
+                                  {/* Sender actions & status notice */}
                                   {parcelFilterDirection === 'sent' && (
-                                    <div className="text-[9px] text-[#C8B08A] border-t border-white/10 pt-1">
-                                      🔒 تأكيد الوصول والتسليم للزبون يتحكم فيه الشريك المستقبل وعامل محطته فقط.
+                                    <div className="pt-1.5 border-t border-white/10 space-y-1.5">
+                                      {p.status === 'registered' && p.partner_acceptance_status === 'pending_approval' && (
+                                        <div className="text-[10px] font-bold text-amber-300">
+                                          ⏳ في ستوك محطتنا — بانتظار قبول المدير الشريك ليتم تفعيل زر الشحن (🚚)
+                                        </div>
+                                      )}
+                                      {p.status === 'registered' && p.partner_acceptance_status === 'accepted' && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateParcelStatus(
+                                              p.id,
+                                              'in_transit',
+                                              'تم شحن الكولية من طرف الأدمين المرسل وانطلاقها نحو محطة الشريك'
+                                            )
+                                          }
+                                          className="w-full py-1.5 px-2.5 rounded-lg btn-gold font-black text-[11px] transition cursor-pointer"
+                                        >
+                                          🚚 شحن الكولية الآن (إرسال في الطريق للشريك)
+                                        </button>
+                                      )}
+                                      <div className="text-[9px] text-[#C8B08A]">
+                                        🔒 تأكيد الوصول والتسليم للزبون يتحكم فيه الشريك المستقبل وعامل محطته بعد أن تقوم بشحن الكولية.
+                                      </div>
                                     </div>
                                   )}
                                 </div>
@@ -1107,9 +1179,28 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                         </div>
                       )}
                     </div>
+                    )}
 
-                    {/* Settlements Log */}
-                    <div className="bg-[#120a00] rounded-2xl border border-[#D4AF37]/35 p-3 space-y-2">
+                    {/* Settlements Log (Hidden by default behind standalone button) */}
+                    <button
+                      type="button"
+                      data-btn-role="info"
+                      data-btn-role-fixed="true"
+                      data-btn-active={isSettlementsLogOpen ? 'true' : 'false'}
+                      data-btn-active-fixed="true"
+                      onClick={() => setIsSettlementsLogOpen(prev => !prev)}
+                      className="w-full py-2.5 px-3.5 rounded-2xl font-black text-xs flex items-center justify-between gap-2 cursor-pointer transition shadow-md"
+                    >
+                      <span>
+                        📋 سجل عمليات ودفعات التصفية ({partnershipSettlements.length})
+                      </span>
+                      <span className="text-[11px] font-black">
+                        {isSettlementsLogOpen ? 'إخفاء السجل ▲' : 'عرض السجل ▼'}
+                      </span>
+                    </button>
+
+                    {isSettlementsLogOpen && (
+                    <div className="bg-[#120a00] rounded-2xl border border-[#D4AF37]/35 p-3 space-y-2 animate-fadeIn">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-[#F5D799] flex items-center gap-1.5">
                           <Wallet className="w-3.5 h-3.5 text-emerald-400" />
@@ -1173,6 +1264,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                         </div>
                       )}
                     </div>
+                    )}
                   </div>
                 )}
               </>

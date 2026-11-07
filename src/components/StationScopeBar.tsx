@@ -93,6 +93,10 @@ export const StationScopeBar: React.FC = () => {
               <button
                 key={station.id}
                 type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
+                data-btn-active={isSelected ? 'true' : 'false'}
+                data-btn-active-fixed="true"
                 onClick={() => setSelectedStationId(station.id)}
                 className={`flex-1 min-w-fit px-3.5 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   isSelected ? 'btn-gold' : 'btn-cancel'
@@ -107,6 +111,10 @@ export const StationScopeBar: React.FC = () => {
           {/* زر الكل لعرض جميع المحطات معاً */}
           <button
             type="button"
+            data-btn-role="info"
+            data-btn-role-fixed="true"
+            data-btn-active={isAllSelected ? 'true' : 'false'}
+            data-btn-active-fixed="true"
             onClick={() => setSelectedStationId('all')}
             className={`min-w-fit px-3.5 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
               isAllSelected ? 'btn-gold' : 'btn-cancel'

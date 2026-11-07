@@ -9,9 +9,23 @@
   html,
   body {
     font-family: var(--font-arabic);
+    font-weight: 800 !important;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  /* الخط غليظ Bold وواضح في جميع العناوين والنصوص والخانات والأزرار */
+  body *,
+  h1, h2, h3, h4, h5, h6,
+  p, span, label, a, strong, b, div, li, td, th,
+  input, select, textarea, button {
+    font-weight: 800 !important;
+  }
+
+  h1, h2, h3, h4, h5, h6,
+  strong, b, label, button, input, select, textarea {
+    font-weight: 900 !important;
   }
 
   /* Remove number input spinners to prevent decimal points and numbers from being cut off on mobile */
@@ -27,21 +41,8 @@
 }
 
 /* ============================================================================
-/* ============================================================================
-   ☀️ LIGHT MODE (وضع النهار — الافتراضي Default)
-   كروت بيضاء معمرة 100% (#FFFFFF)، وكتابة كحلة واضحة فكل بلاصة
+   🖼️ Fixed Desert Background Image Frame (Phone Width max-w: 430px)
    ============================================================================ */
-html:not(.theme-dark),
-html.theme-light,
-html:not(.theme-dark) body,
-html.theme-light body {
-  background-color: #0f172a !important;
-  color: #000000 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-/* Fixed Desert Background image rules in Light and Dark Mode: Framed strictly to phone width (max-w: 430px) */
 .desert-bg-frame {
   position: fixed !important;
   inset: 0 !important;
@@ -67,430 +68,468 @@ html:not(.theme-dark) .desert-bg-overlay,
 html.theme-light .desert-bg-overlay {
   position: absolute !important;
   inset: 0 !important;
-  background: rgba(0, 0, 0, 0.14) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  background: rgba(255, 255, 255, 0.10) !important;
 }
 
 html.theme-dark .desert-bg-overlay {
   position: absolute !important;
   inset: 0 !important;
-  background: rgba(0, 0, 0, 0.38) !important;
+  background: rgba(0, 0, 0, 0.35) !important;
 }
 
-/* SOLID White Cards in Light Mode: fully filled (#FFFFFF), 0% transparency so text is ultra-clear */
-html:not(.theme-dark) .luxury-card,
-html.theme-light .luxury-card {
-  background: #FFFFFF !important;
-  border: 1.5px solid #CBD5E1 !important;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08) !important;
+/* ============================================================================
+   ☀️ 1 - وضع النهار (DAY MODE)
+   القاعدة:
+   - أي حاجة كتزاد = أخضر #006233، الكتابة بيضاء #FFFFFF
+   - أي حاجة كتنقص = أحمر #C1272D، الكتابة بيضاء #FFFFFF
+   - أي بوطونة أخرى، أي خانة، أي بلاصة أخرى = أبيض #FFFFFF
+   - الكتابة كاملة فالنهار = سوداء #000000 وغليظة Bold
+   ============================================================================ */
+html:not(.theme-dark),
+html.theme-light,
+html:not(.theme-dark) body,
+html.theme-light body {
+  background-color: #FFFFFF !important;
   color: #000000 !important;
-}
-
-/* Eliminate ALL dark/black/slate card & box backgrounds in Light Mode */
-html:not(.theme-dark) [class*="bg-black"]:not(body):not(html):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-overlay),
-html:not(.theme-dark) [class*="bg-[#1"]:not(body):not(html):not(.desert-bg-frame):not(.desert-bg-overlay),
-html:not(.theme-dark) [class*="bg-[#0"]:not(body):not(html):not(.desert-bg-frame):not(.desert-bg-overlay),
-html:not(.theme-dark) [class*="bg-[#2"]:not(body):not(html):not(.desert-bg-frame):not(.desert-bg-overlay),
-html:not(.theme-dark) [class*="bg-slate-8"]:not(body):not(html),
-html:not(.theme-dark) [class*="bg-slate-9"]:not(body):not(html),
-html:not(.theme-dark) [class*="bg-gray-8"]:not(body):not(html),
-html:not(.theme-dark) [class*="bg-gray-9"]:not(body):not(html),
-html:not(.theme-dark) [class*="from-[#2"]:not(body):not(html):not(.desert-bg-overlay),
-html:not(.theme-dark) [class*="from-[#1"]:not(body):not(html):not(.desert-bg-overlay),
-html:not(.theme-dark) [class*="to-black"]:not(body):not(html):not(.desert-bg-overlay),
-html:not(.theme-dark) [class*="via-black"]:not(body):not(html):not(.desert-bg-overlay) {
-  background: #FFFFFF !important;
-  background-image: none !important;
-  border-color: #CBD5E1 !important;
-  color: #000000 !important;
-}
-
-/* Unified blurred modal backdrop overlay in Light & Dark Mode */
-html:not(.theme-dark) .fixed.inset-0.bg-black\/75,
-html:not(.theme-dark) .fixed.inset-0.bg-black\/80,
-html:not(.theme-dark) .fixed.inset-0.bg-black\/85,
-html:not(.theme-dark) .fixed.inset-0.bg-black\/90,
-html:not(.theme-dark) .fixed.inset-0.bg-\[\#060A14\]\/90 {
-  background: rgba(0, 0, 0, 0.72) !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
-}
-
-/* Borders in Light Mode: crisp slate borders */
-html:not(.theme-dark) .border-white\/10,
-html:not(.theme-dark) .border-white\/15,
-html:not(.theme-dark) .border-white\/20,
-html:not(.theme-dark) [class*="border-slate-7"],
-html:not(.theme-dark) [class*="border-slate-8"],
-html:not(.theme-dark) [class*="border-[#D4AF37]"],
-html:not(.theme-dark) [class*="border-[#F5C84C]"],
-html:not(.theme-dark) [class*="border-[#C9A24B]"] {
-  border-color: rgba(15, 23, 42, 0.26) !important;
-}
-
-/* ULTRA-CRISP BLACK TYPOGRAPHY IN LIGHT MODE (100% visible everywhere!) */
-html:not(.theme-dark) .gold-text,
-html:not(.theme-dark) [class*="text-white"],
-html:not(.theme-dark) [class*="text-slate-"],
-html:not(.theme-dark) [class*="text-gray-"],
-html:not(.theme-dark) .text-\[\#FFF8EB\],
-html:not(.theme-dark) .text-\[\#F5C84C\],
-html:not(.theme-dark) .text-\[\#F5D799\],
-html:not(.theme-dark) .text-\[\#E6C37A\],
-html:not(.theme-dark) .text-\[\#F3A952\],
-html:not(.theme-dark) .text-\[\#D4AF37\],
-html:not(.theme-dark) .text-\[\#D9B36C\],
-html:not(.theme-dark) .text-\[\#C8B08A\],
-html:not(.theme-dark) .text-\[\#A68966\] {
-  color: #000000 !important;
-  background: none !important;
-  -webkit-text-fill-color: #000000 !important;
-  opacity: 1 !important;
-  text-shadow: none !important;
-}
-
-/* Readable semantic green & red in Light Mode */
-html:not(.theme-dark) .text-emerald-400,
-html:not(.theme-dark) .text-emerald-300,
-html:not(.theme-dark) .text-emerald-200,
-html:not(.theme-dark) .text-\[\#2ECC71\],
-html:not(.theme-dark) .text-\[\#68E399\] {
-  color: #065F46 !important;
-  -webkit-text-fill-color: #065F46 !important;
-  font-weight: 900 !important;
-}
-
-html:not(.theme-dark) .text-rose-400,
-html:not(.theme-dark) .text-rose-300,
-html:not(.theme-dark) .text-rose-200 {
-  color: #991B1B !important;
-  -webkit-text-fill-color: #991B1B !important;
-  font-weight: 900 !important;
-}
-
-html:not(.theme-dark) [class*="bg-rose-950"] {
-  background-color: rgba(254, 242, 242, 0.94) !important;
-  border-color: #EF4444 !important;
-  color: #991B1B !important;
-}
-
-html:not(.theme-dark) [class*="bg-emerald-950"] {
-  background-color: rgba(236, 253, 245, 0.94) !important;
-  border-color: #10B981 !important;
-  color: #065F46 !important;
-}
-
-html:not(.theme-dark) [class*="bg-amber-950"] {
-  background-color: rgba(255, 251, 235, 0.94) !important;
-  border-color: #F59E0B !important;
-  color: #78350F !important;
-}
-
-html:not(.theme-dark) .text-amber-200,
-html:not(.theme-dark) .text-amber-300,
-html:not(.theme-dark) .text-amber-400 {
-  color: #78350F !important;
-  -webkit-text-fill-color: #78350F !important;
-  font-weight: 900 !important;
-}
-
-html:not(.theme-dark) [class*="bg-purple-950"] {
-  background-color: rgba(243, 232, 255, 0.94) !important;
-  border-color: #A855F7 !important;
-  color: #581C87 !important;
-}
-html:not(.theme-dark) .text-purple-200,
-html:not(.theme-dark) .text-purple-300 {
-  color: #581C87 !important;
-  -webkit-text-fill-color: #581C87 !important;
-  font-weight: 900 !important;
-}
-
-/* Badges and icon containers in Light Mode: clean white with dark border & black text */
-html:not(.theme-dark) .bg-\[\#F5C84C\],
-html:not(.theme-dark) .from-\[\#F5B05B\],
-html:not(.theme-dark) .bg-amber-500 {
-  background: rgba(255, 255, 255, 0.95) !important;
-  background-image: none !important;
-  color: #000000 !important;
-  border: 1.5px solid #000000 !important;
-}
-html:not(.theme-dark) .bg-\[\#F5C84C\] *,
-html:not(.theme-dark) .from-\[\#F5B05B\] *,
-html:not(.theme-dark) .bg-amber-500 * {
-  color: #000000 !important;
-  -webkit-text-fill-color: #000000 !important;
-}
-
-html:not(.theme-dark) .bg-\[\#D4AF37\]\/20,
-html:not(.theme-dark) .bg-\[\#F5C84C\]\/15,
-html:not(.theme-dark) .bg-\[\#F5C84C\]\/20,
-html:not(.theme-dark) .bg-\[\#F5C84C\]\/25 {
-  background: rgba(241, 245, 249, 0.90) !important;
-  border-color: #64748B !important;
-  color: #000000 !important;
-}
-
-/* PRIMARY BUTTONS IN LIGHT MODE: Clean White Buttons with Bold Black Border & Black Text */
-html:not(.theme-dark) .btn-gold,
-html:not(.theme-dark) button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.help-popover-btn) {
-  background: rgba(255, 255, 255, 0.96) !important;
-  background-image: none !important;
-  color: #000000 !important;
-  font-weight: 900 !important;
-  border: 2px solid #000000 !important;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.10) !important;
-  transition: all 0.15s ease !important;
-}
-
-html:not(.theme-dark) .btn-gold *,
-html:not(.theme-dark) button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.help-popover-btn) *:not(.help-popover-btn):not(.help-popover-btn *) {
-  color: #000000 !important;
-  -webkit-text-fill-color: #000000 !important;
-}
-
-html:not(.theme-dark) .btn-gold:hover,
-html:not(.theme-dark) button:not(.nav-tab-btn):not(.btn-cancel):not(.btn-delete):not(.help-popover-btn):hover {
-  background: #F1F5F9 !important;
-}
-
-/* SECONDARY / CANCEL BUTTONS IN LIGHT MODE */
-html:not(.theme-dark) .btn-cancel {
-  background: rgba(241, 245, 249, 0.90) !important;
-  color: #000000 !important;
-  border: 1.5px solid #475569 !important;
-  box-shadow: none !important;
   font-weight: 800 !important;
 }
-html:not(.theme-dark) .btn-cancel * {
+
+/* الكروت الرئيسية في النهار: مضببة قليلاً مع تباين واضح ليظهر فرق واضح بين البطاقة والأزرار البيضاء البارزة */
+html:not(.theme-dark) .luxury-card:not(button),
+html.theme-light .luxury-card:not(button) {
+  background: rgba(238, 242, 246, 0.84) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border: 2px solid #000000 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16) !important;
   color: #000000 !important;
-  -webkit-text-fill-color: #000000 !important;
+  font-weight: 800 !important;
 }
-html:not(.theme-dark) .btn-cancel:hover {
-  background: rgba(226, 232, 240, 0.98) !important;
+
+/* أي خانة أو بلاصة داخلية أخرى في وضع النهار = أبيض صافي #FFFFFF مع حدود وكتابة سوداء #000000 */
+html:not(.theme-dark) [class*="bg-"]:not(button):not(body):not(html):not(.luxury-card):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-overlay):not(.badge-pill),
+html:not(.theme-dark) [class*="from-"]:not(button):not(body):not(html):not(.luxury-card):not(.desert-bg-overlay) {
+  background: #FFFFFF !important;
+  background-color: #FFFFFF !important;
+  background-image: none !important;
+  border-color: #000000 !important;
+  color: #000000 !important;
+}
+
+/* خلفية المودال (Modal Backdrop) في وضع النهار */
+html:not(.theme-dark) .fixed.inset-0[class*="bg-black"],
+html:not(.theme-dark) .fixed.inset-0[class*="bg-[#"] {
+  background: rgba(0, 0, 0, 0.62) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+}
+
+/* الحدود في وضع النهار = سوداء واضحة #000000 */
+html:not(.theme-dark) [class*="border-"]:not(button) {
   border-color: #000000 !important;
 }
 
-/* DELETE BUTTONS IN LIGHT MODE */
-html:not(.theme-dark) .btn-delete {
-  background: rgba(254, 226, 226, 0.95) !important;
-  color: #991B1B !important;
-  border: 1.5px solid #DC2626 !important;
-  font-weight: 900 !important;
-}
-html:not(.theme-dark) .btn-delete * {
-  color: #991B1B !important;
-  -webkit-text-fill-color: #991B1B !important;
+/* الكتابة كاملة في وضع النهار = سوداء #000000 وغليظة Bold (باستثناء أزرار الزيادة والنقصان) */
+html:not(.theme-dark) body *:not(button[data-btn-role="add"]):not(button[data-btn-role="add"] *):not(.btn-add):not(.btn-add *):not(button[data-btn-role="remove"]):not(button[data-btn-role="remove"] *):not(.btn-delete):not(.btn-delete *):not(.badge-pill) {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
 }
 
-/* INPUTS, SELECTS & TEXTAREAS IN LIGHT MODE */
+/* جميع الخانات (Inputs / Selects / Textareas) في وضع النهار = أبيض #FFFFFF وكتابة سوداء #000000 غليظة */
 html:not(.theme-dark) input:not([type="checkbox"]):not([type="radio"]),
 html:not(.theme-dark) select,
 html:not(.theme-dark) textarea {
-  background-color: rgba(255, 255, 255, 0.96) !important;
+  background: #FFFFFF !important;
+  background-color: #FFFFFF !important;
+  background-image: none !important;
   color: #000000 !important;
   -webkit-text-fill-color: #000000 !important;
-  border: 1.5px solid #334155 !important;
-  font-weight: 800 !important;
+  border: 2px solid #000000 !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
 }
 
 html:not(.theme-dark) input::placeholder,
 html:not(.theme-dark) textarea::placeholder {
-  color: #334155 !important;
-  -webkit-text-fill-color: #334155 !important;
-  opacity: 0.85 !important;
-  font-weight: 700 !important;
-}
-
-html:not(.theme-dark) input:focus,
-html:not(.theme-dark) select:focus,
-html:not(.theme-dark) textarea:focus {
-  border-color: #000000 !important;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.16) !important;
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+  opacity: 0.80 !important;
+  font-weight: 800 !important;
 }
 
 html:not(.theme-dark) select option,
 html:not(.theme-dark) select optgroup {
   background-color: #FFFFFF !important;
   color: #000000 !important;
-}
-
-/* Bottom Navigation Tabs in Light Mode */
-html:not(.theme-dark) .nav-tab-btn {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
+  font-weight: 900 !important;
 }
 
 
 /* ============================================================================
-   🌙 DARK MODE (وضع الليل — كتابة واضحة وباينة 100% فكل بلاصة)
+   🌙 2 - وضع الليل (NIGHT MODE)
+   القاعدة:
+   - أي حاجة كتزاد = أخضر #006233، الكتابة بيضاء #FFFFFF
+   - أي حاجة كتنقص = أحمر #C1272D، الكتابة بيضاء #FFFFFF
+   - أي بوطونة أخرى، أي خانة، أي بلاصة أخرى = أسود #111111
+   - الكتابة كاملة فالليل = بيضاء #FFFFFF وغليظة Bold
    ============================================================================ */
 html.theme-dark,
 html.theme-dark body {
-  background-color: #120804 !important;
+  background-color: #111111 !important;
   color: #FFFFFF !important;
-}
-
-html.theme-dark .luxury-card {
-  background: rgba(15, 10, 6, 0.78) !important;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.25) !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6) !important;
-  color: #FFFFFF !important;
-}
-
-html.theme-dark .luxury-card-hover {
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-html.theme-dark .luxury-card-hover:hover {
-  border-color: rgba(245, 200, 76, 0.65) !important;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.75);
-}
-
-html.theme-dark .gold-gradient {
-  background: #F5C84C;
-  color: #000000 !important;
-}
-
-html.theme-dark .gold-text {
-  color: #FFE066 !important;
-}
-
-/* Force all muted/gray/translucent-white text in Dark Mode to be bright, clear White */
-html.theme-dark .text-white\/90,
-html.theme-dark .text-white\/85,
-html.theme-dark .text-white\/80,
-html.theme-dark .text-white\/75,
-html.theme-dark .text-white\/70,
-html.theme-dark .text-white\/60,
-html.theme-dark .text-white\/50,
-html.theme-dark .text-slate-300,
-html.theme-dark .text-slate-400,
-html.theme-dark .text-slate-500,
-html.theme-dark .text-gray-300,
-html.theme-dark .text-gray-400,
-html.theme-dark .text-\[\#C8B08A\],
-html.theme-dark .text-\[\#A68966\],
-html.theme-dark .text-\[\#FFF8EB\] {
-  color: #FFFFFF !important;
-  opacity: 1 !important;
-}
-
-/* Ensure gold/amber text on dark cards is ultra-bright and readable */
-html.theme-dark .text-\[\#F5C84C\],
-html.theme-dark .text-\[\#F5D799\],
-html.theme-dark .text-\[\#E6C37A\],
-html.theme-dark .text-\[\#D4AF37\],
-html.theme-dark .text-\[\#D9B36C\] {
-  color: #FFE066 !important;
-}
-
-/* PRIMARY GOLD BUTTONS IN DARK MODE: Bright Gold Background + Pitch Black Text on Button AND All Children */
-html.theme-dark .btn-gold,
-html.theme-dark .bg-\[\#F5C84C\],
-html.theme-dark .bg-amber-500:not([class*="bg-amber-500/"]) {
-  background: #F5C84C !important;
-  color: #000000 !important;
-  font-weight: 900 !important;
-  border: 1.5px solid #E0B236 !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  transition: all 0.18s ease;
-}
-
-html.theme-dark .btn-gold *,
-html.theme-dark .bg-\[\#F5C84C\] *,
-html.theme-dark .bg-amber-500:not([class*="bg-amber-500/"]) *:not(.bg-rose-500):not(.bg-rose-600) {
-  color: #000000 !important;
-  -webkit-text-fill-color: #000000 !important;
-  opacity: 1 !important;
-}
-
-html.theme-dark .btn-gold:hover {
-  background: #FFD45E !important;
-}
-
-html.theme-dark .btn-gold:active {
-  transform: scale(0.98);
-}
-
-/* Emerald/Amber solid action buttons in Dark Mode (e.g. accept/arrive buttons): dark text */
-html.theme-dark .bg-emerald-500:not([class*="bg-emerald-500/"]),
-html.theme-dark .bg-emerald-500:not([class*="bg-emerald-500/"]) * {
-  color: #000000 !important;
-  font-weight: 900 !important;
-}
-
-/* SECONDARY / CANCEL BUTTONS IN DARK MODE: Dark Background + Crisp White Text on Button AND All Children */
-html.theme-dark .btn-cancel {
-  background: rgba(18, 12, 6, 0.85) !important;
-  color: #FFFFFF !important;
-  border: 1.5px solid rgba(255, 255, 255, 0.35) !important;
-  box-shadow: none !important;
   font-weight: 800 !important;
 }
 
-html.theme-dark .btn-cancel * {
+/* الكروت الرئيسية في الليل: مضببة قليلاً مع تباين واضح ليظهر فرق واضح بين البطاقة والأزرار السوداء البارزة */
+html.theme-dark .luxury-card:not(button) {
+  background: rgba(24, 24, 28, 0.86) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  border: 2px solid #FFFFFF !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.85) !important;
   color: #FFFFFF !important;
+  font-weight: 800 !important;
+}
+
+/* أي خانة أو بلاصة داخلية أخرى في وضع الليل = أسود صافي #111111 مع حدود وكتابة بيضاء #FFFFFF */
+html.theme-dark [class*="bg-"]:not(button):not(body):not(html):not(.luxury-card):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-overlay):not(.badge-pill),
+html.theme-dark [class*="from-"]:not(button):not(body):not(html):not(.luxury-card):not(.desert-bg-overlay) {
+  background: #111111 !important;
+  background-color: #111111 !important;
+  background-image: none !important;
+  border-color: #FFFFFF !important;
+  color: #FFFFFF !important;
+}
+
+/* خلفية المودال (Modal Backdrop) في وضع الليل */
+html.theme-dark .fixed.inset-0[class*="bg-black"],
+html.theme-dark .fixed.inset-0[class*="bg-[#"] {
+  background: rgba(0, 0, 0, 0.74) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+}
+
+/* الحدود في وضع الليل = بيضاء واضحة #FFFFFF */
+html.theme-dark [class*="border-"]:not(button) {
+  border-color: #FFFFFF !important;
+}
+
+/* الكتابة كاملة في وضع الليل = بيضاء #FFFFFF وغليظة Bold في جميع الأماكن */
+html.theme-dark body * {
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  text-shadow: none !important;
   opacity: 1 !important;
 }
 
-html.theme-dark .btn-cancel:hover {
-  background: rgba(30, 20, 10, 0.95) !important;
-  border-color: rgba(245, 200, 76, 0.65) !important;
-}
-
-html.theme-dark .btn-delete {
-  background: rgba(185, 28, 28, 0.45) !important;
-  color: #FFFFFF !important;
-  border: 1.5px solid rgba(248, 113, 113, 0.65) !important;
-  font-weight: 900 !important;
-}
-
-html.theme-dark .btn-delete * {
-  color: #FFFFFF !important;
-}
-
-html.theme-dark .btn-delete:hover {
-  background: rgba(220, 38, 38, 0.65) !important;
-}
-
-html.theme-dark .bg-\[\#1a0f00\]\/80,
-html.theme-dark .bg-\[\#1a0f00\]\/90,
-html.theme-dark .bg-\[\#120a00\]\/90,
-html.theme-dark .bg-\[\#120a00\]\/85,
-html.theme-dark .bg-\[\#120a00\],
-html.theme-dark .bg-\[\#251605\],
-html.theme-dark .bg-\[\#0e0800\] {
-  background: rgba(15, 10, 6, 0.78) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
+/* جميع الخانات (Inputs / Selects / Textareas) في وضع الليل = أسود #111111 وكتابة بيضاء #FFFFFF غليظة */
 html.theme-dark input:not([type="checkbox"]):not([type="radio"]),
 html.theme-dark select,
 html.theme-dark textarea {
-  background-color: rgba(0, 0, 0, 0.78) !important;
+  background: #111111 !important;
+  background-color: #111111 !important;
+  background-image: none !important;
   color: #FFFFFF !important;
   -webkit-text-fill-color: #FFFFFF !important;
-  border-color: rgba(255, 255, 255, 0.35) !important;
-  font-weight: 800 !important;
+  border: 2px solid #FFFFFF !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.65) !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
 }
 
 html.theme-dark input::placeholder,
 html.theme-dark textarea::placeholder {
-  color: rgba(255, 255, 255, 0.85) !important;
-  -webkit-text-fill-color: rgba(255, 255, 255, 0.85) !important;
-  opacity: 1 !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  opacity: 0.80 !important;
+  font-weight: 800 !important;
 }
 
 html.theme-dark select option,
 html.theme-dark select optgroup {
-  background-color: #1a110b !important;
+  background-color: #111111 !important;
   color: #FFFFFF !important;
+  font-weight: 900 !important;
+}
+
+
+/* ============================================================================
+   🔘 3 - تصميم الأزرار الحقيقية ثلاثية الأبعاد (3D TACTILE REALISTIC BUTTONS)
+   المواصفات:
+   1. ظل Shadow واضح لتحت (حافة سفلية ثلاثية الأبعاد + ظل خارجي عميق) باش تبان البوطونة طالعة وبارزة
+   2. زوايا مدورة بشكل متوازن: border-radius: 12px !important
+   3. تأثير الضغط الحقيقي (:active): تهبط لتحت (translateY(3.5px)) وملي تحيد صبعك ترجع تطلع
+   4. الأزرار الكبيرة ديال الإيداع والسحب والتسجيل (data-btn-size="large" / .btn-hero-action) تكون كبيرة وبارزة
+   5. فرق واضح بين البوطونة والخلفية باش تبان بوحدها ماشي لاصقة مع الصفحة
+   ============================================================================ */
+
+/* القاعدة المشتركة لجميع الأزرار في التطبيق */
+html body button {
+  border-radius: 12px !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
+  position: relative !important;
+  margin-bottom: 3px !important;
+  transform: translateY(0px) !important;
+  transition: transform 0.08s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.08s ease !important;
+  cursor: pointer !important;
+  user-select: none !important;
+}
+
+/* الأزرار الكبيرة الرئيسية (الإيداع، السحب، التسجيل، التأكيد) */
+html body button[data-btn-size="large"],
+html body button.btn-hero-action {
+  min-height: 48px !important;
+  padding-top: 11px !important;
+  padding-bottom: 11px !important;
+  font-size: 0.92rem !important;
+  letter-spacing: 0.01em !important;
+  margin-bottom: 4px !important;
+}
+
+/* ----------------------------------------------------------------------------
+   أ) أزرار الزيادة والتأكيد (أخضر #006233 + كتابة بيضاء #FFFFFF)
+   ---------------------------------------------------------------------------- */
+html body button[data-btn-role="add"],
+html body .btn-add {
+  background: #006233 !important;
+  background-color: #006233 !important;
+  background-image: none !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  border: 2px solid #002B16 !important;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.38),
+    0 4px 0 #002E17,
+    0 8px 16px rgba(0, 0, 0, 0.42) !important;
+}
+
+html.theme-dark body button[data-btn-role="add"],
+html.theme-dark body .btn-add {
+  border: 2px solid #FFFFFF !important;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.42),
+    0 4px 0 #002E17,
+    0 5px 0 rgba(255, 255, 255, 0.55),
+    0 9px 18px rgba(0, 0, 0, 0.85) !important;
+}
+
+html body button[data-btn-role="add"][data-btn-size="large"],
+html body button[data-btn-role="add"].btn-hero-action {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.42),
+    0 5px 0 #002814,
+    0 10px 20px rgba(0, 0, 0, 0.48) !important;
+}
+
+html.theme-dark body button[data-btn-role="add"][data-btn-size="large"],
+html.theme-dark body button[data-btn-role="add"].btn-hero-action {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.45),
+    0 5px 0 #002814,
+    0 6px 0 rgba(255, 255, 255, 0.65),
+    0 11px 22px rgba(0, 0, 0, 0.90) !important;
+}
+
+/* عند الضغط (:active) على زر الزيادة الأخضر: يهبط لتحت ويتقلص الظل السفلي */
+html body button[data-btn-role="add"]:active,
+html body .btn-add:active {
+  transform: translateY(3.5px) !important;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.35),
+    0 1px 0 #002814,
+    0 2px 5px rgba(0, 0, 0, 0.30) !important;
+}
+
+html body button[data-btn-role="add"] *:not(.badge-pill),
+html body .btn-add *:not(.badge-pill) {
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
+}
+
+/* ----------------------------------------------------------------------------
+   ب) أزرار النقصان والحذف والسحب (أحمر #C1272D + كتابة بيضاء #FFFFFF)
+   ---------------------------------------------------------------------------- */
+html body button[data-btn-role="remove"],
+html body .btn-delete {
+  background: #C1272D !important;
+  background-color: #C1272D !important;
+  background-image: none !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  border: 2px solid #5E0F13 !important;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.38),
+    0 4px 0 #6B1115,
+    0 8px 16px rgba(0, 0, 0, 0.42) !important;
+}
+
+html.theme-dark body button[data-btn-role="remove"],
+html.theme-dark body .btn-delete {
+  border: 2px solid #FFFFFF !important;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.42),
+    0 4px 0 #6B1115,
+    0 5px 0 rgba(255, 255, 255, 0.55),
+    0 9px 18px rgba(0, 0, 0, 0.85) !important;
+}
+
+html body button[data-btn-role="remove"][data-btn-size="large"],
+html body button[data-btn-role="remove"].btn-hero-action {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.42),
+    0 5px 0 #5E0F13,
+    0 10px 20px rgba(0, 0, 0, 0.48) !important;
+}
+
+html.theme-dark body button[data-btn-role="remove"][data-btn-size="large"],
+html.theme-dark body button[data-btn-role="remove"].btn-hero-action {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.45),
+    0 5px 0 #5E0F13,
+    0 6px 0 rgba(255, 255, 255, 0.65),
+    0 11px 22px rgba(0, 0, 0, 0.90) !important;
+}
+
+/* عند الضغط (:active) على زر النقصان الأحمر: يهبط لتحت ويتقلص الظل السفلي */
+html body button[data-btn-role="remove"]:active,
+html body .btn-delete:active {
+  transform: translateY(3.5px) !important;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.35),
+    0 1px 0 #5E0F13,
+    0 2px 5px rgba(0, 0, 0, 0.30) !important;
+}
+
+html body button[data-btn-role="remove"] *:not(.badge-pill),
+html body .btn-delete *:not(.badge-pill) {
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
+}
+
+/* ----------------------------------------------------------------------------
+   ج) أي بوطونة أخرى في وضع النهار = أبيض #FFFFFF + كتابة سوداء #000000 + ظل سفلي بارز 3D
+   ---------------------------------------------------------------------------- */
+html:not(.theme-dark) body button:not([data-btn-role="add"]):not([data-btn-role="remove"]) {
+  background: #FFFFFF !important;
+  background-color: #FFFFFF !important;
+  background-image: none !important;
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+  border: 2px solid #000000 !important;
+  box-shadow:
+    inset 0 1.5px 0 #FFFFFF,
+    0 4px 0 #000000,
+    0 8px 16px rgba(0, 0, 0, 0.28) !important;
+}
+
+html:not(.theme-dark) body button:not([data-btn-role="add"]):not([data-btn-role="remove"]):active {
+  transform: translateY(3.5px) !important;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.14),
+    0 1px 0 #000000,
+    0 2px 5px rgba(0, 0, 0, 0.20) !important;
+}
+
+html:not(.theme-dark) body button:not([data-btn-role="add"]):not([data-btn-role="remove"]) *:not(.badge-pill) {
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
+}
+
+/* ----------------------------------------------------------------------------
+   د) أي بوطونة أخرى في وضع الليل = أسود #111111 + كتابة بيضاء #FFFFFF + ظل سفلي بارز 3D
+   ---------------------------------------------------------------------------- */
+html.theme-dark body button:not([data-btn-role="add"]):not([data-btn-role="remove"]) {
+  background: #111111 !important;
+  background-color: #111111 !important;
+  background-image: none !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  border: 2px solid #FFFFFF !important;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.32),
+    0 4px 0 #000000,
+    0 5px 0 rgba(255, 255, 255, 0.65),
+    0 9px 18px rgba(0, 0, 0, 0.88) !important;
+}
+
+html.theme-dark body button:not([data-btn-role="add"]):not([data-btn-role="remove"]):active {
+  transform: translateY(3.5px) !important;
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, 0.70),
+    0 1px 0 rgba(255, 255, 255, 0.65),
+    0 2px 5px rgba(0, 0, 0, 0.65) !important;
+}
+
+html.theme-dark body button:not([data-btn-role="add"]):not([data-btn-role="remove"]) *:not(.badge-pill) {
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
+}
+
+/* ----------------------------------------------------------------------------
+   هـ) تمييز الزر النشط (Active State) في الاختيارات مع الحفاظ على الظل والـ 3D
+   ---------------------------------------------------------------------------- */
+html:not(.theme-dark) body button[data-btn-active="true"]:not([data-btn-role="add"]):not([data-btn-role="remove"]) {
+  background: #FFFFFF !important;
+  color: #000000 !important;
+  -webkit-text-fill-color: #000000 !important;
+  border: 2.5px solid #006233 !important;
+  box-shadow:
+    inset 0 1.5px 0 #FFFFFF,
+    0 4px 0 #006233,
+    0 8px 16px rgba(0, 98, 51, 0.35) !important;
+}
+
+html.theme-dark body button[data-btn-active="true"]:not([data-btn-role="add"]):not([data-btn-role="remove"]) {
+  background: #111111 !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  border: 2.5px solid #006233 !important;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.35),
+    0 4px 0 #006233,
+    0 9px 18px rgba(0, 98, 51, 0.55) !important;
+}
+
+html body button[data-btn-active="true"]:not([data-btn-role="add"]):not([data-btn-role="remove"]):active {
+  transform: translateY(3.5px) !important;
+  box-shadow:
+    0 1px 0 #006233,
+    0 2px 5px rgba(0, 98, 51, 0.30) !important;
+}
+
+/* شارة التنبيهات الصغيرة داخل الأزرار */
+html body button .badge-pill {
+  background: #C1272D !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  border: 1.5px solid #FFFFFF !important;
+  font-weight: 900 !important;
 }
 
 /* Custom Scrollbar */

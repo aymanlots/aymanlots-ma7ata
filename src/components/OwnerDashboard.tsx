@@ -62,6 +62,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   onOpenPlatformOwner,
 }) => {
   const {
+    currentWorkspace,
     userRole,
     stations,
     selectedStationId,
@@ -152,15 +153,27 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       .slice(0, 6);
   }, [parcels, searchQuery, activeStation]);
 
-  // Scoped Parcels, Transactions, and Pending Hawalas for the active station (or all stations when 'all' is selected)
+  // Scoped Parcels, Transactions, and Pending Hawalas for the active station (excluding unshipped incoming partner parcels so they only appear in sender's stock)
   const scopedParcels = useMemo(() => {
-    if (!activeStation) return parcels;
-    return parcels.filter(
+    const visibleParcels = parcels.filter(p => {
+      const isIncomingPartner = Boolean(
+        p.is_collaborator_data ||
+          (p.partner_origin_workspace_id &&
+            p.partner_origin_workspace_id !== currentWorkspace?.id)
+      );
+      if (isIncomingPartner && (p.status === 'registered' || p.status === 'pending')) {
+        return false;
+      }
+      return true;
+    });
+    if (!activeStation) return visibleParcels;
+    return visibleParcels.filter(
       p =>
         p.origin_station_id === activeStation.id ||
-        p.destination_station_id === activeStation.id
+        p.destination_station_id === activeStation.id ||
+        p.partner_destination_station_id === activeStation.id
     );
-  }, [parcels, activeStation]);
+  }, [parcels, activeStation, currentWorkspace?.id]);
 
   const scopedTransactions = useMemo(() => {
     const confirmed = transactions.filter(t => t.status === 'confirmed');
@@ -372,9 +385,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           <button
             type="button"
             onClick={handleOpenNewParcelAction}
-            className="btn-gold px-3.5 py-2 rounded-xl font-black text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer shadow-md"
+            className="btn-hero-action btn-add px-4 py-3 rounded-[12px] font-black text-sm sm:text-base flex items-center gap-2 cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-5 h-5" />
             <span>➕ تسجيل كولي جديد</span>
           </button>
         </div>
@@ -509,23 +522,23 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               })}
             </div>
 
-            {/* الأزرار الأربعة المنظمة للعمليات المالية في المحطة */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* الأزرار الأربعة المنظمة للعمليات المالية في المحطة (الإيداع والسحب بحجم كبير وبارز) */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
               <button
                 type="button"
                 onClick={() => openQuickVoucher('cash_in', activeStation?.id)}
-                className="btn-gold py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="btn-hero-action btn-add py-3.5 px-4 rounded-[12px] font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer"
               >
-                <ArrowDownLeft className="w-4 h-4" />
+                <ArrowDownLeft className="w-5 h-5" />
                 <span>➕ إيداع</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => openQuickVoucher('cash_out', activeStation?.id)}
-                className="btn-gold py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="btn-hero-action btn-delete py-3.5 px-4 rounded-[12px] font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer"
               >
-                <ArrowUpRight className="w-4 h-4" />
+                <ArrowUpRight className="w-5 h-5" />
                 <span>➖ سحب</span>
               </button>
 
@@ -535,12 +548,12 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                   setHawalaInitialTab(scopedPendingHawalas.length > 0 ? 'list' : 'send');
                   setHawalaModalOpen(true);
                 }}
-                className="btn-gold py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer relative"
+                className="btn-gold py-3 px-3.5 rounded-[12px] font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer relative"
               >
                 <Banknote className="w-4 h-4" />
                 <span>💸 حوالة</span>
                 {scopedPendingHawalas.length > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-black">
+                  <span className="badge-pill px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-black">
                     {scopedPendingHawalas.length}
                   </span>
                 )}
@@ -551,7 +564,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 onClick={() => {
                   setShowExchangeModal(!showExchangeModal);
                 }}
-                className={`py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-3 px-3.5 rounded-[12px] font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer ${
                   showExchangeModal ? 'btn-cancel' : 'btn-gold'
                 }`}
               >
@@ -570,88 +583,27 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         )}
       </div>
 
-      {/* 4. حوالات المحطة الجارية */}
+      {/* 4. حوالات المحطة الجارية (بزر مستقل لإظهار أو إخفاء السجل) */}
       {scopedPendingHawalas.length > 0 && (
-        <div className="luxury-card rounded-[22px] p-4 space-y-3 border border-[#F5C84C]/40">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Banknote className="w-5 h-5 text-[#F5C84C]" />
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-sm font-black text-white">
-                  💸 حوالات بانتظار التسليم ({scopedPendingHawalas.length})
-                </h3>
-                <HelpPopover text='اضغط "تم الاستلام" عند تسليم الفلوس للمستلم ليتم خصمها (−) من لاكيس محطة الوصول.' />
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setHawalaInitialTab('list');
-                setHawalaModalOpen(true);
-              }}
-              className="btn-cancel px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer"
-            >
-              الكل
-            </button>
-          </div>
-
-          <div className="space-y-2.5">
-            {scopedPendingHawalas.map(t => {
-              const isIncomingHere =
-                activeStation && t.destination_station_id === activeStation.id;
-              return (
-                <div
-                  key={t.id}
-                  className="bg-black/55 border border-[#D4AF37]/35 rounded-2xl p-3.5 space-y-2.5"
-                >
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        dir="ltr"
-                        className="px-2 py-0.5 rounded-lg bg-[#D4AF37]/20 text-[#F5C84C] font-mono text-xs font-black"
-                      >
-                        {t.transfer_code}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full bg-black/60 text-[#F5C84C] border border-[#D4AF37]/40 text-[10px] font-black">
-                        {isIncomingHere
-                          ? `📥 واردة إلى ${t.destination_station_name}`
-                          : `📤 مرسلة من ${t.origin_station_name} إلى ${t.destination_station_name}`}
-                      </span>
-                    </div>
-                    <span dir="ltr" className="text-sm font-mono font-black text-[#F5C84C]">
-                      {t.payout_amount.toLocaleString('en-US')} {t.payout_currency}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs text-white/85">
-                    <span>
-                      المرسل: <strong>{t.sender_name}</strong> ({t.origin_station_name})
-                    </span>
-                    <span>
-                      المستلم: <strong>{t.receiver_name}</strong> ({t.destination_station_name})
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/10">
-                    <span className="text-[11px] text-white/75 font-mono">
-                      كود التسليم: <strong className="text-[#F5C84C]">{t.secret_pin}</strong>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRequestHawalaPayout(t)}
-                      className="btn-gold px-3.5 py-2 rounded-xl font-black text-xs flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>
-                        تم الاستلام (خصم -{t.payout_amount.toLocaleString('en-US')} {t.payout_currency} من{' '}
-                        {t.destination_station_name})
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        <div className="space-y-2.5">
+          <button
+            type="button"
+            data-btn-role="info"
+            data-btn-role-fixed="true"
+            data-btn-active={isCashboxOpen ? undefined : undefined}
+            data-btn-active-fixed="true"
+            onClick={() => {
+              setHawalaInitialTab('list');
+              setHawalaModalOpen(true);
+            }}
+            className="btn-gold w-full py-3 px-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2 cursor-pointer shadow-md"
+          >
+            <span className="flex items-center gap-2">
+              <Banknote className="w-4 h-4 shrink-0" />
+              <span>💸 سجل الحوالات بانتظار التسليم ({scopedPendingHawalas.length})</span>
+            </span>
+            <span className="text-[11px] font-black">عرض السجل ←</span>
+          </button>
         </div>
       )}
 
@@ -696,44 +648,42 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         </div>
       )}
 
-      {/* 6. آخر الحركات المالية في المحطة المختارة (مطوي افتراضياً لتنظيم الواجهة) */}
-      <div className="luxury-card rounded-[22px] p-4 space-y-3">
-        <div
-          role="button"
-          tabIndex={0}
+      {/* 6. بوطونة مستقلة لسجل العمليات المالية (مخفي افتراضياً: كليكي يطلع السجل، كليكي عاود يتخبى) */}
+      <div className="space-y-2.5">
+        <button
+          type="button"
+          data-btn-role="info"
+          data-btn-role-fixed="true"
+          data-btn-active={isRecentTxOpen ? 'true' : undefined}
+          data-btn-active-fixed="true"
           onClick={() => setIsRecentTxOpen(prev => !prev)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setIsRecentTxOpen(prev => !prev);
-            }
-          }}
-          className="flex items-center justify-between cursor-pointer select-none"
+          className="btn-gold w-full py-3 px-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2 cursor-pointer shadow-md"
         >
-          <h3 className="text-xs font-black text-white flex items-center gap-1.5">
-            <Clock className="w-4 h-4 text-[#F5C84C]" />
+          <span className="flex items-center gap-2">
+            <Clock className="w-4 h-4 shrink-0" />
             <span>
+              📋{' '}
               {activeStation
                 ? `سجل عمليات ${activeStation.name} (${scopedTransactions.length})`
                 : `سجل العمليات المالية (${scopedTransactions.length})`}
             </span>
-          </h3>
+          </span>
           <ChevronDown
-            className={`w-5 h-5 text-[#F5C84C] transition-transform duration-200 ${
+            className={`w-5 h-5 shrink-0 transition-transform duration-200 ${
               isRecentTxOpen ? 'rotate-180' : ''
             }`}
           />
-        </div>
+        </button>
 
         {isRecentTxOpen && (
-          <div className="pt-2 border-t border-white/15 space-y-2 animate-fadeIn">
+          <div className="luxury-card rounded-[22px] p-4 space-y-2.5 animate-fadeIn">
             {scopedTransactions.length === 0 ? (
               <div className="text-center py-6 text-xs text-white/70 bg-black/30 rounded-xl border border-white/10">
                 لا توجد عمليات مالية مسجلة في هذه المحطة حتى الآن
               </div>
             ) : (
               <div className="space-y-2">
-                {scopedTransactions.slice(0, 6).map(tx => {
+                {scopedTransactions.slice(0, 12).map(tx => {
                   const isOut = tx.type === 'cash_out' || tx.type === 'goods_payment';
                   return (
                     <div

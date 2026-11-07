@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Sahara Express - للسفر ونقل البضائع والكوليات",
-  "short_name": "SaharaExp",
+  "name": "Sahara Express",
+  "short_name": "Sahara Express",
   "description": "نظام إدارة الشحن واللوجستيك والكوليات والصناديق النقدية بين المغرب وموريتانيا",
   "start_url": "/",
   "scope": "/",

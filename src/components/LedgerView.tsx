@@ -85,6 +85,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
   const [isMoreToolsOpen, setIsMoreToolsOpen] = useState(false);
   const [isStationBalancesOpen, setIsStationBalancesOpen] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [isOperationsLogOpen, setIsOperationsLogOpen] = useState(false);
   const [expandedTxIds, setExpandedTxIds] = useState<Set<string>>(new Set());
 
   const toggleTxExpand = (id: string) => {
@@ -383,48 +384,52 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
           </button>
         </div>
 
-        {/* Primary Cashbox & Exchange & Remittance Buttons Always Visible */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-          <button
-            type="button"
-            onClick={() => onOpenNewVoucher('cash_in')}
-            className="btn-gold flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
-          >
-            <span>➕ إيداع</span>
-          </button>
+        {/* Primary Cashbox Deposit & Withdraw Buttons (Large & Prominent) + Remittance & Exchange */}
+        <div className="space-y-2.5 pt-1">
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => onOpenNewVoucher('cash_in')}
+              className="btn-hero-action btn-add flex items-center justify-center gap-2 py-3.5 px-4 rounded-[12px] text-sm sm:text-base font-black cursor-pointer"
+            >
+              <span>➕ إيداع</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => onOpenNewVoucher('cash_out')}
-            className="btn-delete flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
-          >
-            <span>➖ سحب</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => onOpenNewVoucher('cash_out')}
+              className="btn-hero-action btn-delete flex items-center justify-center gap-2 py-3.5 px-4 rounded-[12px] text-sm sm:text-base font-black cursor-pointer"
+            >
+              <span>➖ سحب</span>
+            </button>
+          </div>
 
-          <button
-            type="button"
-            onClick={() => setShowMoneyTransferModal(true)}
-            className="btn-cancel flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer border border-[#F5C84C]/45 text-[#F5C84C]"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5 text-[#F5C84C] shrink-0" />
-            <span className="whitespace-nowrap">💸 حوالة</span>
-          </button>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShowMoneyTransferModal(true)}
+              className="btn-cancel flex items-center justify-center gap-1.5 px-3 py-3 rounded-[12px] text-xs sm:text-sm font-black cursor-pointer"
+            >
+              <ArrowRightLeft className="w-4 h-4 shrink-0" />
+              <span className="whitespace-nowrap">💸 حوالة</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (!exchangeStationId && stations[0]?.id) {
-                setExchangeStationId(selectedStationId || stations[0].id);
-              }
-              setShowConverter(prev => !prev);
-            }}
-            className={`flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer ${
-              showConverter ? 'btn-gold' : 'btn-cancel'
-            }`}
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5 text-[#2ECC71] shrink-0" />
-            <span className="whitespace-nowrap">💱 صرف عملة</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!exchangeStationId && stations[0]?.id) {
+                  setExchangeStationId(selectedStationId || stations[0].id);
+                }
+                setShowConverter(prev => !prev);
+              }}
+              className={`flex items-center justify-center gap-1.5 px-3 py-3 rounded-[12px] text-xs sm:text-sm font-black cursor-pointer ${
+                showConverter ? 'btn-gold' : 'btn-cancel'
+              }`}
+            >
+              <ArrowRightLeft className="w-4 h-4 shrink-0" />
+              <span className="whitespace-nowrap">💱 صرف عملة</span>
+            </button>
+          </div>
         </div>
 
         {/* Collapsible Secondary Tools (تفتح فقط عند الضغط على السهم) */}
@@ -554,7 +559,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
           })}
         </div>
 
-        {/* Pending Hawalas for current station scope */}
+        {/* Pending Hawalas standalone button (hidden log by default) */}
         {(() => {
           const pendingHawalas = moneyTransfers.filter(t => {
             if (t.status !== 'pending') return false;
@@ -565,64 +570,17 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
           });
           if (pendingHawalas.length === 0) return null;
           return (
-            <div className="pt-2 border-t border-white/15 space-y-2">
-              <div className="flex items-center justify-between text-[11px] font-black text-[#F5C84C]">
-                <span>💸 حوالات مالية بانتظار الاستلام ({pendingHawalas.length}):</span>
-                <button
-                  type="button"
-                  onClick={() => setShowMoneyTransferModal(true)}
-                  className="text-[10px] underline cursor-pointer"
-                >
-                  فتح سجل الحوالات
-                </button>
-              </div>
-              {pendingHawalas.map(t => (
-                <div
-                  key={t.id}
-                  className="p-2.5 rounded-xl bg-black/60 border border-amber-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs"
-                >
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span dir="ltr" className="font-mono font-black text-[#F5C84C]">
-                        {t.transfer_code}
-                      </span>
-                      <span className="text-[10px] text-white/80">
-                        من {t.origin_station_name} ➔ إلى {t.destination_station_name}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-white/75 mt-0.5">
-                      المرسل: {t.sender_name} • المستلم: {t.receiver_name} • المبلغ:{' '}
-                      <strong dir="ltr" className="font-mono text-[#F5C84C]">
-                        {t.payout_amount.toLocaleString('en-US')} {t.payout_currency}
-                      </strong>
-                    </p>
-                  </div>
-                  {userRole !== 'worker' || t.destination_station_id === workerStationId ? (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const destBal =
-                          stationBalances[t.destination_station_id]?.[t.payout_currency] || 0;
-                        if (destBal <= 0 || destBal - t.payout_amount < 0) {
-                          setPendingPayoutWarningTransfer(t);
-                          return;
-                        }
-                        await payoutMoneyTransfer(t.id);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>
-                        تم الاستلام (-{t.payout_amount} {t.payout_currency})
-                      </span>
-                    </button>
-                  ) : (
-                    <span className="px-2.5 py-1 rounded-xl bg-black/55 border border-amber-500/40 text-amber-300 font-bold text-[10px] shrink-0">
-                      ⏳ بانتظار الاستلام في {t.destination_station_name}
-                    </span>
-                  )}
-                </div>
-              ))}
+            <div className="pt-2 border-t border-white/15">
+              <button
+                type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
+                onClick={() => setShowMoneyTransferModal(true)}
+                className="w-full py-2 px-3 rounded-xl font-black text-xs flex items-center justify-between gap-2 cursor-pointer shadow-sm"
+              >
+                <span>💸 سجل الحوالات بانتظار الاستلام ({pendingHawalas.length})</span>
+                <span className="text-[11px] font-black">فتح السجل ⬅</span>
+              </button>
             </div>
           );
         })()}
@@ -698,9 +656,37 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
         )}
       </div>
 
-      {/* 3. Compact Search Bar + Collapsible Filters Toggle */}
-      <div className="luxury-card p-2.5 rounded-[20px] space-y-2">
+      {/* 3. Standalone Button for Operations Log (سجل العمليات) */}
+      <button
+        type="button"
+        data-btn-role="info"
+        data-btn-role-fixed="true"
+        data-btn-active={isOperationsLogOpen ? 'true' : 'false'}
+        data-btn-active-fixed="true"
+        onClick={() => setIsOperationsLogOpen(prev => !prev)}
+        className="w-full py-2.5 px-3.5 rounded-[18px] font-black text-xs sm:text-sm flex items-center justify-between gap-2 cursor-pointer transition shadow-md"
+      >
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 shrink-0" />
+          <span>📋 سجل العمليات والسندات المالية ({filteredTransactions.length})</span>
+        </div>
         <div className="flex items-center gap-1.5">
+          <span className="text-[11px] font-black">
+            {isOperationsLogOpen ? 'إخفاء السجل ▲' : 'عرض السجل ▼'}
+          </span>
+          <ChevronDown
+            className={`w-4 h-4 transition-transform duration-200 ${
+              isOperationsLogOpen ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+      </button>
+
+      {isOperationsLogOpen && (
+        <div className="space-y-2.5 animate-fadeIn">
+          {/* Compact Search Bar + Collapsible Filters Toggle */}
+          <div className="luxury-card p-2.5 rounded-[20px] space-y-2">
+            <div className="flex items-center gap-1.5">
           <div className="relative flex-1">
             <input
               type="text"
@@ -1016,6 +1002,8 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
           })
         )}
       </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {editingTx && (

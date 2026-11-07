@@ -441,6 +441,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
+              data-btn-role="info"
+              data-btn-role-fixed="true"
+              data-btn-active={themeMode === 'light' ? 'true' : 'false'}
+              data-btn-active-fixed="true"
               onClick={() => setThemeMode('light')}
               className={`py-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
                 themeMode === 'light' ? 'btn-gold' : 'btn-cancel'
@@ -450,6 +454,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </button>
             <button
               type="button"
+              data-btn-role="info"
+              data-btn-role-fixed="true"
+              data-btn-active={themeMode === 'dark' ? 'true' : 'false'}
+              data-btn-active-fixed="true"
               onClick={() => setThemeMode('dark')}
               className={`py-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
                 themeMode === 'dark' ? 'btn-gold' : 'btn-cancel'
@@ -500,6 +508,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button
             type="button"
+            data-btn-role="info"
+            data-btn-role-fixed="true"
+            data-btn-active={themeMode === 'light' ? 'true' : 'false'}
+            data-btn-active-fixed="true"
             onClick={() => setThemeMode('light')}
             className={`py-2 rounded-xl text-xs font-black transition cursor-pointer ${
               themeMode === 'light' ? 'btn-gold' : 'btn-cancel'
@@ -509,6 +521,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
           <button
             type="button"
+            data-btn-role="info"
+            data-btn-role-fixed="true"
+            data-btn-active={themeMode === 'dark' ? 'true' : 'false'}
+            data-btn-active-fixed="true"
             onClick={() => setThemeMode('dark')}
             className={`py-2 rounded-xl text-xs font-black transition cursor-pointer ${
               themeMode === 'dark' ? 'btn-gold' : 'btn-cancel'

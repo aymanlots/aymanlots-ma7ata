@@ -83,13 +83,8 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
 
   // Collapsible sections state (collapsed by default)
   const [isRecentOpsOpen, setIsRecentOpsOpen] = useState<boolean>(false);
+  const [isWorkerParcelsOpen, setIsWorkerParcelsOpen] = useState<boolean>(false);
   const [visibleRecentOpsCount, setVisibleRecentOpsCount] = useState<number>(10);
-
-  useEffect(() => {
-    if (searchQuery.trim() !== '') {
-      setIsRecentOpsOpen(true);
-    }
-  }, [searchQuery]);
 
   const unclaimedDaysThreshold = currentWorkspace?.unclaimed_days_threshold ?? 7;
   const currentStation =
@@ -108,16 +103,33 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     );
   }, [parcels, currentStation?.id]);
 
-  // Incoming parcels strictly addressed to this worker's station
+  // Incoming parcels strictly addressed to this worker's station (for partner parcels, only once shipped 'in_transit' or 'arrived' or 'delivered', or if pending approval)
   const stationIncomingParcels = useMemo(() => {
     if (!currentStation?.id) return [];
-    return stationParcels.filter(
-      (p) =>
-        (p.destination_station_id === currentStation.id ||
-          p.partner_destination_station_id === currentStation.id) &&
-        p.status !== 'cancelled'
-    );
-  }, [stationParcels, currentStation?.id]);
+    return stationParcels.filter((p) => {
+      if (
+        p.destination_station_id !== currentStation.id &&
+        p.partner_destination_station_id !== currentStation.id
+      ) {
+        return false;
+      }
+      if (p.status === 'cancelled') return false;
+      const isIncomingPartner = Boolean(
+        p.is_collaborator_data ||
+          (p.partner_origin_workspace_id &&
+            p.partner_origin_workspace_id !== currentWorkspace?.id)
+      );
+      // If accepted by partner but still 'registered' at sender's station (not shipped yet), do not show in receiver's station stock
+      if (
+        isIncomingPartner &&
+        p.partner_acceptance_status === 'accepted' &&
+        (p.status === 'registered' || p.status === 'pending')
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [stationParcels, currentStation?.id, currentWorkspace?.id]);
 
   // Outgoing parcels strictly sent from this worker's station
   const stationOutgoingParcels = useMemo(() => {
@@ -313,23 +325,13 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           </div>
         </div>
 
-        {/* Gold Balance Pill + Quick + and - Buttons */}
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => onOpenNewVoucher('cash_in')}
-            className="min-w-[58px] min-h-[54px] rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 active:scale-95"
-            title="زيادة فلوس فلاكيس (+ إيداع)"
-          >
-            <Plus className="w-5 h-5" />
-            <span className="text-[10px] font-extrabold">+ زيادة</span>
-          </button>
-
+        {/* Gold Balance Pill + Large Prominent Deposit (+ إيداع) & Withdraw (- سحب) Buttons */}
+        <div className="space-y-3">
           <div
             onClick={onGoToCash}
-            className="flex-1 min-w-0 overflow-hidden bg-black/50 border border-white/15 rounded-2xl py-2.5 px-3 text-center cursor-pointer shadow-lg flex flex-col justify-center"
+            className="w-full min-w-0 overflow-hidden bg-black/50 border border-white/15 rounded-2xl py-3 px-4 text-center cursor-pointer shadow-lg flex flex-col justify-center"
           >
-            <p className="text-[11px] font-extrabold text-white/80">الرصيد المتوفر حالياً</p>
+            <p className="text-xs font-extrabold text-white/80">الرصيد المتوفر حالياً</p>
             <p
               className="font-black text-[#F5C84C] tracking-tight mt-0.5"
               dir="ltr"
@@ -337,7 +339,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                 direction: 'ltr',
                 unicodeBidi: 'isolate',
                 whiteSpace: 'nowrap',
-                fontSize: formattedStationBalance.length > 14 ? '0.75rem' : formattedStationBalance.length > 10 ? '0.9rem' : formattedStationBalance.length > 7 ? '1.1rem' : '1.35rem',
+                fontSize: formattedStationBalance.length > 14 ? '0.9rem' : formattedStationBalance.length > 10 ? '1.1rem' : formattedStationBalance.length > 7 ? '1.3rem' : '1.5rem',
                 lineHeight: '1.2',
               }}
             >
@@ -345,15 +347,27 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => onOpenNewVoucher('cash_out')}
-            className="min-w-[58px] min-h-[54px] rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 active:scale-95"
-            title="سحب فلوس من لاكيس (- صرف)"
-          >
-            <Minus className="w-5 h-5" />
-            <span className="text-[10px] font-extrabold">− سحب</span>
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => onOpenNewVoucher('cash_in')}
+              className="btn-hero-action btn-add py-3.5 px-4 rounded-[12px] flex items-center justify-center gap-2 cursor-pointer text-sm sm:text-base font-black"
+              title="زيادة فلوس فلاكيس (+ إيداع)"
+            >
+              <Plus className="w-5 h-5" />
+              <span>➕ إيداع</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onOpenNewVoucher('cash_out')}
+              className="btn-hero-action btn-delete py-3.5 px-4 rounded-[12px] flex items-center justify-center gap-2 cursor-pointer text-sm sm:text-base font-black"
+              title="سحب فلوس من لاكيس (- صرف)"
+            >
+              <Minus className="w-5 h-5" />
+              <span>➖ سحب</span>
+            </button>
+          </div>
         </div>
 
         {/* Remittance (إرسال/استقبال حوالة) & Currency Exchange (صرف العملة) Buttons */}
@@ -566,13 +580,40 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           </button>
         </div>
 
-        {(() => {
+        {/* بوطونة إظهار / إخفاء سجل كوليات المحطة */}
+        <button
+          type="button"
+          data-btn-role="info"
+          data-btn-role-fixed="true"
+          data-btn-active={isWorkerParcelsOpen ? 'true' : undefined}
+          data-btn-active-fixed="true"
+          onClick={() => setIsWorkerParcelsOpen((prev) => !prev)}
+          className="btn-gold w-full py-2.5 px-3.5 rounded-2xl font-black text-xs flex items-center justify-between gap-2 cursor-pointer shadow-md"
+        >
+          <span className="flex items-center gap-2">
+            <Package className="w-4 h-4 shrink-0" />
+            <span>
+              📋 سجل عمليات وكوليات {currentStation.name} ({
+                workerParcelsTab === 'incoming'
+                  ? stationIncomingParcels.length
+                  : stationOutgoingParcels.length
+              })
+            </span>
+          </span>
+          <ChevronDown
+            className={`w-4 h-4 shrink-0 transition-transform duration-200 ${
+              isWorkerParcelsOpen ? 'rotate-180' : ''
+            }`}
+          />
+        </button>
+
+        {isWorkerParcelsOpen && (() => {
           const activeList =
             workerParcelsTab === 'incoming' ? stationIncomingParcels : stationOutgoingParcels;
 
           if (activeList.length === 0) {
             return (
-              <div className="py-6 px-4 rounded-2xl bg-black/50 border border-white/10 text-center text-xs text-white/75 font-bold">
+              <div className="py-6 px-4 rounded-2xl bg-black/50 border border-white/10 text-center text-xs text-white/75 font-bold animate-fadeIn">
                 {workerParcelsTab === 'incoming'
                   ? `لا توجد كوليات واردة موجهة إلى محطة "${currentStation.name}" حالياً.`
                   : `لا توجد كوليات صادرة من محطة "${currentStation.name}" حالياً.`}
@@ -581,7 +622,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           }
 
           return (
-            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-0.5">
+            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-0.5 animate-fadeIn">
               {activeList.slice(0, 12).map((p) => {
                 const pOwn = getParcelSourceOwnershipInfo(
                   p,
@@ -711,7 +752,26 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                           </>
                         )}
 
-                        {isDestForMe && (p.status === 'in_transit' || p.status === 'registered') && (
+                        {p.origin_station_id === currentStation.id &&
+                          p.status === 'registered' &&
+                          p.partner_acceptance_status !== 'rejected' &&
+                          p.partner_acceptance_status !== 'pending_approval' && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await updateParcelStatus(
+                                p.id,
+                                'in_transit',
+                                `تم شحن الكولي وانطلاقه من محطة ${currentStation.name}`
+                              );
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-[#F5C84C] hover:bg-[#ffe074] text-slate-950 font-black text-[11px] cursor-pointer"
+                          >
+                            🚚 شحن الكولي
+                          </button>
+                        )}
+
+                        {isDestForMe && p.status === 'in_transit' && (
                           <button
                             type="button"
                             onClick={async () => {
@@ -754,35 +814,30 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         })()}
       </div>
 
-      {/* 5. COLLAPSIBLE: "آخر العمليات (عدد العمليات)" AT BOTTOM */}
-      <div className="luxury-card rounded-[24px] p-4 sm:p-5">
-        <div
-          role="button"
-          tabIndex={0}
+      {/* 5. بوطونة مستقلة لسجل العمليات (مخفي افتراضياً: كليكي يطلع السجل، كليكي عاود يتخبى) */}
+      <div className="space-y-2.5">
+        <button
+          type="button"
+          data-btn-role="info"
+          data-btn-role-fixed="true"
+          data-btn-active={isRecentOpsOpen ? 'true' : undefined}
+          data-btn-active-fixed="true"
           onClick={() => setIsRecentOpsOpen((prev) => !prev)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setIsRecentOpsOpen((prev) => !prev);
-            }
-          }}
-          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+          className="btn-gold w-full py-3 px-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2 cursor-pointer shadow-md"
         >
-          <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-[#F5C84C] shrink-0" />
-            <h3 className="text-sm sm:text-base font-black text-white">
-              آخر العمليات ({recentOperations.length})
-            </h3>
-          </div>
+          <span className="flex items-center gap-2">
+            <Clock className="w-5 h-5 shrink-0" />
+            <span>📋 سجل العمليات ({recentOperations.length})</span>
+          </span>
           <ChevronDown
-            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
+            className={`w-5 h-5 shrink-0 transition-transform duration-200 ${
               isRecentOpsOpen ? 'rotate-180' : ''
             }`}
           />
-        </div>
+        </button>
 
         {isRecentOpsOpen && (
-          <div className="mt-4 pt-3 border-t border-white/15 space-y-3">
+          <div className="luxury-card rounded-[24px] p-4 sm:p-5 space-y-3 animate-fadeIn">
             <div className="flex items-center justify-end gap-2 text-xs font-extrabold">
               <button type="button" onClick={onGoToParcels} className="px-3 py-1.5 rounded-xl">
                 كل الكوليات

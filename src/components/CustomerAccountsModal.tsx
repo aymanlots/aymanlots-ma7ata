@@ -79,6 +79,7 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'debt' | 'vip'>('all');
+  const [isCustomersLogOpen, setIsCustomersLogOpen] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
@@ -598,14 +599,31 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
             </div>
           </div>
 
-          {/* Customers List (Compact 2-Row Cards) */}
-          {filteredCustomers.length === 0 ? (
-            <div className="bg-black/45 p-5 rounded-2xl border border-white/15 text-center">
-              <p className="font-black text-white text-xs">لا توجد حسابات مطابقة للبحث</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredCustomers.map((c) => {
+          {/* Standalone Toggle Button for Customers Operations Log */}
+          <button
+            type="button"
+            data-btn-role="info"
+            data-btn-role-fixed="true"
+            data-btn-active={isCustomersLogOpen ? 'true' : 'false'}
+            data-btn-active-fixed="true"
+            onClick={() => setIsCustomersLogOpen(prev => !prev)}
+            className="w-full py-2.5 px-3.5 rounded-2xl font-black text-xs flex items-center justify-between gap-2 cursor-pointer transition shadow-md"
+          >
+            <span>📋 سجل عمليات وحسابات الزبناء ({filteredCustomers.length})</span>
+            <span className="text-[11px] font-black">
+              {isCustomersLogOpen ? 'إخفاء السجل ▲' : 'عرض السجل ▼'}
+            </span>
+          </button>
+
+          {/* Customers List (Hidden until toggle button is clicked) */}
+          {isCustomersLogOpen && (
+            filteredCustomers.length === 0 ? (
+              <div className="bg-black/45 p-5 rounded-2xl border border-white/15 text-center animate-fadeIn">
+                <p className="font-black text-white text-xs">لا توجد حسابات مطابقة للبحث</p>
+              </div>
+            ) : (
+              <div className="space-y-2 animate-fadeIn">
+                {filteredCustomers.map((c) => {
                 const hasDebt = c.unpaidMad > 0 || c.unpaidMru > 0;
                 const isExpanded = expandedKey === c.key;
 
@@ -795,7 +813,8 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
                   </div>
                 );
               })}
-            </div>
+              </div>
+            )
           )}
         </div>
       </div>

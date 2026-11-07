@@ -116,7 +116,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
           setDeliveredTo('');
           setPaymentAmount('');
           setErrorMessage(getNonArrivedErrorMessage(initialParcel));
-          if (initialParcel.status === 'in_transit' || initialParcel.status === 'registered') {
+          if (initialParcel.status === 'in_transit') {
             setPendingArrivalParcel(initialParcel);
           }
         } else {
@@ -231,11 +231,11 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
       return;
     }
 
-    // Require parcel to be in station stock (status === 'arrived'), or offer 1-click arrival confirmation
+    // Require parcel to be in station stock (status === 'arrived'), or offer 1-click arrival confirmation ONLY if already shipped ('in_transit')
     if (found.status !== 'arrived') {
       playErrorBeep();
       setErrorMessage(getNonArrivedErrorMessage(found));
-      if (found.status === 'in_transit' || found.status === 'registered') {
+      if (found.status === 'in_transit') {
         setPendingArrivalParcel(found);
       }
       return;
@@ -376,16 +376,16 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-1.5 sm:p-3 bg-black/80 backdrop-blur-md animate-fadeIn overflow-y-auto"
+      className="fixed inset-0 z-50 flex justify-center items-stretch p-0 m-0 bg-black/85 backdrop-blur-md animate-fadeIn overflow-hidden"
       onClick={onClose}
     >
       <div 
-        className="w-[calc(100%-8px)] max-w-[420px] luxury-card border-2 border-[#D4AF37]/65 rounded-[22px] shadow-2xl overflow-hidden overflow-x-hidden flex flex-col text-right relative max-h-[94vh] my-auto"
+        className="w-full max-w-[430px] h-[100dvh] min-h-[100dvh] max-h-[100dvh] luxury-card border-x-2 border-y-0 border-[#D4AF37]/65 rounded-none shadow-2xl overflow-hidden flex flex-col justify-between text-right relative m-0"
         dir="rtl"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-2.5 sm:p-3 border-b border-[#D4AF37]/30 shrink-0 flex items-center justify-between">
+        <div className="p-2.5 border-b border-[#D4AF37]/30 shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#F5D799] via-[#D4AF37] to-[#9A711C] text-[#140b00] flex items-center justify-center font-black shadow-md shrink-0">
               <UserCheck className="w-4 h-4 stroke-[2.5]" />
@@ -461,10 +461,10 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
           )}
         </div>
 
-        {/* Body */}
-        <div className="p-2.5 overflow-y-auto flex-1 text-xs space-y-2.5">
+        {/* Body — 100% Full Screen Vertical Stack */}
+        <div className="p-2.5 overflow-hidden flex-1 flex flex-col justify-between gap-1.5 text-xs min-h-0">
           {/* Arrived Stock Quick-Picker for Bulk Delivery */}
-          <div className="bg-black/50 p-2.5 rounded-2xl border border-emerald-500/30 space-y-2">
+          <div className="bg-black/50 p-2 rounded-xl border border-emerald-500/30 space-y-1.5 shrink-0">
             <div className="flex items-center justify-between gap-1 flex-wrap">
               <span className="font-black text-emerald-300 text-[11px] flex items-center gap-1">
                 <span>📦 في الستوك ({arrivedStockParcels.length}):</span>
@@ -487,20 +487,20 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
             </div>
 
             {arrivedStockParcels.length === 0 ? (
-              <p className="text-[10px] text-white/75 font-bold bg-black/45 p-2 rounded-xl border border-[#D4AF37]/20 text-center">
+              <p className="text-[10px] text-white/75 font-bold bg-black/45 p-1.5 rounded-xl border border-[#D4AF37]/20 text-center">
                 {selectedParcels.length > 0
                   ? '✅ تم تحديد جميع كوليات الستوك في الدفعة أدناه'
                   : 'لا توجد حالياً كوليات في ستوك المحطة.'}
               </p>
             ) : (
-              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5">
+              <div className="max-h-24 overflow-y-auto space-y-1 pr-0.5">
                 {arrivedStockParcels.map(sp => {
                   const spRem = Math.max(0, Math.round((sp.amount_due - sp.amount_paid) * 100) / 100);
                   const spOwnership = getParcelSourceOwnershipInfo(sp, currentWorkspace?.id, currentWorkspace?.name);
                   return (
                     <div
                       key={sp.id}
-                      className={`bg-black/55 px-2.5 py-1.5 rounded-xl border flex items-center justify-between gap-2 ${
+                      className={`bg-black/55 px-2 py-1 rounded-xl border flex items-center justify-between gap-2 ${
                         spOwnership.isPartnership ? 'border-purple-500/50' : 'border-[#D4AF37]/25'
                       }`}
                     >
@@ -512,17 +512,8 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
                           <span className="font-black text-white text-[11px] truncate">
                             👤 {sp.receiver_name}
                           </span>
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded-md font-black border ${
-                              spOwnership.isPartnership
-                                ? 'bg-purple-950/80 text-purple-200 border-purple-400/50'
-                                : 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
-                            }`}
-                          >
-                            {spOwnership.shortBadgeLabel}
-                          </span>
                         </div>
-                        <div className="text-[10px] text-white/80 font-bold flex items-center gap-1.5 mt-0.5 truncate">
+                        <div className="text-[10px] text-white/80 font-bold flex items-center gap-1.5 truncate">
                           <span className="truncate">📦 {sp.description}</span>
                           <span>•</span>
                           <span className="font-mono text-white font-black shrink-0" dir="ltr">
@@ -533,7 +524,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleAddParcelByCode(sp.tracking_code)}
-                        className="px-2 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] shrink-0 cursor-pointer transition"
+                        className="btn-add px-2 py-1 rounded-xl font-black text-[10px] shrink-0 cursor-pointer transition"
                       >
                         + تسليم
                       </button>
@@ -545,7 +536,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
           </div>
 
           {selectedParcels.length === 0 ? (
-            <div className="text-center py-5 bg-black/45 rounded-2xl border border-dashed border-[#D4AF37]/30 p-3 space-y-2">
+            <div className="flex-1 flex flex-col items-center justify-center text-center bg-black/45 rounded-2xl border border-dashed border-[#D4AF37]/30 p-3 space-y-2">
               <Package className="w-7 h-7 text-[#D4AF37]/60 mx-auto" />
               <h4 className="text-xs font-black text-white">لم يتم تحديد أي كولي للتسليم</h4>
               <button
@@ -558,104 +549,16 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
               </button>
             </div>
           ) : (
-            <form onSubmit={handleConfirmBatchDelivery} className="space-y-2.5">
-              
-              {/* Batch Scanned Parcels List Header */}
-              <div className="bg-black/50 p-2.5 rounded-2xl border border-[#D4AF37]/35 space-y-2">
-                <div className="flex items-center justify-between border-b border-[#D4AF37]/20 pb-1.5">
-                  <div className="flex items-center gap-1 text-[#F5C84C] font-black text-xs">
-                    <span>📋 المحددة للتسليم ({selectedParcels.length}):</span>
-                  </div>
-                  <span className="text-[10px] font-mono text-[#D4AF37] bg-[#D4AF37]/15 px-2 py-0.5 rounded-lg border border-[#D4AF37]/30 font-black">
-                    📦 الطرود: {totalItems}
+            <form
+              onSubmit={handleConfirmBatchDelivery}
+              className="flex-1 flex flex-col justify-between gap-1.5 min-h-0 overflow-hidden"
+            >
+              {/* 1. الكوليات المحددة للتسليم */}
+              <div className="bg-black/50 p-2 rounded-xl border border-[#D4AF37]/35 space-y-1 shrink-0">
+                <div className="flex items-center justify-between border-b border-[#D4AF37]/20 pb-1">
+                  <span className="text-[#F5C84C] font-black text-xs">
+                    📋 المحددة للتسليم ({selectedParcels.length}) — 📦 الطرود: {totalItems}
                   </span>
-                </div>
-
-                {/* Scanned Items Cards */}
-                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-0.5">
-                  {selectedParcels.map((parcel) => {
-                    const rem = Math.max(0, Math.round((parcel.amount_due - parcel.amount_paid) * 100) / 100);
-                    const pOwnership = getParcelSourceOwnershipInfo(
-                      parcel,
-                      currentWorkspace?.id,
-                      currentWorkspace?.name
-                    );
-                    return (
-                      <div 
-                        key={parcel.id}
-                        className={`bg-black/55 p-2 rounded-xl border space-y-1 ${
-                          pOwnership.isPartnership ? 'border-purple-500/60' : 'border-[#D4AF37]/25'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-mono text-xs font-black text-[#F5D799] bg-[#D4AF37]/15 px-1.5 py-0.5 rounded-md border border-[#D4AF37]/35">
-                              #{parcel.parcel_number}
-                            </span>
-                            <span className="font-mono text-[11px] font-black text-white" dir="ltr">
-                              {formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number)}
-                            </span>
-                            <span
-                              className={`text-[9px] px-1.5 py-0.5 rounded-md font-black border ${
-                                pOwnership.isPartnership
-                                  ? 'bg-purple-950/85 text-purple-200 border-purple-400/50'
-                                  : 'bg-emerald-950/75 text-emerald-300 border-emerald-500/40'
-                              }`}
-                            >
-                              {pOwnership.shortBadgeLabel}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            {onOpenTicket && (
-                              <button
-                                type="button"
-                                onClick={() => onOpenTicket(parcel)}
-                                className="btn-cancel p-1 rounded-lg text-[10px]"
-                                title="طباعة الملصق"
-                              >
-                                🖨️
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveParcel(parcel.id)}
-                              className="btn-delete p-1 rounded-lg"
-                              title="إزالة"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px] text-white/80 font-bold">
-                          <span className="truncate">📦 {parcel.description} ({parcel.items_count})</span>
-                          <span className="text-white font-mono font-black shrink-0" dir="ltr">
-                            {rem <= 0 ? '✅ خالص' : `⏳ باقي: ${rem} ${parcel.currency}`}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="pt-1 flex items-center justify-between flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowScanner(true)}
-                    className="text-[10px] text-[#F5D799] font-black flex items-center gap-1 hover:underline cursor-pointer"
-                  >
-                    <span>+ 📷 مسح كولي إضافي</span>
-                  </button>
-                  {selectedParcels.length === 1 && arrivedStockParcels.some(p => p.receiver_phone === selectedParcels[0].receiver_phone || p.receiver_name === selectedParcels[0].receiver_name) && (
-                    <button
-                      type="button"
-                      onClick={() => handleSelectSameReceiverStock(selectedParcels[0].receiver_phone, selectedParcels[0].receiver_name)}
-                      className="text-[10px] text-emerald-300 font-black hover:underline cursor-pointer"
-                    >
-                      + باقي كوليات الزبون
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => setSelectedParcels([])}
@@ -664,106 +567,135 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
                     🗑️ إفراغ
                   </button>
                 </div>
+
+                <div className="max-h-20 overflow-y-auto space-y-1 pr-0.5">
+                  {selectedParcels.map((parcel) => {
+                    const rem = Math.max(0, Math.round((parcel.amount_due - parcel.amount_paid) * 100) / 100);
+                    return (
+                      <div 
+                        key={parcel.id}
+                        className="bg-black/55 px-2 py-1 rounded-xl border border-[#D4AF37]/25 flex items-center justify-between gap-1.5"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0 truncate">
+                          <span className="font-mono text-[10px] font-black text-[#F5D799]">
+                            #{parcel.parcel_number}
+                          </span>
+                          <span className="truncate font-bold">📦 {parcel.description}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] font-mono font-black" dir="ltr">
+                            {rem <= 0 ? '✅ خالص' : `⏳ ${rem} ${parcel.currency}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveParcel(parcel.id)}
+                            className="btn-delete p-1 rounded-lg"
+                            title="إزالة"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Combined Financial Balance Card */}
-              <div className="bg-black/50 p-2.5 rounded-2xl border border-[#D4AF37]/45 space-y-2">
-                <div className="grid grid-cols-3 gap-1.5 text-center">
-                  <div className="bg-black/55 p-1.5 rounded-xl border border-[#D4AF37]/20">
-                    <span className="text-[9px] text-white/75 font-bold block">💰 المجموع</span>
-                    <span className="font-black text-white font-mono text-[11px]" dir="ltr">
-                      {hideAmounts ? '••••' : totalDue} {currency}
-                    </span>
-                  </div>
-                  <div className="bg-black/55 p-1.5 rounded-xl border border-[#D4AF37]/20">
-                    <span className="text-[9px] text-white/75 font-bold block">✅ المدفوع</span>
-                    <span className="font-black text-emerald-400 font-mono text-[11px]" dir="ltr">
-                      {hideAmounts ? '••••' : totalPaid} {currency}
-                    </span>
-                  </div>
-                  <div className="bg-black/55 p-1.5 rounded-xl border border-[#D4AF37]/20">
-                    <span className="text-[9px] text-white/75 font-bold block">⏳ المتبقي</span>
-                    <span className="font-black text-[#F5D799] font-mono text-[11px]" dir="ltr">
-                      {hideAmounts ? '••••' : totalRemaining} {currency}
-                    </span>
-                  </div>
+              {/* 2. ملخص المبالغ */}
+              <div className="grid grid-cols-3 gap-1.5 text-center shrink-0">
+                <div className="bg-black/55 p-1.5 rounded-xl border border-[#D4AF37]/20">
+                  <span className="text-[9px] text-white/75 font-bold block">💰 المجموع</span>
+                  <span className="font-black text-white font-mono text-[11px]" dir="ltr">
+                    {hideAmounts ? '••••' : totalDue} {currency}
+                  </span>
                 </div>
-
-                {/* 2-Column Payment & Recipient Name */}
-                <div className="grid grid-cols-2 gap-1.5 pt-1">
-                  <div className="min-w-0">
-                    <label className="text-[10px] font-black text-white block mb-1">
-                      💵 المستخلص الآن ({currency}):
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={paymentAmount}
-                      onChange={e => setPaymentAmount(e.target.value)}
-                      placeholder={String(totalRemaining)}
-                      className="w-full bg-black/55 border border-[#D4AF37]/50 focus:border-[#F5D799] rounded-xl px-2.5 py-2 text-white font-mono font-black text-xs sm:text-sm focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="min-w-0">
-                    <label className="text-[10px] font-black text-white block mb-1">
-                      👤 اسم المستلم *:
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={deliveredTo}
-                      onChange={e => setDeliveredTo(e.target.value)}
-                      placeholder="اسم المستلم..."
-                      className="w-full bg-black/55 border border-[#D4AF37]/40 rounded-xl px-2.5 py-2 text-white font-black text-xs sm:text-sm focus:outline-none focus:border-[#F5D799]"
-                    />
-                  </div>
+                <div className="bg-black/55 p-1.5 rounded-xl border border-[#D4AF37]/20">
+                  <span className="text-[9px] text-white/75 font-bold block">✅ المدفوع</span>
+                  <span className="font-black text-emerald-400 font-mono text-[11px]" dir="ltr">
+                    {hideAmounts ? '••••' : totalPaid} {currency}
+                  </span>
                 </div>
-
-                {/* Note Field */}
-                <div>
-                  <input
-                    type="text"
-                    value={paymentNote}
-                    onChange={e => setPaymentNote(e.target.value)}
-                    placeholder="📝 ملاحظة التسليم (اختياري)..."
-                    className="w-full bg-black/55 border border-[#D4AF37]/30 rounded-xl px-2.5 py-2 text-white font-bold text-xs focus:outline-none focus:border-[#F5D799]"
-                  />
+                <div className="bg-black/55 p-1.5 rounded-xl border border-[#D4AF37]/20">
+                  <span className="text-[9px] text-white/75 font-bold block">⏳ المتبقي</span>
+                  <span className="font-black text-[#F5D799] font-mono text-[11px]" dir="ltr">
+                    {hideAmounts ? '••••' : totalRemaining} {currency}
+                  </span>
                 </div>
+              </div>
+
+              {/* 3. المستخلص الآن */}
+              <div className="bg-black/50 p-2 rounded-xl border border-[#D4AF37]/45 flex flex-col justify-center shrink-0">
+                <label className="text-xs font-black text-white block mb-1">
+                  💵 المستخلص الآن ({currency}):
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={paymentAmount}
+                  onChange={e => setPaymentAmount(e.target.value)}
+                  placeholder={String(totalRemaining)}
+                  className="w-full bg-black/55 border border-[#D4AF37]/50 focus:border-[#F5D799] rounded-xl px-2.5 py-1.5 text-white font-mono font-black text-xs sm:text-sm focus:outline-none text-center"
+                />
+              </div>
+
+              {/* 4. اسم المستلم */}
+              <div className="bg-black/50 p-2 rounded-xl border border-[#D4AF37]/45 flex flex-col justify-center shrink-0">
+                <label className="text-xs font-black text-white block mb-1">
+                  👤 اسم المستلم *:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={deliveredTo}
+                  onChange={e => setDeliveredTo(e.target.value)}
+                  placeholder="اسم المستلم..."
+                  className="w-full bg-black/55 border border-[#D4AF37]/40 rounded-xl px-2.5 py-1.5 text-white font-black text-xs sm:text-sm focus:outline-none focus:border-[#F5D799]"
+                />
+              </div>
+
+              {/* 5. ملاحظة التسليم */}
+              <div className="bg-black/50 p-2 rounded-xl border border-[#D4AF37]/35 flex flex-col justify-center shrink-0">
+                <input
+                  type="text"
+                  value={paymentNote}
+                  onChange={e => setPaymentNote(e.target.value)}
+                  placeholder="📝 ملاحظة التسليم (اختياري)..."
+                  className="w-full bg-black/55 border border-[#D4AF37]/30 rounded-xl px-2.5 py-1.5 text-white font-bold text-xs focus:outline-none focus:border-[#F5D799]"
+                />
               </div>
 
               {/* Debt Notice Confirmation Checkbox (if remaining debt) */}
               {totalRemaining > 0 && (parseFloat(paymentAmount) || 0) < totalRemaining && (
-                <div className="bg-amber-950/30 border border-[#D4AF37]/50 p-2.5 rounded-xl flex items-start gap-2">
+                <div className="bg-amber-950/30 border border-[#D4AF37]/50 p-2 rounded-xl flex items-center gap-2 shrink-0">
                   <input
                     type="checkbox"
                     id="confirmDebtNoticeBatch"
                     checked={confirmDebtNotice}
                     onChange={e => setConfirmDebtNotice(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded border-[#D4AF37]/60 text-[#D4AF37] focus:ring-0 focus:outline-none cursor-pointer"
+                    className="w-4 h-4 rounded border-[#D4AF37]/60 text-[#D4AF37] focus:ring-0 focus:outline-none cursor-pointer"
                   />
-                  <label htmlFor="confirmDebtNoticeBatch" className="text-[10px] font-black text-[#F5D799] cursor-pointer select-none">
-                    ⚠️ أوافق على التسليم مع بقاء كريدي ({Math.max(0, totalRemaining - (parseFloat(paymentAmount) || 0))} {currency}) بذمة الزبون
+                  <label htmlFor="confirmDebtNoticeBatch" className="text-[10px] font-black text-[#F5D799] cursor-pointer select-none truncate">
+                    ⚠️ أوافق على التسليم مع بقاء كريدي ({Math.max(0, totalRemaining - (parseFloat(paymentAmount) || 0))} {currency})
                   </label>
                 </div>
               )}
 
-              {/* Confirm Delivery Button */}
-              <div className="pt-0.5">
-                <button
-                  type="submit"
-                  disabled={isSubmitting || selectedParcels.length === 0}
-                  className="btn-gold w-full py-3 rounded-2xl font-black text-xs sm:text-sm shadow-xl active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                  <span>
-                    {isSubmitting 
-                      ? '⏳ جاري التسليم...' 
-                      : `✅ تأكيد تسليم (${selectedParcels.length}) كوليات للزبون`}
-                  </span>
-                </button>
-              </div>
+              {/* 6. زر تأكيد التسليم الكبير فالتحت */}
+              <button
+                type="submit"
+                disabled={isSubmitting || selectedParcels.length === 0}
+                data-btn-role="add"
+                data-btn-role-fixed="true"
+                className="btn-add w-full py-3 rounded-xl font-black text-sm shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+              >
+                <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                <span>
+                  {isSubmitting 
+                    ? '⏳ جاري التسليم...' 
+                    : `✅ تأكيد تسليم (${selectedParcels.length}) كوليات للزبون`}
+                </span>
+              </button>
             </form>
           )}
         </div>

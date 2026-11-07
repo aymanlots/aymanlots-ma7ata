@@ -96,8 +96,10 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               <button
                 type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="btn-cancel flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
                 title="القائمة والأدوات"
               >
                 <Menu className="w-3.5 h-3.5" />
@@ -107,14 +109,16 @@ export const Header: React.FC<HeaderProps> = ({
               {onOpenCollabRoom && userRole !== 'worker' && (
                 <button
                   type="button"
+                  data-btn-role="add"
+                  data-btn-role-fixed="true"
                   onClick={onOpenCollabRoom}
-                  className="btn-cancel relative flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
+                  className="btn-add relative flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
                   title="غرفة الشراكة بين المدراء والمحاسبة المشتركة"
                 >
                   <Handshake className="w-3.5 h-3.5" />
                   <span>🤝 الشراكة</span>
                   {pendingPartnershipRequestsCount > 0 && (
-                    <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center animate-bounce shadow">
+                    <span className="badge-pill w-4 h-4 rounded-full bg-[#C1272D] text-white text-[9px] font-black flex items-center justify-center animate-bounce shadow border border-white">
                       {pendingPartnershipRequestsCount}
                     </span>
                   )}
@@ -123,8 +127,10 @@ export const Header: React.FC<HeaderProps> = ({
 
               <button
                 type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
                 onClick={toggleThemeMode}
-                className="btn-cancel flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black transition active:scale-95 cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black transition active:scale-95 cursor-pointer"
                 title={themeMode === 'light' ? 'التبديل إلى وضع الليل (Dark Mode)' : 'التبديل إلى وضع النهار (Light Mode)'}
               >
                 <span>{themeMode === 'light' ? '🌙 ليل' : '☀️ نهار'}</span>
@@ -132,9 +138,12 @@ export const Header: React.FC<HeaderProps> = ({
 
               <button
                 type="button"
+                data-btn-role="info"
+                data-btn-role-fixed="true"
                 onClick={toggleHideAmounts}
-                className="btn-cancel flex items-center justify-center w-7 h-7 rounded-full transition active:scale-95 cursor-pointer"
-                title={hideAmounts ? 'إظهار المبالغ المالية' : 'إخفاء المبالغ المالية (وضع الخصوصية)'}
+                className="flex items-center justify-center w-7 h-7 rounded-full transition active:scale-95 cursor-pointer"
+                title={hideAmounts ? 'إظهار المبالغ المالية (العين)' : 'إخفاء المبالغ المالية (العين)'}
+                aria-label="العين"
               >
                 {hideAmounts ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>

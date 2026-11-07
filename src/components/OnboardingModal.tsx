@@ -8,7 +8,7 @@ interface OnboardingModalProps {
 }
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClose }) => {
-  const { createTeam, joinTeam } = useApp();
+  const { createTeam, joinTeam, themeMode, toggleThemeMode } = useApp();
   const [mode, setMode] = useState<'choose' | 'create' | 'join'>('choose');
   const [teamName, setTeamName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -46,9 +46,22 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black animate-fadeIn overflow-y-auto" dir="rtl">
+    <div className="w-full flex-1 flex flex-col items-center justify-center p-3 bg-transparent animate-fadeIn overflow-y-auto" dir="rtl">
+      <div className="w-full max-w-[380px] flex items-center justify-between mb-2 px-1">
+        <span className="text-xs font-black px-3 py-1 rounded-full bg-[#1a0f00]/85 text-[#F5D799] border border-[#D4AF37]/50 backdrop-blur-md shadow-md">
+          Sahara📦 Express
+        </span>
+        <button
+          type="button"
+          onClick={toggleThemeMode}
+          className="btn-cancel flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black transition active:scale-95 cursor-pointer shadow-lg"
+          title={themeMode === 'light' ? 'التبديل إلى وضع الليل (Dark Mode)' : 'التبديل إلى وضع النهار (Light Mode)'}
+        >
+          <span>{themeMode === 'light' ? '🌙 وضع الليل' : '☀️ وضع النهار'}</span>
+        </button>
+      </div>
       <div 
-        className="w-full max-w-[380px] rounded-[24px] bg-[#1a0f00]/90 border border-[#D4AF37]/65 p-5 shadow-2xl text-right overflow-hidden relative z-10"
+        className="w-full max-w-[380px] rounded-[24px] bg-[#1a0f00]/80 backdrop-blur-md border border-[#D4AF37]/65 p-5 shadow-2xl text-right overflow-hidden relative z-10"
         onClick={e => e.stopPropagation()}
       >
         {/* Subtle Gold Accent Stripe */}
