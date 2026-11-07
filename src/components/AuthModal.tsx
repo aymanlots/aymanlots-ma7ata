@@ -45,13 +45,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showLegalTerms, setShowLegalTerms] = useState(false);
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState(() => {
+  const [phone, setPhone] = useState('');
+
+  useEffect(() => {
     try {
-      return localStorage.getItem('ittihadiya_saved_login_phone') || '';
-    } catch {
-      return '';
-    }
-  });
+      localStorage.removeItem('ittihadiya_saved_login_phone');
+    } catch {}
+  }, []);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isOwnerRole, setIsOwnerRole] = useState(true);
@@ -104,10 +104,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
       setError('يرجى إدخال رقم هاتف صحيح');
       return;
     }
-
-    try {
-      localStorage.setItem('ittihadiya_saved_login_phone', cleanPhone);
-    } catch {}
 
     if (!password || password.length < 6) {
       setError('كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام');
@@ -345,10 +341,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
       return;
     }
 
-    try {
-      localStorage.setItem('ittihadiya_saved_login_phone', cleanIdentifier);
-    } catch {}
-
     if (!password || password.trim().length < 4) {
       setError('يرجى إدخال كلمة المرور الخاصة بحساب الأدمين');
       return;
@@ -370,16 +362,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
   };
 
   return (
-    <div className="w-full flex-1 flex flex-col items-center justify-center p-3 bg-transparent animate-fadeIn overflow-y-auto" dir={dir}>
+    <div className="auth-page-wrapper w-full flex-1 flex flex-col items-center justify-center p-3 bg-transparent animate-fadeIn overflow-y-auto" dir={dir}>
       {/* Top Bar over Desert Background with Night/Day Toggle */}
-      <div className="w-full max-w-[390px] flex items-center justify-between mb-2 px-1">
-        <span className="text-xs font-black px-3 py-1 rounded-full bg-[#1a0f00]/85 text-[#F5D799] border border-[#D4AF37]/50 backdrop-blur-md shadow-md">
+      <div className="auth-page-wrapper w-full max-w-[390px] flex items-center justify-between mb-2 px-1">
+        <span className="text-xs font-black px-3 py-1.5 rounded-xl bg-[#1a0f00]/85 text-[#F5D799] border-2 border-[#D4AF37]/60 shadow-md">
           Sahara📦 Express
         </span>
         <button
           type="button"
           onClick={toggleThemeMode}
-          className="btn-cancel flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black transition active:scale-95 cursor-pointer shadow-lg"
+          className="btn-cancel flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer shadow-lg"
           title={themeMode === 'light' ? 'التبديل إلى وضع الليل (Dark Mode)' : 'التبديل إلى وضع النهار (Light Mode)'}
         >
           <span>{themeMode === 'light' ? '🌙 وضع الليل' : '☀️ وضع النهار'}</span>
@@ -387,14 +379,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
       </div>
 
       <div 
-        className="w-full max-w-[390px] rounded-[24px] bg-[#1a0f00]/80 backdrop-blur-md border border-[#D4AF37]/65 p-5 shadow-2xl text-right overflow-hidden relative z-10 my-2"
+        className="luxury-card auth-glass-card w-full max-w-[390px] rounded-[24px] border-2 border-[#D4AF37]/65 p-4 sm:p-5 shadow-2xl text-right overflow-hidden relative z-10 my-1"
         onClick={e => e.stopPropagation()}
       >
         {/* Subtle Gold Accent Stripe */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#D4882A] via-[#F5B05B] to-[#D4882A]" />
 
         <div 
-          className="relative w-20 h-20 rounded-full border-2 border-[#D4AF37] shadow-xl shadow-black/80 mx-auto mb-2 overflow-hidden flex items-center justify-center p-0"
+          className="logo-circle relative w-20 h-20 rounded-full border-2 border-[#D4AF37] shadow-xl shadow-black/80 mx-auto mb-2 overflow-hidden flex items-center justify-center p-0"
           style={{ background: 'transparent', borderRadius: '50%', padding: 0, overflow: 'hidden' }}
         >
           <img 
@@ -653,6 +645,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                   <input
                     type="tel"
                     dir="ltr"
+                    autoComplete="off"
                     placeholder="0600000000 (اختياري)"
                     value={phone}
                     onChange={e => handlePhoneChange(e.target.value)}
@@ -725,7 +718,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                 <input
                   type={isSignUp ? 'tel' : 'text'}
                   dir="ltr"
-                  placeholder={isSignUp ? '0600000000 أو 22200000000' : '0618961387 أو example@gmail.com'}
+                  autoComplete="off"
+                  placeholder={isSignUp ? '0600000000 أو 22200000000' : '0600000000 أو example@gmail.com'}
                   value={phone}
                   onChange={e => handlePhoneChange(e.target.value)}
                   className="w-full bg-[#120a00] border border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl px-3 py-2.5 text-white placeholder-[#A68966] focus:outline-none pl-9 font-mono text-left"

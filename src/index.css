@@ -42,6 +42,7 @@
 
 /* ============================================================================
    🖼️ Fixed Desert Background Image Frame (Phone Width max-w: 430px)
+   واضحة وباينة فالليل وفالنهار بجوج
    ============================================================================ */
 .desert-bg-frame {
   position: fixed !important;
@@ -52,8 +53,12 @@
   justify-content: center !important;
   pointer-events: none !important;
   z-index: 0 !important;
-  background: transparent !important;
+  background: #090d16 !important;
   overflow: hidden !important;
+}
+
+.desert-bg-inner {
+  background: transparent !important;
 }
 
 .desert-bg-frame img {
@@ -62,19 +67,30 @@
   object-fit: cover !important;
   object-position: center !important;
   display: block !important;
+  opacity: 1 !important;
 }
 
 html:not(.theme-dark) .desert-bg-overlay,
 html.theme-light .desert-bg-overlay {
   position: absolute !important;
   inset: 0 !important;
-  background: rgba(255, 255, 255, 0.10) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 
 html.theme-dark .desert-bg-overlay {
   position: absolute !important;
   inset: 0 !important;
-  background: rgba(0, 0, 0, 0.35) !important;
+  background: rgba(0, 0, 0, 0.22) !important;
+}
+
+/* حاويات الصفحة الرئيسية وصفحة تسجيل الدخول شفافة دائماً لتظهر الخلفية بوضوح في الليل والنهار */
+.app-viewport-shell,
+.auth-page-wrapper,
+.bg-transparent,
+.logo-circle {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 /* ============================================================================
@@ -89,26 +105,34 @@ html:not(.theme-dark),
 html.theme-light,
 html:not(.theme-dark) body,
 html.theme-light body {
-  background-color: #FFFFFF !important;
+  background-color: transparent !important;
   color: #000000 !important;
   font-weight: 800 !important;
 }
 
-/* الكروت الرئيسية في النهار: مضببة قليلاً مع تباين واضح ليظهر فرق واضح بين البطاقة والأزرار البيضاء البارزة */
+/* الكروت الرئيسية في النهار: مضببة قليلاً لتظهر الخلفية الصحراوية من ورائها مع تباين واضح للأزرار البيضاء البارزة */
 html:not(.theme-dark) .luxury-card:not(button),
 html.theme-light .luxury-card:not(button) {
-  background: rgba(238, 242, 246, 0.84) !important;
-  backdrop-filter: blur(10px) !important;
-  -webkit-backdrop-filter: blur(10px) !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
   border: 2px solid #000000 !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22) !important;
   color: #000000 !important;
   font-weight: 800 !important;
+}
+
+/* كارت تسجيل الدخول في النهار: شفاف ومضبب شوية باش تبان الخلفية ديال الصحراء واضحة من وراه */
+html:not(.theme-dark) .auth-glass-card,
+html.theme-light .auth-glass-card {
+  background: rgba(255, 255, 255, 0.58) !important;
+  backdrop-filter: blur(5px) !important;
+  -webkit-backdrop-filter: blur(5px) !important;
 }
 
 /* أي خانة أو بلاصة داخلية أخرى في وضع النهار = أبيض صافي #FFFFFF مع حدود وكتابة سوداء #000000 */
-html:not(.theme-dark) [class*="bg-"]:not(button):not(body):not(html):not(.luxury-card):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-overlay):not(.badge-pill),
-html:not(.theme-dark) [class*="from-"]:not(button):not(body):not(html):not(.luxury-card):not(.desert-bg-overlay) {
+html:not(.theme-dark) [class*="bg-"]:not(button):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-inner):not(.desert-bg-overlay):not(.badge-pill),
+html:not(.theme-dark) [class*="from-"]:not(button):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.desert-bg-overlay) {
   background: #FFFFFF !important;
   background-color: #FFFFFF !important;
   background-image: none !important;
@@ -179,25 +203,32 @@ html:not(.theme-dark) select optgroup {
    ============================================================================ */
 html.theme-dark,
 html.theme-dark body {
-  background-color: #111111 !important;
+  background-color: transparent !important;
   color: #FFFFFF !important;
   font-weight: 800 !important;
 }
 
-/* الكروت الرئيسية في الليل: مضببة قليلاً مع تباين واضح ليظهر فرق واضح بين البطاقة والأزرار السوداء البارزة */
+/* الكروت الرئيسية في الليل: مضببة قليلاً لتظهر الخلفية الصحراوية من ورائها مع تباين واضح للأزرار السوداء البارزة */
 html.theme-dark .luxury-card:not(button) {
-  background: rgba(24, 24, 28, 0.86) !important;
-  backdrop-filter: blur(10px) !important;
-  -webkit-backdrop-filter: blur(10px) !important;
+  background: rgba(17, 17, 17, 0.74) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
   border: 2px solid #FFFFFF !important;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.85) !important;
   color: #FFFFFF !important;
   font-weight: 800 !important;
 }
 
+/* كارت تسجيل الدخول في الليل: شفاف ومضبب شوية باش تبان الخلفية ديال الصحراء واضحة من وراه */
+html.theme-dark .auth-glass-card {
+  background: rgba(17, 17, 17, 0.60) !important;
+  backdrop-filter: blur(5px) !important;
+  -webkit-backdrop-filter: blur(5px) !important;
+}
+
 /* أي خانة أو بلاصة داخلية أخرى في وضع الليل = أسود صافي #111111 مع حدود وكتابة بيضاء #FFFFFF */
-html.theme-dark [class*="bg-"]:not(button):not(body):not(html):not(.luxury-card):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-overlay):not(.badge-pill),
-html.theme-dark [class*="from-"]:not(button):not(body):not(html):not(.luxury-card):not(.desert-bg-overlay) {
+html.theme-dark [class*="bg-"]:not(button):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-inner):not(.desert-bg-overlay):not(.badge-pill),
+html.theme-dark [class*="from-"]:not(button):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.desert-bg-overlay) {
   background: #111111 !important;
   background-color: #111111 !important;
   background-image: none !important;

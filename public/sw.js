@@ -7,8 +7,8 @@
  * - Proactive Client Notification on Update
  */
 
-const SW_VERSION = 'sahara-express-v' + (self.registration ? self.registration.scope : '') + '-20261107-v19';
-const CACHE_NAME = 'sahara-cache-v19';
+const SW_VERSION = 'sahara-express-v' + (self.registration ? self.registration.scope : '') + '-20261107-v21';
+const CACHE_NAME = 'sahara-cache-v21';
 
 const OFFLINE_FALLBACKS = [
   '/',

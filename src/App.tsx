@@ -291,19 +291,13 @@ const MainApp: React.FC = () => {
   const renderDesertFrameBackground = () => {
     return (
       <div className="desert-bg-frame fixed inset-0 flex justify-center pointer-events-none z-0 overflow-hidden">
-        <div className="w-full max-w-[430px] h-full relative overflow-hidden">
+        <div className="desert-bg-inner w-full max-w-[430px] h-full relative overflow-hidden">
           <img
             src="/assets/aistudio/WhatsApp_Image_2026-10-22_at_04.15.27_e3559304.jpeg"
             alt=""
             className="w-full h-full object-cover object-center block"
           />
-          <div
-            className={`desert-bg-overlay absolute inset-0 ${
-              themeMode === 'dark'
-                ? 'bg-black/35'
-                : 'bg-black/15'
-            }`}
-          />
+          <div className="desert-bg-overlay absolute inset-0" />
         </div>
       </div>
     );
@@ -313,17 +307,15 @@ const MainApp: React.FC = () => {
   if (!currentUser) {
     return (
       <div
-        className={`min-h-screen w-full flex justify-center relative ${
-          themeMode === 'dark' ? 'bg-[#06090e]' : 'bg-[#0f172a]'
-        }`}
+        className="app-viewport-shell min-h-screen w-full flex justify-center relative"
         dir={dir}
       >
         {renderDesertFrameBackground()}
         <div
-          className={`w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
+          className={`app-viewport-shell w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
             themeMode === 'dark'
               ? 'text-[#FFF8EB] border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)]'
-              : 'bg-transparent text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
+              : 'text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
           }`}
         >
           <AuthModal
@@ -345,17 +337,15 @@ const MainApp: React.FC = () => {
   if (!currentWorkspace) {
     return (
       <div
-        className={`min-h-screen w-full flex justify-center relative ${
-          themeMode === 'dark' ? 'bg-[#06090e]' : 'bg-[#0f172a]'
-        }`}
+        className="app-viewport-shell min-h-screen w-full flex justify-center relative"
         dir={dir}
       >
         {renderDesertFrameBackground()}
         <div
-          className={`w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
+          className={`app-viewport-shell w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
             themeMode === 'dark'
               ? 'text-[#FFF8EB] border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)]'
-              : 'bg-transparent text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
+              : 'text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
           }`}
         >
           <OnboardingModal isOpen={true} />
@@ -367,20 +357,16 @@ const MainApp: React.FC = () => {
 
   return (
     <div
-      className={`min-h-screen w-full flex justify-center relative ${
-        themeMode === 'dark'
-          ? 'bg-[#06090e] selection:bg-[#D4AF37]/30 selection:text-[#FFF8EB]'
-          : 'bg-[#0f172a] selection:bg-slate-900 selection:text-white'
-      }`}
+      className="app-viewport-shell min-h-screen w-full flex justify-center relative"
       dir={dir}
     >
       {renderDesertFrameBackground()}
 
       <div
-        className={`w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
+        className={`app-viewport-shell w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
           themeMode === 'dark'
             ? 'text-[#FFF8EB] border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)]'
-            : 'bg-transparent text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
+            : 'text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
         }`}
       >
         {/* Offline Status Top Banner */}
