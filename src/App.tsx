@@ -18,7 +18,6 @@ import { NewParcelModal } from './components/NewParcelModal';
 import { ParcelStickerModal } from './components/ParcelStickerModal';
 import { QuickDeliverModal } from './components/QuickDeliverModal';
 import { PaywallModal } from './components/PaywallModal';
-import { SQLModal } from './components/SQLModal';
 import { AuthModal } from './components/AuthModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -55,7 +54,6 @@ const MainApp: React.FC = () => {
   const [voucherInitialType, setVoucherInitialType] = useState<TransactionType>('cash_in');
   const [showNewParcel, setShowNewParcel] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
-  const [showSQLModal, setShowSQLModal] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showPlatformOwnerDashboard, setShowPlatformOwnerDashboard] = useState(false);
@@ -339,7 +337,6 @@ const MainApp: React.FC = () => {
 
           {currentTab === 'settings' && (
             <SettingsView
-              onOpenSQLModal={() => setShowSQLModal(true)}
               onOpenPaywall={() => setShowPaywall(true)}
               onOpenPrivacyModal={() => setShowPrivacyModal(true)}
               onOpenPlatformOwner={
@@ -454,12 +451,6 @@ const MainApp: React.FC = () => {
         <PaywallModal
           isOpen={showPaywall}
           onClose={() => setShowPaywall(false)}
-        />
-
-        {/* SQL Migration Modal */}
-        <SQLModal
-          isOpen={showSQLModal}
-          onClose={() => setShowSQLModal(false)}
         />
 
         {/* Platform Owner Dashboard Modal (Strictly Platform Owner Only) */}

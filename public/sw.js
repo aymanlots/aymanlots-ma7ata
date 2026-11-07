@@ -7,8 +7,8 @@
  * - Proactive Client Notification on Update
  */
 
-const SW_VERSION = 'sahara-express-v' + (self.registration ? self.registration.scope : '') + '-20261104-v9';
-const CACHE_NAME = 'sahara-cache-v9';
+const SW_VERSION = 'sahara-express-v' + (self.registration ? self.registration.scope : '') + '-20261106-v10';
+const CACHE_NAME = 'sahara-cache-v10';
 
 const OFFLINE_FALLBACKS = [
   '/',
@@ -16,8 +16,7 @@ const OFFLINE_FALLBACKS = [
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
-  '/apple-touch-icon.png',
-  '/logo.png'
+  '/apple-touch-icon.png'
 ];
 
 // Install: Immediately take over without waiting for tabs to close

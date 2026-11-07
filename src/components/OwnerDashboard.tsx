@@ -70,12 +70,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     currencies,
     transactions,
     deleteTransaction,
-    executeCurrencyExchange,
     moneyTransfers,
     payoutMoneyTransfer,
     parcels,
-    exchangeRate,
-    setExchangeRate,
     formatAmount,
     showToast,
   } = useApp();
@@ -102,98 +99,11 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   const [voucherStationId, setVoucherStationId] = useState<string | undefined>(undefined);
   const [hawalaModalOpen, setHawalaModalOpen] = useState(false);
   const [hawalaInitialTab, setHawalaInitialTab] = useState<'send' | 'list'>('send');
-
-  // Inline Currency Exchange (صرف العملة بين الدرهم والأوقية داخل لاكيس المحطة)
   const [showExchangeModal, setShowExchangeModal] = useState(false);
-  const [fxStationId, setFxStationId] = useState<string>(activeStation?.id || stations[0]?.id || '');
-  const [fxDirection, setFxDirection] = useState<'MAD_TO_MRU' | 'MRU_TO_MAD'>('MAD_TO_MRU');
-  const [fxFromAmount, setFxFromAmount] = useState<string>('');
-  const [fxRateInput, setFxRateInput] = useState<string>(String(exchangeRate || 3.8));
-  const [fxCustomerName, setFxCustomerName] = useState<string>('');
-  const [fxNote, setFxNote] = useState<string>('');
-  const [fxError, setFxError] = useState<string>('');
-  const [isExecutingFx, setIsExecutingFx] = useState(false);
-  const [showFxNegativeWarning, setShowFxNegativeWarning] = useState(false);
 
   // Warning modal when paying out an incoming Hawala with empty/insufficient station cashbox
   const [pendingPayoutWarningTransfer, setPendingPayoutWarningTransfer] =
     useState<MoneyTransfer | null>(null);
-
-  useEffect(() => {
-    if (activeStation) {
-      setFxStationId(activeStation.id);
-    } else if (stations.length > 0 && !fxStationId) {
-      setFxStationId(stations[0].id);
-    }
-  }, [activeStation, stations, fxStationId]);
-
-  useEffect(() => {
-    setFxRateInput(String(exchangeRate || 3.8));
-  }, [exchangeRate]);
-
-  const fxNumericFrom = parseFloat(fxFromAmount) || 0;
-  const fxNumericRate = parseFloat(fxRateInput) || exchangeRate || 3.8;
-  const fxFromCurrency: 'MAD' | 'MRU' = fxDirection === 'MAD_TO_MRU' ? 'MAD' : 'MRU';
-  const fxToCurrency: 'MAD' | 'MRU' = fxDirection === 'MAD_TO_MRU' ? 'MRU' : 'MAD';
-  const fxCalculatedToAmount = useMemo(() => {
-    if (fxNumericFrom <= 0 || fxNumericRate <= 0) return 0;
-    if (fxDirection === 'MAD_TO_MRU') {
-      return Math.round(fxNumericFrom * fxNumericRate * 100) / 100;
-    }
-    return Math.round((fxNumericFrom / fxNumericRate) * 100) / 100;
-  }, [fxNumericFrom, fxNumericRate, fxDirection]);
-
-  const fxTargetStationId = activeStation?.id || fxStationId || stations[0]?.id || '';
-  const fxCurrentOutBalance = stationBalances[fxTargetStationId]?.[fxToCurrency] || 0;
-  const fxResultingOutBalance = fxCurrentOutBalance - fxCalculatedToAmount;
-
-  const performCurrencyExchange = async () => {
-    setIsExecutingFx(true);
-    try {
-      if (fxNumericRate !== exchangeRate) {
-        setExchangeRate(fxNumericRate);
-      }
-      const res = await executeCurrencyExchange({
-        stationId: fxTargetStationId,
-        fromCurrency: fxFromCurrency,
-        toCurrency: fxToCurrency,
-        fromAmount: fxNumericFrom,
-        toAmount: fxCalculatedToAmount,
-        rate: fxNumericRate,
-        customerName: fxCustomerName,
-        note: fxNote,
-      });
-      if (!res.success) {
-        setFxError(res.error || 'تعذر تنفيذ عملية الصرف');
-      } else {
-        setFxFromAmount('');
-        setFxCustomerName('');
-        setFxNote('');
-        setShowFxNegativeWarning(false);
-        setShowExchangeModal(false);
-      }
-    } finally {
-      setIsExecutingFx(false);
-    }
-  };
-
-  const handleExecuteFxSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFxError('');
-    if (!fxTargetStationId) {
-      setFxError('يرجى اختيار المحطة أولاً');
-      return;
-    }
-    if (fxNumericFrom <= 0 || fxCalculatedToAmount <= 0) {
-      setFxError('يرجى إدخال مبلغ صحيح للصرف');
-      return;
-    }
-    if (fxCurrentOutBalance <= 0 || fxResultingOutBalance < 0) {
-      setShowFxNegativeWarning(true);
-      return;
-    }
-    await performCurrencyExchange();
-  };
 
   const openQuickVoucher = (type: TransactionType, stationId?: string) => {
     setVoucherType(type);
@@ -639,8 +549,6 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setFxError('');
-                  setShowFxNegativeWarning(false);
                   setShowExchangeModal(!showExchangeModal);
                 }}
                 className={`py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer ${

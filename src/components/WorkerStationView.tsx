@@ -60,8 +60,6 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     transactions,
     parcels,
     exchangeRate,
-    convertCurrency,
-    executeCurrencyExchange,
     moneyTransfers,
     payoutMoneyTransfer,
     updateParcelStatus,
@@ -72,15 +70,10 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   } = useApp();
 
   const [selectedCurrency, setSelectedCurrency] = useState<string>('MAD');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchQuery] = useState<string>('');
   const [showScanner, setShowScanner] = useState<boolean>(false);
   const [showMoneyTransferModal, setShowMoneyTransferModal] = useState<boolean>(false);
   const [showWorkerExchange, setShowWorkerExchange] = useState<boolean>(false);
-  const [exFromCurr, setExFromCurr] = useState<'MAD' | 'MRU'>('MAD');
-  const [exAmountStr, setExAmountStr] = useState<string>('1000');
-  const [exCustomerName, setExCustomerName] = useState<string>('');
-  const [isExchanging, setIsExchanging] = useState<boolean>(false);
-  const [showFxNegativeWarning, setShowFxNegativeWarning] = useState<boolean>(false);
   const [pendingPayoutWarningTransfer, setPendingPayoutWarningTransfer] = useState<MoneyTransfer | null>(null);
   const [activeBottomSheet, setActiveBottomSheet] = useState<'in' | 'out' | 'return' | null>(null);
   const [selectedParcelForReceipt, setSelectedParcelForReceipt] = useState<Parcel | null>(null);
@@ -89,8 +82,6 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   const [workerParcelsTab, setWorkerParcelsTab] = useState<'incoming' | 'outgoing'>('incoming');
 
   // Collapsible sections state (collapsed by default)
-  const [isUnclaimedOpen, setIsUnclaimedOpen] = useState<boolean>(false);
-  const [visibleUnclaimedCount, setVisibleUnclaimedCount] = useState<number>(10);
   const [isRecentOpsOpen, setIsRecentOpsOpen] = useState<boolean>(false);
   const [visibleRecentOpsCount, setVisibleRecentOpsCount] = useState<number>(10);
 
@@ -246,8 +237,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
       showToast(ownershipInfo.workerScanAlert, ownershipInfo.isPartnership ? 'info' : 'success');
       setSelectedParcelDetail(found);
     } else {
-      setSearchQuery(code.trim());
-      showToast('تم وضع الرمز الممسوح في شريط البحث', 'info');
+      showToast(`لم يتم العثور على طرد بالرمز: ${code.trim()}`, 'info');
     }
   };
 

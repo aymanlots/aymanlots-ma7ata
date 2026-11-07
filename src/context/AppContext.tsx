@@ -43,9 +43,9 @@ import {
   PartnershipStationInfo
 } from '../types/database';
 import { translations } from '../lib/i18n';
-import { parcelService, mapSupabaseRowToParcel } from '../services/parcelService';
-import { tripService, mapSupabaseRowToTrip } from '../services/tripService';
-import { cashService, mapSupabaseRowToTransaction } from '../services/cashService';
+import { parcelService } from '../services/parcelService';
+import { tripService } from '../services/tripService';
+import { cashService } from '../services/cashService';
 import { storageService, generateUUID, isValidUUID } from '../services/storageService';
 import { firebaseSyncService } from '../services/firebaseSyncService';
 import {
@@ -65,8 +65,6 @@ import {
   cleanPhoneNumber,
   generateTemporaryPassword
 } from '../lib/supabase';
-import { PLATFORM_CONFIG, DEMO_MODE } from '../config/constants';
-import { generateWorkspaceDemoData } from '../utils/demoData';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { hashPassword, verifyPassword, isBcryptHash } from '../utils/security';
 
@@ -89,38 +87,6 @@ const generateInviteCode = (): string => {
   }
   return res;
 };
-
-// Base cross-border stations (starts with ZERO balance)
-const getInitialStations = (workspaceId: string): Station[] => [
-  {
-    id: `sta-${workspaceId}-dakhla`,
-    workspace_id: workspaceId,
-    team_id: workspaceId,
-    name: 'محطة الداخلة الرئيسية',
-    city: 'الداخلة',
-    country: 'MA',
-    owner_id: null,
-    is_active: true,
-    phone: '+212 528 890000',
-    address: 'شارع الولاء، ميناء الداخلة، المملكة المغربية',
-    created_at: new Date().toISOString(),
-    balances: { MAD: 0, MRU: 0 },
-  },
-  {
-    id: `sta-${workspaceId}-nouadhibou`,
-    workspace_id: workspaceId,
-    team_id: workspaceId,
-    name: 'محطة نواذيبو الدولية',
-    city: 'نواذيبو',
-    country: 'MR',
-    owner_id: null,
-    is_active: true,
-    phone: '+222 4574 0000',
-    address: 'حي كانصادو، طريق الميناء المستقل، الجمهورية الإسلامية الموريتانية',
-    created_at: new Date().toISOString(),
-    balances: { MAD: 0, MRU: 0 },
-  },
-];
 
 const getInitialCurrencies = (workspaceId: string): Currency[] => [
   {
@@ -571,8 +537,6 @@ const AppContext = createContext<AppContextType | null>(null);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const isSupabaseLive = isSupabaseConfigured();
-  // عندما يكون اتصال Supabase مفعلاً، يُعامل DEMO_MODE كـ false تلقائياً
-  const isEffectiveDemoMode = DEMO_MODE && !isSupabaseLive;
 
   // Language State - Fixed to Modern Standard Arabic ('ar') as requested
   const [language, setLanguageState] = useState<Language>('ar');
@@ -1501,15 +1465,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (member?.role === 'admin' || member?.role === 'owner') return 'owner';
     return member?.role || (currentWorkspace.created_by === currentUser.id ? 'owner' : 'worker');
   }, [currentUser, currentWorkspace, workspaceMembers, isPlatformOwner]);
-
-  // الفترة التجريبية 30 يوماً مفتوحة بجميع الخصائص (ما لم يقم المدير باختيار الباك الأول 99 درهم يدوياً)
-  const isInFree30DayMonth = useMemo(() => {
-    if (!currentWorkspace?.created_at) return true;
-    const createdMs = new Date(currentWorkspace.created_at).getTime();
-    if (isNaN(createdMs)) return true;
-    const daysSinceCreation = (Date.now() - createdMs) / (1000 * 60 * 60 * 24);
-    return daysSinceCreation <= 30;
-  }, [currentWorkspace?.created_at]);
 
   // الباك الأول (99 درهم): محطتين (2) فقط + عامل واحد (1) لكل محطة + الملصقات والبونات باسم ولوغو التطبيق الرسمي
   const isPlan2TwoStations = useMemo(() => {

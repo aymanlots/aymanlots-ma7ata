@@ -14,12 +14,10 @@ import {
   Store,
   MessageCircle,
   Download,
-  FileJson,
   Wifi,
   WifiOff,
   Trash2,
   AlertTriangle,
-  Smartphone,
   ChevronDown,
   ImagePlus,
   Pencil,
@@ -36,7 +34,6 @@ import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { HelpPopover } from './HelpPopover';
 
 interface SettingsViewProps {
-  onOpenSQLModal: () => void;
   onOpenPaywall: () => void;
   onOpenPrivacyModal?: () => void;
   onOpenPlatformOwner?: () => void;

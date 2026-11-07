@@ -55,12 +55,8 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
     updateTransaction, 
     cancelTransaction,
     deleteTransaction,
-    executeCurrencyExchange,
     moneyTransfers,
     payoutMoneyTransfer,
-    exchangeRate,
-    setExchangeRate,
-    convertCurrency,
     showToast 
   } = useApp();
 
@@ -104,16 +100,9 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
   const [showDailyReport, setShowDailyReport] = useState(false);
   const [showMoneyTransferModal, setShowMoneyTransferModal] = useState(false);
   const [showConverter, setShowConverter] = useState(false);
-  const [calcAmount, setCalcAmount] = useState('1000');
-  const [calcFrom, setCalcFrom] = useState<'MAD' | 'MRU'>('MAD');
-  const [manualRateStr, setManualRateStr] = useState<string>(() => String(exchangeRate || 3.8));
   const [exchangeStationId, setExchangeStationId] = useState<string>(() =>
     selectedStationId && selectedStationId !== 'all' ? selectedStationId : (stations[0]?.id || '')
   );
-  const [exchangeCustomerName, setExchangeCustomerName] = useState<string>('');
-  const [exchangeCustomerPhone, setExchangeCustomerPhone] = useState<string>('');
-  const [isExecutingExchange, setIsExecutingExchange] = useState<boolean>(false);
-  const [showFxNegativeWarning, setShowFxNegativeWarning] = useState<boolean>(false);
   const [pendingPayoutWarningTransfer, setPendingPayoutWarningTransfer] = useState<MoneyTransfer | null>(null);
 
   useEffect(() => {
@@ -424,7 +413,6 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
           <button
             type="button"
             onClick={() => {
-              setManualRateStr(String(exchangeRate || 3.8));
               if (!exchangeStationId && stations[0]?.id) {
                 setExchangeStationId(selectedStationId || stations[0].id);
               }
