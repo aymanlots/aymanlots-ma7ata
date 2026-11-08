@@ -315,6 +315,12 @@ export interface Transaction {
   is_collaborator_data?: boolean;
   collaborator_workspace_name?: string;
   collaborator_workspace_short_id?: string;
+  is_partnership?: boolean;
+  partner_workspace_id?: string;
+  room_id?: string;
+  svr_id?: string;
+  metadata?: Record<string, any>;
+  description?: string;
   is_demo?: boolean;
   pending_sync?: boolean;
   hawala_meta?: MoneyTransfer | null;
@@ -366,6 +372,7 @@ export interface Parcel {
 
   route: string;            // خط السير مثلاً: الداخلة ➔ نواذيبو
   description: string;      // وصف حر للبضاعة (أي نوع)
+  item_description?: string; // alias
   category?: string;
   items_count: number;      // الكمية أو عدد الطرود
   weight_kg?: number;       // الوزن بالكيلوغرام (اختياري)
@@ -520,10 +527,17 @@ export interface AuditLogEntry {
   team_id?: string;
   user_id: string | null;
   user_name?: string;
-  action: 'INSERT' | 'UPDATE' | 'DELETE' | 'CANCEL' | 'STATUS_CHANGE' | 'PAYMENT';
+  actor_role?: string;
+  station_id?: string;
+  station_name?: string;
+  origin_station_name?: string;
+  destination_station_name?: string;
+  action: 'INSERT' | 'UPDATE' | 'DELETE' | 'CANCEL' | 'STATUS_CHANGE' | 'PAYMENT' | string;
   table_name: string;
   record_id: string;
   reason?: string;
+  details?: string;
+  is_partnership?: boolean;
   old_data: Record<string, any> | null;
   new_data: Record<string, any> | null;
   created_at: string;
@@ -636,10 +650,10 @@ export interface MoneyTransfer {
   receiver_name: string;
   receiver_phone: string;
   send_amount: number;
-  send_currency: 'MAD' | 'MRU';
+  send_currency: 'MAD' | 'MRU' | 'EUR';
   commission_amount: number;
   payout_amount: number;
-  payout_currency: 'MAD' | 'MRU';
+  payout_currency: 'MAD' | 'MRU' | 'EUR';
   exchange_rate?: number;
   status: 'pending' | 'paid_out' | 'cancelled';
   created_by?: string;
@@ -649,6 +663,8 @@ export interface MoneyTransfer {
   paid_out_at?: string | null;
   paid_out_by?: string | null;
   paid_out_by_name?: string | null;
+  is_partnership?: boolean;
+  partner_workspace_id?: string;
   notes?: string;
 }
 

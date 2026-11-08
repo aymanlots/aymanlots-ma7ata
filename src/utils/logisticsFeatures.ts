@@ -177,7 +177,8 @@ export function getParcelSourceOwnershipInfo(
 }
 
 /**
- * يتحقق مما إذا كان المستخدم الحالي (مدير أو عامل محطة الاستلام) يملك صلاحية قبول أو رفض كولية واردة من شريك
+ * يتحقق مما إذا كان المستخدم الحالي (مدير أو عامل محطة الاستلام) يملك صلاحية قبول أو رفض كولية واردة من محطة أخرى
+ * القاعدة: محطة الإرسال لا يمكنها قبول أو رفض كولي أرسلته بنفسها؛ القبول والرفض من اختصاص محطة الوصول فقط.
  */
 export function canAcceptOrRejectPartnerParcel(
   parcel: Parcel,
@@ -186,19 +187,24 @@ export function canAcceptOrRejectPartnerParcel(
   userAssignedStationId?: string | null
 ): boolean {
   if (parcel.partner_acceptance_status !== 'pending_approval') return false;
-  const myWsId = currentWorkspaceId || '';
-  const isIncomingFromPartner =
-    Boolean(parcel.partner_origin_workspace_id && parcel.partner_origin_workspace_id !== myWsId) ||
-    Boolean(parcel.is_collaborator_data && parcel.partner_workspace_id === myWsId);
-  if (!isIncomingFromPartner) return false;
 
-  if (userRole === 'worker') {
+  // عامل أو مدير محطة الإرسال لا يمكنه إطلاقاً قبول أو رفض كولي أرسله بنفسه!
+  if (userRole === 'worker' || userRole === 'admin') {
     if (!userAssignedStationId) return false;
+    if (parcel.origin_station_id === userAssignedStationId) return false;
     return (
       parcel.destination_station_id === userAssignedStationId ||
       parcel.partner_destination_station_id === userAssignedStationId
     );
   }
+
+  // المدير العام: إذا كان يفلتر على محطة الإرسال، لا يقبل تحت محطة الإرسال
+  if (userAssignedStationId && userAssignedStationId !== 'all') {
+    if (parcel.origin_station_id === userAssignedStationId && parcel.destination_station_id !== userAssignedStationId) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -222,7 +228,18 @@ export function canControlParcelOrigin(
 
   if (userRole === 'worker') {
     if (!userAssignedStationId) return false;
+    // عامل محطة الوصول لا يمكنه إطلاق أو شحن الكولي من محطة الانطلاق
+    if (parcel.destination_station_id === userAssignedStationId && parcel.origin_station_id !== userAssignedStationId) {
+      return false;
+    }
     return parcel.origin_station_id === userAssignedStationId;
+  }
+
+  // المدير: إذا كان محدد محطة معينة بالفلتر وليست محطة الانطلاق
+  if (userAssignedStationId && userAssignedStationId !== 'all') {
+    if (parcel.destination_station_id === userAssignedStationId && parcel.origin_station_id !== userAssignedStationId) {
+      return false;
+    }
   }
 
   return !myWsId || !parcel.workspace_id || parcel.workspace_id === myWsId;
@@ -230,8 +247,9 @@ export function canControlParcelOrigin(
 
 /**
  * يتحقق بصرامة مما إذا كان المستخدم الحالي يملك الحق في تأكيد وصول الكولي للمحطة (arrived) أو تسليمه للزبون (delivered).
- * - في كوليات غرفة الشراكة المرسلة لمدير آخر: المدير المرسل وعامله لا يملكون الحق في تأكيد الوصول أو التسليم نهائياً! فقط المدير المستقبل وعامل محطة الوصول بعد قبول الكولية.
- * - في الكوليات الداخلية: عامل محطة الانطلاق لا يملك الحق في تأكيد الوصول أو التسليم في محطة الوصول؛ فقط عامل محطة الوصول أو المدير.
+ * القاعدة الصارمة: اللي صيفط كيصيفط، واللي استقبل كيستقبل.
+ * - عامل محطة الإرسال لا يمكنه نهائياً تأكيد الوصول أو التسليم أو تفريغ الكولي.
+ * - الاستقبال والتسليم والتفريغ يتم حصرياً من طرف عامل أو مدير محطة الوصول.
  */
 export function canControlParcelDestination(
   parcel: Parcel,
@@ -248,7 +266,7 @@ export function canControlParcelDestination(
       !parcel.is_collaborator_data
   );
 
-  // إذا كنت أنا من أرسل الكولية لشريك آخر في غرفة الشراكة: أنا أرسلتها فقط، والشريك المستقبل هو الوحيد المسؤول عن الوصول والتسليم!
+  // إذا أرسلت كولية لشريك في غرفة الشراكة: الشريك المستقبل هو الوحيد المخول بالاستقبال والتسليم
   if (isOutgoingToPartner) {
     return false;
   }
@@ -258,7 +276,6 @@ export function canControlParcelDestination(
     Boolean(parcel.is_collaborator_data);
 
   if (isIncomingFromPartner) {
-    // لا يمكن إدخالها للستوك أو تسليمها قبل قبولها أولاً
     if (
       parcel.partner_acceptance_status === 'pending_approval' ||
       parcel.partner_acceptance_status === 'rejected'
@@ -278,10 +295,22 @@ export function canControlParcelDestination(
   // كولية داخلية بين محطات نفس المدير
   if (userRole === 'worker') {
     if (!userAssignedStationId) return false;
+    // منع عامل محطة الإرسال تماماً من الاستقبال أو التسليم
+    if (parcel.origin_station_id === userAssignedStationId && parcel.destination_station_id !== userAssignedStationId) {
+      return false;
+    }
     return (
       parcel.destination_station_id === userAssignedStationId ||
       parcel.partner_destination_station_id === userAssignedStationId
     );
+  }
+
+  // المدير: إذا كان محدد محطة بالفلتر وهي محطة الإرسال، لا يمكنه الاستقبال تحت محطة الإرسال
+  if (userAssignedStationId && userAssignedStationId !== 'all') {
+    if (parcel.origin_station_id === userAssignedStationId && parcel.destination_station_id !== userAssignedStationId) {
+      return false;
+    }
+    return parcel.destination_station_id === userAssignedStationId;
   }
 
   return !myWsId || !parcel.workspace_id || parcel.workspace_id === myWsId;

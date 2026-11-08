@@ -217,21 +217,21 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-center items-stretch p-0 m-0 bg-black/85 backdrop-blur-md animate-fadeIn overflow-hidden"
+      className="fixed inset-0 z-50 flex justify-center items-center p-2.5 sm:p-4 m-0 bg-black/85 backdrop-blur-md animate-fadeIn overflow-hidden"
       onClick={onClose}
     >
       <div
         dir="rtl"
-        className="w-full max-w-[430px] h-[100dvh] min-h-[100dvh] max-h-[100dvh] luxury-card border-x-2 border-y-0 border-[#D4AF37]/65 rounded-none shadow-2xl p-2.5 text-right relative overflow-hidden m-0 flex flex-col justify-between"
+        className="w-[96%] max-w-[420px] max-h-[94dvh] luxury-card border-2 border-[#D4AF37]/65 rounded-2xl shadow-2xl p-3.5 text-right relative overflow-hidden m-0 flex flex-col justify-between gap-2.5"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-1.5 border-b border-[#D4AF37]/30 shrink-0">
+        <div className="flex items-center justify-between pb-2 border-b border-[#D4AF37]/30 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-lg leading-none">🚚</span>
             <div className="min-w-0">
               <h3 className="text-sm sm:text-base font-black text-white truncate">إنشاء رحلة شحن جديدة</h3>
-              <p className="text-[11px] text-[#D4AF37] font-black truncate">
+              <p className="text-xs text-[#D4AF37] font-black truncate">
                 {originSt?.city || 'الانطلاق'} ➔ {destDisplayName}
               </p>
             </div>
@@ -246,161 +246,166 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
           </button>
         </div>
 
-        {/* Form Body — 100% Full Screen Vertical Stack (وحدة تحت وحدة بلا سكرول) */}
+        {/* Form Body */}
         <form
           onSubmit={handleSubmit}
-          className="flex-1 flex flex-col justify-between gap-1.5 py-1.5 min-h-0 overflow-hidden text-xs sm:text-sm"
+          className="flex-1 flex flex-col justify-between gap-2.5 min-h-0 overflow-hidden text-xs sm:text-sm"
         >
           {errorMessage && (
-            <div className="p-1.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 font-black text-xs shrink-0 truncate">
+            <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 font-black text-xs sm:text-sm shrink-0 truncate">
               {errorMessage}
             </div>
           )}
 
-          {/* 1. محطة الانطلاق */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <label className="block text-[#C2A878] mb-1 text-xs font-black truncate">📍 محطة الانطلاق *</label>
-            <select
-              value={originStationId}
-              disabled={userRole === 'worker'}
-              onChange={e => setOriginStationId(e.target.value)}
-              className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2 py-2 text-white font-black text-xs focus:outline-none disabled:opacity-70 truncate"
-            >
-              {stations.map(st => (
-                <option key={st.id} value={st.id}>
-                  {st.name} ({st.city})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 2. محطة الوصول */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-[#C2A878] text-xs font-black truncate">🎯 محطة الوصول *</label>
-              <span className="font-mono font-black text-[11px] text-[#F5C84C]">
-                📦 جاهز للشحن: {readyParcelsForRouteCount} كولي
-              </span>
+          {/* السطر الفوقاني: [ محطة الانطلاق ] حدا [ محطة الوصول ] */}
+          <div className="grid grid-cols-2 gap-2.5 shrink-0">
+            {/* محطة الانطلاق */}
+            <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+              <label className="block text-[#C2A878] text-xs sm:text-sm font-black truncate">📍 محطة الانطلاق *</label>
+              <select
+                value={originStationId}
+                disabled={userRole === 'worker'}
+                onChange={e => setOriginStationId(e.target.value)}
+                className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2.5 text-white font-black text-xs sm:text-sm focus:outline-none disabled:opacity-70 truncate"
+              >
+                {stations.map(st => (
+                  <option key={st.id} value={st.id}>
+                    {st.name} ({st.city})
+                  </option>
+                ))}
+              </select>
             </div>
-            <select
-              value={destinationStationId}
-              onChange={e => setDestinationStationId(e.target.value)}
-              className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2 py-2 text-white font-black text-xs focus:outline-none truncate"
-            >
-              {stations.filter(st => st.id !== originStationId).length > 0 && (
-                <optgroup label="🏠 محطاتنا">
-                  {stations
-                    .filter(st => st.id !== originStationId)
-                    .map(st => {
+
+            {/* محطة الوصول */}
+            <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+              <div className="flex items-center justify-between gap-1">
+                <label className="text-[#C2A878] text-xs sm:text-sm font-black truncate">🎯 محطة الوصول *</label>
+                <span className="font-mono font-black text-[10px] text-[#F5C84C] shrink-0">
+                  📦 {readyParcelsForRouteCount}
+                </span>
+              </div>
+              <select
+                value={destinationStationId}
+                onChange={e => setDestinationStationId(e.target.value)}
+                className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2.5 text-white font-black text-xs sm:text-sm focus:outline-none truncate"
+              >
+                {stations.filter(st => st.id !== originStationId).length > 0 && (
+                  <optgroup label="🏠 محطاتنا">
+                    {stations
+                      .filter(st => st.id !== originStationId)
+                      .map(st => {
+                        const count = parcels.filter(
+                          p =>
+                            p.status === 'registered' &&
+                            p.origin_station_id === originStationId &&
+                            p.destination_station_id === st.id
+                        ).length;
+                        return (
+                          <option key={st.id} value={st.id}>
+                            {st.name} ({st.city}){count > 0 ? ` [${count}📦]` : ''}
+                          </option>
+                        );
+                      })}
+                  </optgroup>
+                )}
+
+                {partnerStations.length > 0 && (
+                  <optgroup label="🤝 الشركاء">
+                    {partnerStations.map(ps => {
                       const count = parcels.filter(
                         p =>
                           p.status === 'registered' &&
                           p.origin_station_id === originStationId &&
-                          p.destination_station_id === st.id
+                          (p.destination_station_id === ps.id || p.partner_destination_station_id === ps.id)
                       ).length;
                       return (
-                        <option key={st.id} value={st.id}>
-                          {st.name} ({st.city}){count > 0 ? ` [${count}📦]` : ''}
+                        <option key={ps.id} value={ps.id}>
+                          🤝 {ps.name} ({ps.city}){count > 0 ? ` [${count}📦]` : ''}
                         </option>
                       );
                     })}
-                </optgroup>
-              )}
-
-              {partnerStations.length > 0 && (
-                <optgroup label="🤝 الشركاء">
-                  {partnerStations.map(ps => {
-                    const count = parcels.filter(
-                      p =>
-                        p.status === 'registered' &&
-                        p.origin_station_id === originStationId &&
-                        (p.destination_station_id === ps.id || p.partner_destination_station_id === ps.id)
-                    ).length;
-                    return (
-                      <option key={ps.id} value={ps.id}>
-                        🤝 {ps.name} ({ps.city}){count > 0 ? ` [${count}📦]` : ''}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              )}
-            </select>
-          </div>
-
-          {/* 3. اسم الشيفور */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-[#C2A878] text-xs font-black truncate">👤 اسم الشيفور *</label>
-              {rememberedDrivers && rememberedDrivers.length > 0 && (
-                <select
-                  onChange={e => {
-                    const d = rememberedDrivers.find(rd => rd.name === e.target.value);
-                    if (d) handleSelectDriver(d);
-                  }}
-                  className="text-[10px] bg-black/60 text-[#F5C84C] border border-[#D4AF37]/30 rounded px-1.5 py-0.5 max-w-[110px] truncate"
-                >
-                  <option value="">شيفور سابق ▾</option>
-                  {rememberedDrivers.map((d, i) => (
-                    <option key={i} value={d.name}>{d.name}</option>
-                  ))}
-                </select>
-              )}
+                  </optgroup>
+                )}
+              </select>
             </div>
-            <input
-              type="text"
-              required
-              placeholder="👤 اسم الشيفور *"
-              value={driverName}
-              onChange={e => setDriverName(e.target.value)}
-              className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2 text-white font-black text-xs focus:outline-none"
-            />
           </div>
 
-          {/* 4. هاتف الشيفور */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <label className="block text-[#C2A878] mb-1 text-xs font-black truncate">📞 هاتف الشيفور</label>
-            <input
-              type="tel"
-              dir="ltr"
-              placeholder="06XXXXXXXX"
-              value={driverPhone}
-              onChange={e => setDriverPhone(e.target.value)}
-              className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2 text-white font-mono font-black text-xs focus:outline-none"
-            />
+          {/* 3. اسم الشيفور + هاتف الشيفور */}
+          <div className="grid grid-cols-2 gap-2.5 shrink-0">
+            <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+              <div className="flex items-center justify-between gap-1">
+                <label className="text-[#C2A878] text-xs sm:text-sm font-black truncate">👤 اسم الشيفور *</label>
+                {rememberedDrivers && rememberedDrivers.length > 0 && (
+                  <select
+                    onChange={e => {
+                      const d = rememberedDrivers.find(rd => rd.name === e.target.value);
+                      if (d) handleSelectDriver(d);
+                    }}
+                    className="text-[10px] bg-black/60 text-[#F5C84C] border border-[#D4AF37]/30 rounded px-1 py-0.5 max-w-[85px] truncate"
+                  >
+                    <option value="">سابق ▾</option>
+                    {rememberedDrivers.map((d, i) => (
+                      <option key={i} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <input
+                type="text"
+                required
+                placeholder="👤 اسم الشيفور *"
+                value={driverName}
+                onChange={e => setDriverName(e.target.value)}
+                className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2.5 text-white font-black text-xs sm:text-sm focus:outline-none"
+              />
+            </div>
+
+            <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+              <label className="block text-[#C2A878] text-xs sm:text-sm font-black truncate">📞 هاتف الشيفور</label>
+              <input
+                type="tel"
+                dir="ltr"
+                placeholder="0600000000"
+                value={driverPhone}
+                onChange={e => setDriverPhone(e.target.value)}
+                className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2.5 text-white font-mono font-black text-xs sm:text-sm focus:outline-none"
+              />
+            </div>
           </div>
 
-          {/* 5. رقم اللوحة (ماتريكيل العربة) */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <label className="block text-[#C2A878] mb-1 text-xs font-black truncate">🚛 رقم اللوحة (Matricule) *</label>
-            <input
-              type="text"
-              required
-              placeholder="رقم تسجيل العربة *"
-              value={vehiclePlate}
-              onChange={e => setVehiclePlate(e.target.value)}
-              className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2 text-white font-mono font-black text-xs focus:outline-none"
-            />
+          {/* 4. رقم اللوحة + ملاحظات الرحلة */}
+          <div className="grid grid-cols-2 gap-2.5 shrink-0">
+            <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+              <label className="block text-[#C2A878] text-xs sm:text-sm font-black truncate">🚛 رقم اللوحة *</label>
+              <input
+                type="text"
+                required
+                placeholder="رقم تسجيل العربة *"
+                value={vehiclePlate}
+                onChange={e => setVehiclePlate(e.target.value)}
+                className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2.5 text-white font-mono font-black text-xs sm:text-sm focus:outline-none"
+              />
+            </div>
+
+            <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+              <label className="block text-[#C2A878] text-xs sm:text-sm font-black truncate">📝 ملاحظات (اختياري)</label>
+              <input
+                type="text"
+                placeholder="ملاحظات الرحلة..."
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2.5 text-white font-black text-xs sm:text-sm focus:outline-none"
+              />
+            </div>
           </div>
 
-          {/* 6. ملاحظات الرحلة */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <label className="block text-[#C2A878] mb-1 text-xs font-black truncate">📝 ملاحظات الرحلة (اختياري)</label>
-            <input
-              type="text"
-              placeholder="ملاحظات الرحلة..."
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2 text-white font-black text-xs focus:outline-none"
-            />
-          </div>
-
-          {/* 7. زر التأكيد الكبير فالتحت */}
+          {/* 5. زر التأكيد الكبير فالتحت */}
           <button
             type="submit"
             disabled={isSubmitting}
             data-btn-role="add"
             data-btn-role-fixed="true"
-            className="btn-add w-full py-3 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-1.5 cursor-pointer shadow-md shrink-0"
+            className="btn-add w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer shadow-md shrink-0"
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>{isSubmitting ? '⏳ جاري الإنشاء...' : '✅ تأكيد وإنشاء الرحلة الآن 🚚'}</span>

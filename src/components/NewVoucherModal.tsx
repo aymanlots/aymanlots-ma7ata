@@ -150,21 +150,21 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-center items-stretch p-0 m-0 bg-black/85 backdrop-blur-md animate-fadeIn overflow-hidden"
+      className="fixed inset-0 z-50 flex justify-center items-center p-2.5 sm:p-4 m-0 bg-black/85 backdrop-blur-md animate-fadeIn overflow-hidden"
       onClick={onClose}
     >
       <div
         dir="rtl"
-        className="luxury-card border-x-2 border-y-0 border-[#D4AF37]/65 rounded-none w-full max-w-[430px] h-[100dvh] min-h-[100dvh] max-h-[100dvh] p-2.5 overflow-hidden shadow-2xl flex flex-col justify-between text-right m-0"
+        className="luxury-card border-2 border-[#D4AF37]/65 rounded-2xl w-[96%] max-w-[420px] max-h-[94dvh] p-3.5 overflow-hidden shadow-2xl flex flex-col justify-between gap-2.5 text-right m-0"
         onClick={e => e.stopPropagation()}
       >
-        {/* Top Header — pinned at very top */}
-        <div className="pb-1.5 border-b border-white/15 flex items-center justify-between shrink-0">
+        {/* Top Header */}
+        <div className="pb-2 border-b border-white/15 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-sm sm:text-base font-black text-white truncate">
               {type === 'cash_in' ? '➕ إيداع فلاكيس' : type === 'cash_out' ? '➖ سحب من لاكيس' : '📦 أداء سلع'}
             </h3>
-            <span className="text-xs text-[#F5C84C] font-black truncate">
+            <span className="text-xs sm:text-sm text-[#F5C84C] font-black truncate">
               📍 {selectedStationName} (
               <span
                 dir="ltr"
@@ -187,21 +187,21 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
           </button>
         </div>
 
-        {/* Stacked Form — 100% height, fields one under another, zero scroll */}
+        {/* Form with Clear, Comfortable Boxes & Text */}
         <form
           onSubmit={handlePreSubmit}
-          className="flex-1 flex flex-col justify-between gap-1.5 py-1.5 min-h-0 overflow-hidden text-xs sm:text-sm"
+          className="flex-1 flex flex-col justify-between gap-2.5 min-h-0 overflow-hidden text-xs sm:text-sm"
         >
           {error && (
-            <div className="p-1.5 rounded-xl bg-rose-950/70 border border-rose-500/40 flex items-center gap-1.5 text-rose-200 text-xs font-black shrink-0">
+            <div className="p-2 rounded-xl bg-rose-950/70 border border-rose-500/40 flex items-center gap-1.5 text-rose-200 text-xs sm:text-sm font-black shrink-0">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span className="truncate">{error}</span>
             </div>
           )}
 
           {/* 1. المحطة */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <label className="block text-xs font-black mb-1 truncate">📍 المحطة</label>
+          <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5 shrink-0">
+            <label className="block text-xs sm:text-sm font-black truncate">📍 المحطة</label>
             <select
               value={stationId}
               disabled={userRole === 'worker' || Boolean(fixedStationId && fixedStationId !== 'all')}
@@ -213,7 +213,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                   setCurrency(st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD'));
                 }
               }}
-              className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-xs font-black text-white focus:outline-none disabled:opacity-60 truncate"
+              className="w-full bg-black/65 border border-white/20 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-black text-white focus:outline-none disabled:opacity-60 truncate"
             >
               {stations.map(st => (
                 <option key={st.id} value={st.id}>
@@ -224,9 +224,9 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
           </div>
 
           {/* 2. نوع العملية */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <label className="block text-xs font-black mb-1 truncate">⚡ نوع العملية</label>
-            <div className="grid grid-cols-3 gap-1.5">
+          <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5 shrink-0">
+            <label className="block text-xs sm:text-sm font-black truncate">⚡ نوع العملية</label>
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 data-btn-role="add"
@@ -234,7 +234,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 data-btn-active={type === 'cash_in' ? 'true' : 'false'}
                 data-btn-active-fixed="true"
                 onClick={() => setType('cash_in')}
-                className="btn-add py-2 px-2 rounded-xl text-xs font-black transition cursor-pointer"
+                className="btn-add py-2.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer"
               >
                 ➕ إيداع
               </button>
@@ -245,7 +245,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 data-btn-active={type === 'cash_out' ? 'true' : 'false'}
                 data-btn-active-fixed="true"
                 onClick={() => setType('cash_out')}
-                className="btn-delete py-2 px-2 rounded-xl text-xs font-black transition cursor-pointer"
+                className="btn-delete py-2.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer"
               >
                 ➖ سحب
               </button>
@@ -256,50 +256,51 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 data-btn-active={type === 'goods_payment' ? 'true' : 'false'}
                 data-btn-active-fixed="true"
                 onClick={() => setType('goods_payment')}
-                className="btn-delete py-2 px-2 rounded-xl text-xs font-black transition cursor-pointer"
+                className="btn-delete py-2.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer"
               >
                 📦 سلع
               </button>
             </div>
           </div>
 
-          {/* 3. المبلغ */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <label className="block text-xs font-black mb-1 truncate">💰 المبلغ *</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              required
-              value={amount}
-              onChange={e => {
-                const val = e.target.value.replace(/[^0-9.]/g, '');
-                setAmount(val);
-              }}
-              placeholder="0.00"
-              className="w-full bg-black/65 border-2 border-[#D4AF37]/60 rounded-xl px-3 py-2 text-base font-mono font-black text-white focus:outline-none text-center"
-              dir="ltr"
-            />
+          {/* 3. المبلغ حدا العملة */}
+          <div className="grid grid-cols-12 gap-2.5 shrink-0">
+            <div className="col-span-7 bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5">
+              <label className="block text-xs sm:text-sm font-black truncate">💰 المبلغ *</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                required
+                value={amount}
+                onChange={e => {
+                  const val = e.target.value.replace(/[^0-9.]/g, '');
+                  setAmount(val);
+                }}
+                placeholder="0.00"
+                className="w-full bg-black/65 border-2 border-[#D4AF37]/60 rounded-xl px-3 py-2.5 text-base font-mono font-black text-white focus:outline-none text-center"
+                dir="ltr"
+              />
+            </div>
+
+            <div className="col-span-5 bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5">
+              <label className="block text-xs sm:text-sm font-black truncate">💱 العملة</label>
+              <select
+                value={currency}
+                onChange={e => setCurrency(e.target.value)}
+                className="w-full bg-black/65 border border-[#D4AF37]/50 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm font-black text-[#F5C84C] focus:outline-none"
+              >
+                {currencies.map(c => (
+                  <option key={c.code} value={c.code}>
+                    {c.code}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* 4. العملة */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <label className="block text-xs font-black mb-1 truncate">💱 العملة</label>
-            <select
-              value={currency}
-              onChange={e => setCurrency(e.target.value)}
-              className="w-full bg-black/65 border border-[#D4AF37]/50 rounded-xl px-2.5 py-2 text-xs font-black text-[#F5C84C] focus:outline-none"
-            >
-              {currencies.map(c => (
-                <option key={c.code} value={c.code}>
-                  {c.code}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 5. السبب / البيان */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <label className="block text-xs font-black mb-1 truncate">
+          {/* 4. السبب / البيان */}
+          <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5 shrink-0">
+            <label className="block text-xs sm:text-sm font-black truncate">
               📝 السبب / البيان {isOutflow && <span className="text-rose-400">*</span>}
             </label>
             <input
@@ -308,16 +309,16 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
               value={reason}
               onChange={e => setReason(e.target.value)}
               placeholder={isOutflow ? 'اكتب سبب السحب أو الصرف *' : 'اكتب بيان العملية...'}
-              className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-xs font-black text-white focus:outline-none"
+              className="w-full bg-black/65 border border-white/20 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-black text-white focus:outline-none"
             />
           </div>
 
-          {/* 6. رقم الهاتف */}
-          <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-black truncate">📞 رقم الهاتف (اختياري)</label>
+          {/* 5. رقم الهاتف */}
+          <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5 shrink-0">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs sm:text-sm font-black truncate">📞 رقم الهاتف (اختياري)</label>
               {isCashboxEmptyOrInsufficient && (
-                <span className="text-[10px] font-black text-rose-400 truncate" dir="ltr">
+                <span className="text-xs font-black text-rose-400 truncate" dir="ltr">
                   ⚠️ بعد السحب: {resultingBalance.toLocaleString('en-US')} {currency}
                 </span>
               )}
@@ -326,20 +327,20 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
               type="tel"
               value={phoneNumber}
               onChange={e => setPhoneNumber(e.target.value)}
-              placeholder="06XXXXXXXX"
+              placeholder="0600000000"
               dir="ltr"
-              className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-xs font-black text-white font-mono text-left focus:outline-none"
+              className="w-full bg-black/65 border border-white/20 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-black text-white font-mono text-left focus:outline-none"
             />
           </div>
 
-          {/* 7. زر التأكيد الكبير فالتحت */}
+          {/* 6. زر التأكيد الكبير فالتحت */}
           <button
             type="submit"
             data-btn-role={type === 'cash_in' ? 'add' : 'remove'}
             data-btn-role-fixed="true"
             className={`${
               type === 'cash_in' ? 'btn-add' : 'btn-delete'
-            } w-full py-3 px-4 rounded-xl font-black text-sm cursor-pointer shadow-md shrink-0`}
+            } w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base cursor-pointer shadow-md shrink-0`}
           >
             {type === 'cash_in' ? '✅ تأكيد الإيداع فلاكيس (+)' : '✅ تأكيد السحب من لاكيس (−)'}
           </button>

@@ -70,6 +70,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     currentWorkspace, 
     userRole,
     userAssignedStationId,
+    isWorkerStationDeleted,
     hideAmounts,
     updateParcelStatus,
     respondToPartnerParcel,
@@ -423,6 +424,27 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     (conditionFilter !== 'all' ? 1 : 0) +
     (paymentFilter !== 'all' ? 1 : 0) +
     (stationFilter !== 'all' ? 1 : 0);
+
+  if (userRole === 'worker' && isWorkerStationDeleted) {
+    return (
+      <div className="luxury-card p-6 sm:p-8 text-center rounded-[24px] my-6 space-y-4 border-2 border-rose-500/50 bg-black/85 shadow-2xl">
+        <div className="w-16 h-16 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center text-3xl mx-auto shadow-lg">
+          ⛔
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="text-base sm:text-lg font-black text-rose-400">
+            تم إيقاف أو حذف هذه المحطة من طرف المدير
+          </h3>
+          <p className="text-xs sm:text-sm text-gray-300 font-bold leading-relaxed max-w-sm mx-auto">
+            قام المدير بمسح أو إيقاف هذه المحطة نهائياً. لقد تم تجميد وإيقاف جميع العمليات على هذا الحساب.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs font-mono font-black text-rose-300">
+          🔒 العمليات موقوفة بأمر من المدير
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2.5 pb-28 text-right">
@@ -1596,10 +1618,11 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                               <span>التفاصيل والتتبع</span>
                             </button>
 
+                            {/* حماية السجلات: العامل لا يرى زر الحذف نهائياً، وغرفة الشراكة مقفلة نهائياً عن الجميع */}
                             {(userRole === 'owner' || userRole === 'platform_owner') && (
-                              parcel.is_partnership_parcel && (parcel.partner_origin_workspace_id === currentWorkspace?.id || (!parcel.partner_origin_workspace_id && parcel.workspace_id === currentWorkspace?.id)) ? (
-                                <span className="text-[10px] text-amber-300 font-bold px-2 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center gap-1" title="لا يمكن للمرسل حذف أو تعديل الكولية بمجرد إرسالها لغرفة الشراكة">
-                                  <span>🔒 مرسلة لشريك (مقفلة)</span>
+                              (parcel.is_partnership_parcel || parcel.partner_workspace_id || parcel.partner_origin_workspace_id || parcel.is_collaborator_data) ? (
+                                <span className="text-[10px] text-emerald-400 font-bold px-2 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center gap-1" title="سجلات غرفة الشراكة محمية ومقفلة نهائياً ولا يمكن مسحها لضمان الأدلة">
+                                  <span>🔒 سجل شراكة دائم</span>
                                 </span>
                               ) : (
                                 <button
@@ -1894,21 +1917,28 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                             <span>طباعة ورقة الطريق الرسمية والجمارك (Manifeste PDF)</span>
                           </button>
 
+                          {/* حماية رحلات غرفة الشراكة: مقفلة نهائياً عن الحذف، والعمال محجوب عنهم زر الحذف */}
                           {(userRole === 'owner' || userRole === 'platform_owner') && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setItemToDelete({
-                                  type: 'trip',
-                                  id: trip.id,
-                                  label: `${trip.trip_code} (${trip.driver_name} — ${trip.vehicle_plate})`,
-                                })
-                              }
-                              className="btn-delete w-full py-2 rounded-xl font-black text-[11px] flex items-center justify-center gap-1.5 transition"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>حذف الرحلة نهائياً (للمدير فقط)</span>
-                            </button>
+                            (trip.partner_workspace_id || trip.partner_destination_station_id || trip.is_collaborator_data) ? (
+                              <div className="text-center py-2 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 font-bold text-[11px] flex items-center justify-center gap-1.5" title="رحلات غرفة الشراكة محمية ومقفلة نهائياً ولا يمكن مسحها لضمان الأدلة">
+                                <span>🔒 رحلة شراكة دائمة (محمية من الحذف)</span>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setItemToDelete({
+                                    type: 'trip',
+                                    id: trip.id,
+                                    label: `${trip.trip_code} (${trip.driver_name} — ${trip.vehicle_plate})`,
+                                  })
+                                }
+                                className="btn-delete w-full py-2 rounded-xl font-black text-[11px] flex items-center justify-center gap-1.5 transition"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>حذف الرحلة نهائياً (للمدير فقط)</span>
+                              </button>
+                            )
                           )}
                         </div>
                       </div>

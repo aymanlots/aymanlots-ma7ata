@@ -174,6 +174,7 @@ interface AppContextType {
   selectedStationId: string | null;
   setSelectedStationId: (id: string | null) => void;
   userAssignedStationId: string | null;
+  isWorkerStationDeleted: boolean;
 
   // Join Requests (Workers requesting to join)
   joinRequests: JoinRequest[];
@@ -267,6 +268,7 @@ interface AppContextType {
     fromAmount: number;
     toAmount: number;
     rate: number;
+    transferFee?: number;
     customerName?: string;
     customerPhone?: string;
     note?: string;
@@ -280,9 +282,9 @@ interface AppContextType {
     receiver_name: string;
     receiver_phone: string;
     send_amount: number;
-    send_currency: 'MAD' | 'MRU';
+    send_currency: 'MAD' | 'MRU' | 'EUR';
     payout_amount: number;
-    payout_currency: 'MAD' | 'MRU';
+    payout_currency: 'MAD' | 'MRU' | 'EUR';
     exchange_rate: number;
     commission_amount: number;
     notes?: string;
@@ -733,6 +735,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     return [];
   });
+
+  // 6.b Persistent tracking of manager-deleted stations (to instantly freeze and block any worker or operation)
+  const [deletedStationIds, setDeletedStationIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('aman_deleted_station_ids');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('aman_deleted_station_ids', JSON.stringify(deletedStationIds));
+    } catch {}
+  }, [deletedStationIds]);
 
   // 7. Station Workers
   const [stationWorkers, setStationWorkers] = useState<StationWorker[]>(() => {
@@ -1452,7 +1472,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [currentUser?.id, currentWorkspace?.id, loadWorkspaceFromCloud]);
 
-  // Determine User Role in current workspace
+  // Determine User Role in current workspace:
+  // - platform_owner: مالك المنصة
+  // - owner: المدير العام (يتحكم في كل المحطات، يضيف ويحذف محطات ومدراء)
+  // - admin: مدير المحطة (يتحكم فقط في محطته المعين بها، يضيف عمال محطته، يشوف سجلاتها ويقبل عملياتها)
+  // - worker: العامل (يشتغل فقط في محطته ولا يملك صلاحية حذف سجلات أو محطات أو عمال)
   const userRole: UserRole = useMemo(() => {
     if (!currentUser) return 'worker';
     
@@ -1462,7 +1486,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     if (!currentWorkspace) return 'owner';
     const member = workspaceMembers.find(m => m.user_id === currentUser.id && m.status === 'active');
-    if (member?.role === 'admin' || member?.role === 'owner') return 'owner';
+    if (member?.role === 'owner') return 'owner';
+    if (member?.role === 'admin') return 'admin';
     return member?.role || (currentWorkspace.created_by === currentUser.id ? 'owner' : 'worker');
   }, [currentUser, currentWorkspace, workspaceMembers, isPlatformOwner]);
 
@@ -1485,34 +1510,64 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return wsStations.slice(0, 2);
   }, [stations, isPlan2TwoStations, currentWorkspace?.id]);
 
-  // Determine user's assigned station if worker
-  const userAssignedStationId = useMemo(() => {
+  // Determine user's assigned station if worker or station manager (admin)
+  const rawAssignedWorkerStationId = useMemo(() => {
     if (!currentUser) return null;
     const assignment = stationWorkers.find(sw => sw.user_id === currentUser.id);
     const memberEntry = workspaceMembers.find(m => m.user_id === currentUser.id);
-    const explicitStId =
+    return (
       assignment?.station_id ||
       memberEntry?.station_id ||
       (currentUser as any)?.station_id ||
-      null;
-    if (userRole === 'worker') {
-      return explicitStId || (visibleStations.length === 1 ? visibleStations[0].id : null);
+      null
+    );
+  }, [currentUser, stationWorkers, workspaceMembers]);
+
+  // فحص صارم: هل تم حذف أو إيقاف المحطة المخصصة للعامل أو مدير المحطة من طرف المدير العام؟
+  // إذا تم مسح المحطة، يتجمد كل من العامل ومدير المحطة فوراً ويتوقف كل شيء
+  const isWorkerStationDeleted = useMemo(() => {
+    if (!currentUser) return false;
+    // المدير العام لا يرتبط بمحطة واحدة، بينما مدير المحطة والعامل يرتبطان بمحطتهما المحددة
+    if (userRole !== 'worker' && userRole !== 'admin') return false;
+    // إذا لم تكن هناك محطة معينة نهائياً
+    if (!rawAssignedWorkerStationId) return true;
+    // إذا كانت المحطة مسجلة في قائمة المحطات المحذوفة من طرف المدير العام
+    if (deletedStationIds.includes(rawAssignedWorkerStationId)) return true;
+    // إذا كانت قائمة المحطات غير فارغة والمحطة لم تعد موجودة فيها
+    if (visibleStations.length > 0 && !visibleStations.some(s => s.id === rawAssignedWorkerStationId)) {
+      return true;
     }
-    return explicitStId || visibleStations[0]?.id || null;
-  }, [currentUser, stationWorkers, workspaceMembers, visibleStations, userRole]);
+    // إذا قام المدير العام بمسح جميع المحطات
+    if (visibleStations.length === 0) return true;
+    return false;
+  }, [currentUser, userRole, rawAssignedWorkerStationId, deletedStationIds, visibleStations]);
+
+  const userAssignedStationId = useMemo(() => {
+    if (!currentUser) return null;
+    if (userRole === 'worker' || userRole === 'admin') {
+      // إذا تم حذف المحطة من طرف المدير العام، يصبح العامل أو مدير المحطة بدون محطة ويتم تجميده فوراً
+      if (isWorkerStationDeleted) return null;
+      return rawAssignedWorkerStationId;
+    }
+    return rawAssignedWorkerStationId || visibleStations[0]?.id || null;
+  }, [currentUser, userRole, isWorkerStationDeleted, rawAssignedWorkerStationId, visibleStations]);
 
   useEffect(() => {
-    if (userRole === 'worker' && userAssignedStationId) {
-      setSelectedStationId(userAssignedStationId);
+    if (userRole === 'worker' || userRole === 'admin') {
+      if (isWorkerStationDeleted || !userAssignedStationId) {
+        setSelectedStationId(null);
+      } else {
+        setSelectedStationId(userAssignedStationId);
+      }
     } else if (visibleStations.length === 0) {
       if (selectedStationId !== null) setSelectedStationId(null);
     } else if (selectedStationId === 'all') {
       // الحفاظ على اختيار "كافة المحطات" للمدير بدون إعادة التعيين التلقائي للمحطة الأولى
       return;
     } else if (!selectedStationId || !visibleStations.some(s => s.id === selectedStationId)) {
-      setSelectedStationId(visibleStations[0].id);
+      setSelectedStationId(visibleStations[0]?.id || null);
     }
-  }, [userRole, userAssignedStationId, visibleStations, selectedStationId]);
+  }, [userRole, userAssignedStationId, isWorkerStationDeleted, visibleStations, selectedStationId]);
 
   // ============================================================================
   // MULTI-ADMIN ISOLATION & OPTIONAL COLLABORATION FILTERING
@@ -2345,7 +2400,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    // 2. Check workspace subscription (blocks BOTH Admin/Manager and Worker from adding, sending, or receiving anything)
+    // 2. Block worker completely if their assigned station was deleted or missing from the manager's stations
+    if (currentUser && userRole === 'worker') {
+      if (isWorkerStationDeleted || !userAssignedStationId) {
+        return {
+          allowed: false,
+          error: '⛔ تم حذف أو إيقاف هذه المحطة من طرف المدير. لقد تم إيقاف وتجميد جميع العمليات (إرسال، استلام، تحويل، صرف) نهائياً.',
+        };
+      }
+    }
+
+    // 3. Check workspace subscription (blocks BOTH Admin/Manager and Worker from adding, sending, or receiving anything)
     if (isSubscriptionExpired) {
       const msg =
         effectiveSubscriptionStatus === 'suspended'
@@ -2363,6 +2428,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     isPlatformOwner,
     isAccountRevokedLocally,
     forceRevokedWorkerLogout,
+    isWorkerStationDeleted,
+    userAssignedStationId,
     isSubscriptionExpired,
     effectiveSubscriptionStatus,
     showToast,
@@ -3028,6 +3095,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               if (activeWorkerMember.station_id) {
                 activeWorkerStationId = activeWorkerMember.station_id;
               }
+
+              // منع العامل تماماً إذا كانت محطته محذوفة أو متوقفة أو مساحة العمل بدون محطات
+              const deletedInWs = (cloudData.workspace as any)?.deleted_station_ids || [];
+              const isStDeleted =
+                !activeWorkerStationId ||
+                deletedInWs.includes(activeWorkerStationId) ||
+                (cloudData.stations.length > 0 && !cloudData.stations.some(s => s.id === activeWorkerStationId)) ||
+                cloudData.stations.length === 0;
+
+              if (isStDeleted) {
+                return {
+                  success: false,
+                  error: '⛔ تم حذف أو إيقاف المحطة المخصصة لهذا العامل من طرف المدير. لا يمكن للعامل تسجيل الدخول أو العمل بدون محطة نشطة.',
+                };
+              }
             }
 
             if (cloudData.workspace) {
@@ -3307,6 +3389,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
         );
         if (member && member.profile) {
+          // منع العامل إذا كانت محطته محذوفة أو مساحة العمل بدون محطات
+          if (member.role === 'worker') {
+            const stId = member.station_id;
+            const isStDeleted =
+              !stId ||
+              deletedStationIds.includes(stId) ||
+              (stations.length > 0 && !stations.some(s => s.id === stId)) ||
+              stations.length === 0;
+
+            if (isStDeleted) {
+              return {
+                success: false,
+                error: '⛔ تم حذف أو إيقاف محطة هذا العامل من طرف المدير. لا يمكن الدخول أو العمل بدون محطة نشطة.',
+              };
+            }
+          }
+
           const finalName = trimmedWorkerName || member.profile.name || 'موظف المحطة';
           const profileWithFlag: Profile = {
             ...member.profile,
@@ -3334,6 +3433,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const savedAcc = localAccounts[cleanPhone];
           if (savedAcc) {
             if (!savedAcc.isOwner) {
+              // لا يمكن للعامل العمل بمفرده إذا تم مسح البيانات أو لا توجد محطات نشطة
+              if (stations.length === 0 || !currentWorkspace) {
+                return {
+                  success: false,
+                  error: '⛔ تم مسح أو إعادة ضبط البيانات. لا يمكن للعامل العمل بمفرده بدون مدير ومحطة نشطة.',
+                };
+              }
+              const stId = savedAcc.station_id;
+              if (!stId || deletedStationIds.includes(stId) || !stations.some(s => s.id === stId)) {
+                return {
+                  success: false,
+                  error: '⛔ المحطة المخصصة لهذا العامل تم حذفها من طرف المدير. لا يمكن الدخول أو العمل.',
+                };
+              }
               const stillInMembers = workspaceMembers.some(
                 m => cleanPhoneNumber(m.profile?.phone || m.phone || '') === cleanPhone && m.status === 'active'
               );
@@ -4177,26 +4290,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const wsId = currentWorkspace?.id;
     const resetAt = new Date().toISOString();
 
+    // الحفاظ التام على سجلات ووثائق غرفة الشراكة كدليل دائم لا يمسح أبداً
+    const preservedParcels = allParcels.filter(p => p.is_partnership_parcel || p.partner_workspace_id || p.partner_origin_workspace_id || p.is_collaborator_data);
+    const preservedTxs = allTransactions.filter(t => t.is_partnership || t.partner_workspace_id || t.room_id || t.svr_id || t.hawala_meta?.is_partnership);
+    const preservedAudit = auditLogs.filter(a => a.is_partnership || a.action?.includes('PARTNERSHIP') || a.reason?.includes('شراكة') || a.details?.includes('شراكة'));
+    const preservedTrips = allTrips.filter(t => t.partner_workspace_id || t.partner_destination_station_id || t.is_collaborator_data);
+
     setStations([]);
     setSelectedStationId(null);
     setWorkspaceMembers(prev => prev.filter(m => !m.is_demo && (m.role === 'admin' || m.role === 'owner')));
     setStationWorkers([]);
-    setAllParcels([]);
-    setAllTrips([]);
-    setAllTransactions([]);
-    setAuditLogs([]);
+    setAllParcels(preservedParcels);
+    allParcelsRef.current = preservedParcels;
+    setAllTrips(preservedTrips);
+    allTripsRef.current = preservedTrips;
+    setAllTransactions(preservedTxs);
+    setAuditLogs(preservedAudit);
     tripService.clearRememberedDriversAndPlates();
     setRememberedDrivers([]);
     setRememberedPlates([]);
 
     localStorage.removeItem('aman_stations');
-    localStorage.removeItem('aman_transactions');
-    localStorage.removeItem('ittihadiya_parcels');
-    localStorage.removeItem('aman_audit_logs');
+    localStorage.setItem('aman_transactions', JSON.stringify(preservedTxs));
+    localStorage.setItem('ittihadiya_parcels', JSON.stringify(preservedParcels));
+    localStorage.setItem('aman_audit_logs', JSON.stringify(preservedAudit));
     localStorage.removeItem('alittihadia_hawala_transfers_v1');
-    storageService.remove('TRIPS');
-    storageService.remove('PARCELS');
-    storageService.remove('TRANSACTIONS');
+    storageService.set('TRIPS', preservedTrips);
+    storageService.set('PARCELS', preservedParcels);
+    storageService.set('TRANSACTIONS', preservedTxs);
 
     if (wsId) {
       localStorage.setItem(`aman_last_reset_${wsId}`, resetAt);
@@ -4225,6 +4346,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
     if (!currentWorkspace) return { success: false, error: 'لا توجد مساحة عمل نشطة' };
+
+    // فحص الصلاحيات الصارم:
+    // - المدير العام يملك إضافة الجميع
+    // - مدير المحطة (admin) يضيف عمال فقط وفي محطته المعين بها فقط
+    // - العامل ممنوع نهائياً من إضافة أي عضو
+    if (userRole === 'worker') {
+      const msg = 'غير مصرح: العمال لا يملكون صلاحية إضافة العمال أو المدراء.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+    if (userRole === 'admin') {
+      if (stationId !== userAssignedStationId) {
+        const msg = 'غير مصرح: مدير المحطة يمكنه فقط إضافة عمال لمحطته المعين بها.';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (role !== 'worker') {
+        const msg = 'غير مصرح: مدير المحطة يمكنه فقط إضافة عمال (وليس مدراء آخرين).';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
 
     const canonicalPhone = cleanPhoneNumber(phone);
     if (!canonicalPhone || canonicalPhone.length < 8) {
@@ -4446,16 +4589,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    // قيد صلاحية العامل: العامل يتحكم في محطته المخصصة فقط (استثناء: عند تسليم حوالة واردة لمحطته أو استلام طرد في محطته)
     const effectiveStationId =
       userRole === 'worker' && userAssignedStationId ? userAssignedStationId : data.station_id;
-    if (userRole === 'worker' && userAssignedStationId && data.station_id !== userAssignedStationId) {
-      const msg = 'لا تملك صلاحية التحكم أو تسجيل عمليات مالية في محطة أخرى غير محطتك المخصصة';
+
+    if (userRole === 'worker') {
+      if (isWorkerStationDeleted || !userAssignedStationId || data.station_id !== userAssignedStationId) {
+        const msg = '⛔ لا تملك صلاحية تسجيل عمليات مالية: محطتك تم حذفها أو إيقافها من طرف المدير.';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
+
+    const st = stations.find(s => s.id === effectiveStationId && !deletedStationIds.includes(s.id));
+    if (!st) {
+      const msg = '⛔ هذه المحطة تم حذفها من طرف المدير. لقد تم إيقاف وتجميد العمليات المالية في صندوقها نهائياً.';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
-
-    const st = stations.find(s => s.id === effectiveStationId);
     const wsId = currentWorkspace?.id || 'ws-default';
     const txId = isSupabaseConfigured()
       ? generateUUID()
@@ -4693,10 +4843,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true };
   };
 
-  // حذف سند مالي نهائياً (للمدير فقط)
+  // حذف سند مالي نهائياً (للمدير فقط مع حماية دائمة لغرفة الشراكة)
   const deleteTransaction = async (id: string): Promise<{ success: boolean; error?: string }> => {
-    if (userRole !== 'owner' && userRole !== 'platform_owner') {
-      const msg = 'صلاحية حذف السندات المالية للمدير المشرف فقط';
+    if (userRole === 'worker') {
+      const msg = '⛔ غير مصرح للعامل بمسح السجلات المالية نهائياً. زر المسح محجوب.';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
@@ -4706,8 +4856,61 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const targetTx = allTransactions.find(t => t.id === id);
     if (!targetTx) return { success: false, error: 'السند غير موجود' };
 
+    if (userRole === 'admin') {
+      // مدير المحطة يحذف فقط سندات محطته المعين بها
+      if (targetTx.station_id !== userAssignedStationId) {
+        const msg = 'غير مصرح: مدير المحطة يمكنه فقط حذف سجلات محطته المعين بها.';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    } else if (userRole !== 'owner' && userRole !== 'platform_owner') {
+      const msg = 'صلاحية حذف السندات المالية للمدير فقط';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    // حماية سجلات غرفة الشراكة: لا المدير ولا العامل ولا أي أحد يمكنه مسحها لضمان الأدلة
+    const isPartnershipTx = Boolean(
+      targetTx.is_partnership ||
+      targetTx.partner_workspace_id ||
+      targetTx.room_id ||
+      targetTx.svr_id ||
+      targetTx.hawala_meta?.is_partnership ||
+      targetTx.metadata?.is_partnership ||
+      targetTx.description?.includes('شراكة') ||
+      targetTx.description?.includes('غرفة الشراكة')
+    );
+    if (isPartnershipTx) {
+      const msg = '🔒 سجلات غرفة الشراكة محمية ومقفلة نهائياً ولا يمكن مسحها لا من طرف المدير ولا العامل لضمان الأدلة والوثائق.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const wsId = targetTx.workspace_id || currentWorkspace?.id || 'ws-default';
     setAllTransactions(prev => prev.filter(t => t.id !== id));
+
+    // توثيق عملية الحذف بالسبب
+    const txStation = stations.find(s => s.id === targetTx.station_id);
+    const auditEntry: AuditLogEntry = {
+      id: isSupabaseConfigured() ? generateUUID() : `audit-deltx-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      workspace_id: wsId,
+      team_id: wsId,
+      user_id: currentUser?.id || null,
+      user_name: currentUser?.name || 'المدير',
+      actor_role: userRole,
+      station_id: targetTx.station_id,
+      station_name: txStation?.name || 'المحطة',
+      action: 'DELETE',
+      table_name: 'transactions',
+      record_id: targetTx.id,
+      reason: `🗑️ قام المدير [${currentUser?.name || 'المدير'}] بحذف السند المالي [${targetTx.type}] بمبلغ ${targetTx.amount} ${targetTx.currency} في محطة [${txStation?.name || 'المحطة'}] — سبب الحذف: مسح السند المالي`,
+      details: targetTx.reason || targetTx.note || '',
+      is_partnership: false,
+      old_data: targetTx,
+      new_data: null,
+      created_at: new Date().toISOString(),
+    };
+    setAuditLogs(prev => [auditEntry, ...prev]);
 
     const supabase = getSupabaseClient();
     if (supabase && isSupabaseConfigured() && isValidUUID(id)) {
@@ -4720,14 +4923,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.deleteTransaction(wsId, id).catch(() => {});
     }
 
-    showToast('تم حذف العملية المالية نهائياً من الصندوق والسجل', 'info');
+    showToast('تم حذف السند المالي مع توثيق العملية بالسبب في سجل العمليات', 'info');
     return { success: true };
   };
 
-  // حذف عملية من سجل العمليات (للمدير فقط)
+  // حذف عملية من سجل العمليات (للمدير فقط مع حماية غرفة الشراكة نهائياً)
   const deleteAuditLog = (id: string) => {
-    if (userRole !== 'owner' && userRole !== 'platform_owner') {
-      showToast('صلاحية مسح سجل العمليات للمدير فقط', 'error');
+    if (userRole === 'worker' || (userRole !== 'owner' && userRole !== 'platform_owner')) {
+      showToast('⛔ غير مصرح للعامل بمسح سجل العمليات نهائياً', 'error');
+      return;
+    }
+    const log = auditLogs.find(a => a.id === id);
+    const isPartnershipLog = log && (
+      log.is_partnership ||
+      log.action?.includes('PARTNERSHIP') ||
+      log.reason?.includes('شراكة') ||
+      log.reason?.includes('غرفة الشراكة') ||
+      log.details?.includes('شراكة')
+    );
+    if (isPartnershipLog) {
+      showToast('🔒 سجلات غرفة الشراكة محمية ومقفلة نهائياً ولا يمكن مسحها لا من طرف المدير ولا العامل لضمان الأدلة.', 'error');
       return;
     }
     setAuditLogs(prev => prev.filter(a => a.id !== id));
@@ -4735,13 +4950,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const clearAuditLogs = () => {
-    if (userRole !== 'owner' && userRole !== 'platform_owner') {
-      showToast('صلاحية مسح سجل العمليات للمدير فقط', 'error');
+    if (userRole === 'worker' || (userRole !== 'owner' && userRole !== 'platform_owner')) {
+      showToast('⛔ غير مصرح للعامل بمسح سجل العمليات نهائياً', 'error');
       return;
     }
-    setAuditLogs([]);
-    localStorage.removeItem('aman_audit_logs');
-    showToast('تم مسح سجل المراجعة بالكامل', 'info');
+    // الحفاظ التام على سجلات غرفة الشراكة كدليل دائم
+    const preserved = auditLogs.filter(a =>
+      a.is_partnership ||
+      a.action?.includes('PARTNERSHIP') ||
+      a.reason?.includes('شراكة') ||
+      a.reason?.includes('غرفة الشراكة') ||
+      a.details?.includes('شراكة')
+    );
+    setAuditLogs(preserved);
+    localStorage.setItem('aman_audit_logs', JSON.stringify(preserved));
+    showToast('تم مسح السجلات العادية مع الحفاظ التام على سجلات غرفة الشراكة المقفلة كدليل دائم', 'info');
   };
 
   // تنفيذ عملية صرف العملة الفعلية في لاكيس المحطة (بين الدرهم MAD والأوقية MRU أو العكس)
@@ -4752,6 +4975,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     fromAmount: number;
     toAmount: number;
     rate: number;
+    transferFee?: number;
     customerName?: string;
     customerPhone?: string;
     note?: string;
@@ -4762,26 +4986,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const targetStationId =
       userRole === 'worker' && userAssignedStationId ? userAssignedStationId : params.stationId;
-    if (userRole === 'worker' && userAssignedStationId && params.stationId !== userAssignedStationId) {
-      const msg = 'لا يمكنك تنفيذ صرف العملة في محطة أخرى غير محطة عملك';
+
+    if (userRole === 'worker') {
+      if (isWorkerStationDeleted || !userAssignedStationId || params.stationId !== userAssignedStationId) {
+        const msg = '⛔ لا تملك صلاحية صرف العملة: محطتك تم حذفها أو إيقافها من طرف المدير.';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
+
+    const stExists = stations.some(s => s.id === targetStationId && !deletedStationIds.includes(s.id));
+    if (!stExists) {
+      const msg = '⛔ هذه المحطة تم حذفها من طرف المدير. لقد تم إيقاف وتجميد عمليات صرف العملة عليها نهائياً.';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
 
     const cleanFrom = Math.round(Number(params.fromAmount) * 100) / 100;
     const cleanTo = Math.round(Number(params.toAmount) * 100) / 100;
+    const cleanFee = Math.max(0, Math.round((Number(params.transferFee) || 0) * 100) / 100);
+    const totalCashIn = Math.round((cleanFrom + cleanFee) * 100) / 100;
+
     if (!targetStationId || cleanFrom <= 0 || cleanTo <= 0) {
       return { success: false, error: 'يرجى تحديد المحطة وإدخال مبلغ صحيح للصرف' };
     }
     if (params.fromCurrency === params.toCurrency) {
-      return { success: false, error: 'يجب اختيار عملتين مختلفتين (درهم ⇄ أوقية)' };
+      return { success: false, error: 'يجب اختيار عملتين مختلفتين' };
     }
 
     const custLabel = params.customerName?.trim()
       ? ` — الزبون: ${params.customerName.trim()}`
       : '';
+    const feeLabel = cleanFee > 0 ? ` (شامل مصاريف التحويلة: ${cleanFee} ${params.fromCurrency})` : '';
     const extraNote = [
-      `سعر الصرف: 1 درهم = ${params.rate} أوقية`,
+      `سعر الصرف: 1 ${params.fromCurrency} = ${params.rate} ${params.toCurrency}`,
+      cleanFee > 0 ? `مصاريف التحويلة: ${cleanFee} ${params.fromCurrency}` : '',
       params.note?.trim() || '',
     ]
       .filter(Boolean)
@@ -4791,10 +5030,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const inRes = await createTransaction({
       station_id: params.stationId,
       type: 'cash_in',
-      amount: cleanFrom,
+      amount: totalCashIn,
       currency: params.fromCurrency,
       phone_number: params.customerPhone?.trim() || '',
-      reason: `صرف عملة (+ إيداع فلاكيس): قبض ${cleanFrom} ${params.fromCurrency} مقابل تسليم ${cleanTo} ${params.toCurrency}${custLabel}`,
+      reason: `صرف عملة (+ إيداع فلاكيس): قبض ${cleanFrom} ${params.fromCurrency}${feeLabel} مقابل تسليم ${cleanTo} ${params.toCurrency}${custLabel}`,
       note: extraNote,
     });
 
@@ -4905,9 +5144,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     receiver_name: string;
     receiver_phone: string;
     send_amount: number;
-    send_currency: 'MAD' | 'MRU';
+    send_currency: 'MAD' | 'MRU' | 'EUR';
     payout_amount: number;
-    payout_currency: 'MAD' | 'MRU';
+    payout_currency: 'MAD' | 'MRU' | 'EUR';
     exchange_rate: number;
     commission_amount: number;
     notes?: string;
@@ -4920,10 +5159,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const payoutAmt = Math.round(Number(params.payout_amount) * 100) / 100;
     const commAmt = Math.max(0, Math.round((Number(params.commission_amount) || 0) * 100) / 100);
 
-    if (userRole === 'worker' && userAssignedStationId && params.origin_station_id !== userAssignedStationId) {
-      const msg = 'لا يمكنك إرسال حوالة مالية باسم محطة أخرى؛ يمكنك الإرسال من محطتك فقط';
-      showToast(msg, 'error');
-      return { success: false, error: msg };
+    if (userRole === 'worker') {
+      if (isWorkerStationDeleted || !userAssignedStationId || params.origin_station_id !== userAssignedStationId) {
+        const msg = '⛔ لا تملك صلاحية إرسال حوالة: محطتك تم حذفها أو إيقافها من طرف المدير.';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
     }
 
     if (!params.origin_station_id || !params.destination_station_id) {
@@ -4936,8 +5177,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: 'يرجى إدخال اسم المرسل والمستلم والمبلغ بشكل صحيح' };
     }
 
-    const originSt = stations.find(s => s.id === params.origin_station_id);
-    const destSt = stations.find(s => s.id === params.destination_station_id);
+    const originSt = stations.find(s => s.id === params.origin_station_id && !deletedStationIds.includes(s.id));
+    if (!originSt) {
+      const msg = '⛔ محطة إرسال الحوالة تم حذفها أو غير موجودة من طرف المدير. تم إيقاف العملية.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    const destSt = stations.find(s => s.id === params.destination_station_id && !deletedStationIds.includes(s.id));
+    if (!destSt) {
+      const msg = '⛔ محطة استلام الحوالة تم حذفها أو غير موجودة من طرف المدير. تم إيقاف العملية.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
     const wsId = currentWorkspace?.id || 'ws-default';
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     const secretPin = String(Math.floor(1000 + Math.random() * 9000));
@@ -5011,8 +5263,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!target) return { success: false, error: 'الحوالة غير موجودة' };
     if (target.status === 'paid_out') return { success: false, error: 'تم تسليم وصرف هذه الحوالة مسبقاً' };
 
-    if (userRole === 'worker' && userAssignedStationId && target.destination_station_id !== userAssignedStationId) {
-      const msg = `لا تملك صلاحية تسليم هذه الحوالة لأنها موجهة إلى محطة "${target.destination_station_name}" فقط`;
+    if (userRole === 'worker') {
+      if (userAssignedStationId === target.origin_station_id && target.destination_station_id !== userAssignedStationId) {
+        const msg = `⛔ لا يمكن لمحطة الإرسال ("${target.origin_station_name}") استلام أو صرف الحوالة. التسليم يتم حصرياً في محطة الاستلام ("${target.destination_station_name}").`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (isWorkerStationDeleted || !userAssignedStationId || target.destination_station_id !== userAssignedStationId) {
+        const msg = `⛔ لا تملك صلاحية تسليم هذه الحوالة: التسليم يتم فقط من طرف عامل محطة الاستلام ("${target.destination_station_name}").`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
+
+    if (selectedStationId && selectedStationId !== 'all' && selectedStationId === target.origin_station_id && selectedStationId !== target.destination_station_id) {
+      const msg = `⛔ محطة الإرسال ("${target.origin_station_name}") لا تسلّم الحوالة. لصرفها يرجى التبديل لمحطة الاستلام ("${target.destination_station_name}") أو عرض كافة المحطات.`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    const destStExists = stations.some(s => s.id === target.destination_station_id && !deletedStationIds.includes(s.id));
+    if (!destStExists) {
+      const msg = `⛔ محطة استلام وصرف هذه الحوالة "${target.destination_station_name}" تم حذفها من طرف المدير. تم إيقاف الصرف نهائياً.`;
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
@@ -5041,7 +5313,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: outRes.error || 'تعذر تسجيل صرف الحوالة من صندوق المحطة' };
     }
 
-    // 2. تحديث حالة الحوالة في سند الإرسال الأصلي ومزامنته عبر Firebase
+    // 2. توثيق العملية بالسبب في سجل العمليات
+    const hawalaAudit: AuditLogEntry = {
+      id: isSupabaseConfigured() ? generateUUID() : `audit-hawala-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      workspace_id: target.workspace_id || currentWorkspace?.id || 'ws-default',
+      team_id: target.workspace_id || currentWorkspace?.id || 'ws-default',
+      user_id: currentUser?.id || null,
+      user_name: currentUser?.name || 'مستخدم',
+      actor_role: userRole,
+      station_id: target.destination_station_id,
+      station_name: target.destination_station_name,
+      origin_station_name: target.origin_station_name,
+      destination_station_name: target.destination_station_name,
+      action: 'PAYMENT',
+      table_name: 'hawala_transfers',
+      record_id: target.id,
+      reason: `[${currentUser?.name || 'المستخدم'}] (${userRole === 'worker' ? 'عامل' : 'مدير'}): صرف وتسليم حوالة واردة [${target.transfer_code}] للمستلم: ${target.receiver_name} في محطة [${target.destination_station_name}] وخصم المبلغ من لاكيس المحطة`,
+      details: `مرسلة من: ${target.sender_name} (${target.origin_station_name}) بمبلغ ${target.send_amount} ${target.send_currency} ➔ المبلغ المسلم: ${target.payout_amount} ${target.payout_currency}`,
+      is_partnership: Boolean(target.is_partnership || target.partner_workspace_id),
+      old_data: { status: 'pending' },
+      new_data: { status: 'paid_out', paid_out_by: currentUser.name, paid_out_at: paidAt },
+      created_at: paidAt,
+    };
+    setAuditLogs(prev => [hawalaAudit, ...prev]);
+
+    // 3. تحديث حالة الحوالة في سند الإرسال الأصلي ومزامنته عبر Firebase
     setAllTransactions(prev =>
       prev.map(tx => {
         if (tx.hawala_meta && tx.hawala_meta.id === transferId) {
@@ -5068,7 +5364,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch {}
 
     showToast(
-      `تم تسليم الحوالة [${target.transfer_code}] وخصم -${target.payout_amount} ${target.payout_currency} من لاكيس ${target.destination_station_name}`,
+      `تم تسليم الحوالة [${target.transfer_code}] وخصم -${target.payout_amount} ${target.payout_currency} من لاكيس ${target.destination_station_name} مع توثيق العملية بالسبب في السجل`,
       'success'
     );
     return { success: true };
@@ -5103,14 +5399,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    if (userRole === 'worker' && userAssignedStationId && data.origin_station_id !== userAssignedStationId) {
-      const msg = 'لا يمكنك تسجيل إرسالية من محطة أخرى؛ يمكنك الإرسال من محطة عملك فقط';
+    if (userRole === 'worker') {
+      if (isWorkerStationDeleted || !userAssignedStationId || data.origin_station_id !== userAssignedStationId) {
+        const msg = '⛔ لا تملك صلاحية الإرسال: المحطة تم حذفها أو إيقافها من طرف المدير، أو أنك تحاول الإرسال من محطة غير مخصصة لك.';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
+
+    const originSt = stations.find(s => s.id === data.origin_station_id && !deletedStationIds.includes(s.id));
+    if (!originSt) {
+      const msg = '⛔ محطة الانطلاق محذوفة أو غير موجودة من طرف المدير. تم إيقاف وحظر إرسال الكولي.';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
 
-    const originSt = stations.find(s => s.id === data.origin_station_id);
-    const ownDestSt = stations.find(s => s.id === data.destination_station_id);
+    const ownDestSt = stations.find(s => s.id === data.destination_station_id && !deletedStationIds.includes(s.id));
     const wsId = currentWorkspace?.id || 'ws-default';
 
     // Check if the selected destination station belongs to an active partner in غرفة الشراكة
@@ -5145,6 +5449,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           break;
         }
       }
+    }
+
+    if (!ownDestSt && !partnerDestMeta) {
+      const msg = '⛔ محطة الوصول محذوفة أو غير موجودة في سجلات المدير أو الشركاء. لا يمكن إرسال الكولي.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
     }
 
     const destStationName = ownDestSt?.name || partnerDestMeta?.stationName || 'محطة الوصول';
@@ -5200,7 +5510,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       status: parcelStatus,
       condition,
       condition_notes: conditionNotes,
-      payment_status: amountPaid >= amountDue ? 'paid' : (amountPaid > 0 ? 'partial' : 'unpaid'),
+      partner_acceptance_status:
+        data.origin_station_id !== data.destination_station_id
+          ? ('pending_approval' as const)
+          : ('accepted' as const),
+      partner_rejection_reason: null,
       ...(partnerDestMeta
         ? {
             is_partnership_parcel: true,
@@ -5210,8 +5524,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             partner_workspace_name: partnerDestMeta.partnerWorkspaceName,
             partner_destination_station_id: partnerDestMeta.stationId,
             partner_destination_station_name: partnerDestMeta.stationName,
-            partner_acceptance_status: 'pending_approval' as const,
-            partner_rejection_reason: null,
           }
         : {}),
       status_history: [
@@ -5248,6 +5560,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setAllParcels(prev => [newParcel, ...prev]);
     allParcelsRef.current = [newParcel, ...allParcelsRef.current];
+
+    // توثيق عملية تسجيل الكولي بالسبب في سجل العمليات
+    const parcelCreateAudit: AuditLogEntry = {
+      id: isSupabaseConfigured() ? generateUUID() : `audit-pcreate-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      workspace_id: newParcel.workspace_id,
+      team_id: newParcel.workspace_id,
+      user_id: currentUser.id,
+      user_name: currentUser.name,
+      actor_role: userRole,
+      station_id: newParcel.origin_station_id,
+      station_name: newParcel.origin_station_name,
+      origin_station_name: newParcel.origin_station_name,
+      destination_station_name: newParcel.destination_station_name,
+      action: 'INSERT',
+      table_name: 'parcels',
+      record_id: newParcel.id,
+      reason: `[${currentUser.name}] (${userRole === 'worker' ? 'عامل' : 'مدير'}): تسجيل كولي جديد [${newParcel.tracking_code}] من محطة [${newParcel.origin_station_name}] إلى محطة [${newParcel.destination_station_name}] — ثمن الشحن: ${newParcel.amount_due} ${newParcel.currency}`,
+      details: `المرسل: ${newParcel.sender_name} (${newParcel.sender_phone}) ➔ المستلم: ${newParcel.receiver_name} (${newParcel.receiver_phone}) | الوصف: ${newParcel.item_description || 'بضاعة'}`,
+      is_partnership: Boolean(newParcel.is_partnership_parcel || partnerDestMeta),
+      old_data: null,
+      new_data: {
+        tracking_code: newParcel.tracking_code,
+        parcel_number: newParcel.parcel_number,
+        origin: newParcel.origin_station_name,
+        destination: newParcel.destination_station_name,
+        amount_due: newParcel.amount_due,
+      },
+      created_at: newParcel.created_at,
+    };
+    setAuditLogs(prev => [parcelCreateAudit, ...prev]);
 
     if (isSupabaseConfigured()) {
       const synced = await parcelService.syncParcelToCloud(
@@ -5319,12 +5661,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
+    if (userRole === 'worker' && (isWorkerStationDeleted || !userAssignedStationId)) {
+      const msg = '⛔ تم حذف أو إيقاف هذه المحطة من طرف المدير. لا يمكنك استلام أو تسليم أو تعديل أي كولي.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const parcel = allParcelsRef.current.find(p => p.id === id);
     if (!parcel) return { success: false, error: 'الكولي غير موجود' };
     if (currentWorkspace && parcel.workspace_id && parcel.workspace_id !== currentWorkspace.id) {
       const msg = 'لا يمكن تعديل حالة طرد تابع لمساحة عمل أخرى (صلاحية قراءة وتتبع فقط)';
       showToast(msg, 'error');
       return { success: false, error: msg };
+    }
+
+    // منع استلام أو تسليم كولي موجه لمحطة ممسوحة
+    if (status === 'arrived' || status === 'delivered') {
+      if (!parcel.partner_workspace_id) {
+        const destDeleted =
+          deletedStationIds.includes(parcel.destination_station_id) ||
+          !stations.some(s => s.id === parcel.destination_station_id);
+        if (destDeleted) {
+          const msg = `⛔ محطة استلام هذا الكولي "${parcel.destination_station_name}" تم حذفها من طرف المدير. لا يمكن استقبال أو تسليم الكولي.`;
+          showToast(msg, 'error');
+          return { success: false, error: msg };
+        }
+      }
     }
 
     // قيد منطق مراحل الكولي (State Machine): منع تسليم الكولي مباشرة وهو لا يزال في الطريق أو لم يدخل للستوك بعد
@@ -5419,8 +5781,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
-      if (parcel.is_partnership_parcel && parcel.partner_acceptance_status === 'pending_approval') {
-        const msg = `يرجى الانتظار حتى يضغط المدير الشريك (${parcel.partner_workspace_name || 'الشريك'}) على «قبول الكولية» في غرفة الشراكة قبل شحنها.`;
+      if (parcel.partner_acceptance_status === 'pending_approval') {
+        const msg = `⛔ لا يمكن شحن هذا الكولي: في انتظار قبول مدير أو عامل محطة الوصول ("${parcel.destination_station_name}").`;
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
@@ -5549,7 +5911,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    showToast(`تم تحديث حالة الكولي [${parcel.tracking_code}] بنجاح`, 'success');
+    const statusTextAr =
+      status === 'delivered'
+        ? 'تم التسليم النهائي للمستلم'
+        : status === 'arrived'
+        ? 'وصل للمحطة وتفريغه في الستوك'
+        : status === 'in_transit'
+        ? 'شحن الكولي وانطلاقه في الطريق'
+        : status;
+
+    const opReason =
+      status === 'delivered'
+        ? `تسليم الكولي للمستلم (${updated.delivered_to || parcel.receiver_name}) في محطة الوصول [${parcel.destination_station_name}]`
+        : status === 'arrived'
+        ? `استقبال وتفريغ الكولي في ستوك محطة الوصول [${parcel.destination_station_name}]`
+        : status === 'in_transit'
+        ? `شحن الكولي وانطلاقه في الشاحنة من محطة [${parcel.origin_station_name}] نحو [${parcel.destination_station_name}]`
+        : `تحديث حالة الكولي إلى ${statusTextAr}`;
+
+    const parcelStatusAudit: AuditLogEntry = {
+      id: isSupabaseConfigured() ? generateUUID() : `audit-pstatus-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      workspace_id: parcel.workspace_id,
+      team_id: parcel.workspace_id,
+      user_id: currentUser?.id || null,
+      user_name: currentUser?.name || 'مستخدم',
+      actor_role: userRole,
+      station_id: status === 'in_transit' ? parcel.origin_station_id : parcel.destination_station_id,
+      station_name: status === 'in_transit' ? parcel.origin_station_name : parcel.destination_station_name,
+      origin_station_name: parcel.origin_station_name,
+      destination_station_name: parcel.destination_station_name,
+      action: 'STATUS_CHANGE',
+      table_name: 'parcels',
+      record_id: parcel.id,
+      reason: `[${currentUser?.name || 'المستخدم'}] (${userRole === 'worker' ? 'عامل' : 'مدير'}): ${opReason}`,
+      details: `المرسل: ${parcel.sender_name} (${parcel.origin_station_name}) ➔ المستلم: ${parcel.receiver_name} (${parcel.destination_station_name})`,
+      is_partnership: Boolean(parcel.is_partnership_parcel || parcel.partner_workspace_id || parcel.partner_origin_workspace_id || parcel.is_collaborator_data),
+      old_data: { status: parcel.status },
+      new_data: { status, delivered_to: updated.delivered_to, notes: noteText },
+      created_at: nowIso,
+    };
+    setAuditLogs(prev => [parcelStatusAudit, ...prev]);
+
+    showToast(`تم تحديث حالة الكولي [${parcel.tracking_code}] بنجاح مع توثيق العملية بالسبب في السجل`, 'success');
     return { success: true };
   };
 
@@ -6199,15 +6602,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    if (userRole === 'worker' && userAssignedStationId && params.originStationId !== userAssignedStationId) {
-      const msg = 'لا يمكنك إنشاء رحلة شحن من محطة أخرى؛ يمكنك الإنشاء من محطة عملك فقط';
+    if (userRole === 'worker') {
+      if (isWorkerStationDeleted || !userAssignedStationId || params.originStationId !== userAssignedStationId) {
+        const msg = '⛔ لا تملك صلاحية إنشاء رحلة شحن: محطتك تم حذفها أو إيقافها من طرف المدير.';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
+
+    const wsId = currentWorkspace.id;
+    const originSt = stations.find(s => s.id === params.originStationId && !deletedStationIds.includes(s.id));
+    if (!originSt) {
+      const msg = '⛔ محطة انطلاق الرحلة محذوفة أو غير موجودة من طرف المدير. تم إيقاف إنشاء الرحلة.';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
 
-    const wsId = currentWorkspace.id;
-    const originSt = stations.find(s => s.id === params.originStationId);
-    const ownDestSt = stations.find(s => s.id === params.destinationStationId);
+    const ownDestSt = stations.find(s => s.id === params.destinationStationId && !deletedStationIds.includes(s.id));
 
     // Check if the selected destination station belongs to an active partner in غرفة الشراكة
     let partnerDestMeta: {
@@ -6241,6 +6652,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           break;
         }
       }
+    }
+
+    if (!ownDestSt && !partnerDestMeta) {
+      const msg = '⛔ محطة وصول الرحلة محذوفة أو غير موجودة في سجلات المدير أو الشركاء. تم إيقاف إنشاء الرحلة.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
     }
 
     const destStationName = ownDestSt?.name || partnerDestMeta?.stationName || 'محطة الوصول';
@@ -6588,19 +7005,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           !targetTripForReceive.is_collaborator_data
       );
       if (isSenderOfPartnerTrip) {
-        const msg = `لا يمكنك استقبال أو تفريغ هذه الرحلة لأنك الطرف المرسل! المدير أو العامل في محطة الوصول "${targetTripForReceive.destination_station_name}" (${targetTripForReceive.partner_workspace_name || 'الشريك'}) هو الوحيد المخول بتفريغها وتأكيد وصولها.`;
+        const msg = `⛔ لا يمكنك استقبال أو تفريغ هذه الرحلة لأنك الطرف المرسل! المدير أو العامل في محطة الوصول "${targetTripForReceive.destination_station_name}" هما الوحيدان المخولان بتفريغها وتأكيد وصولها.`;
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
-      if (
-        userRole === 'worker' &&
-        userAssignedStationId &&
-        targetTripForReceive.destination_station_id !== userAssignedStationId &&
-        targetTripForReceive.partner_destination_station_id !== userAssignedStationId
-      ) {
-        const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTripForReceive.destination_station_name}" فقط`;
-        showToast(msg, 'error');
-        return { success: false, error: msg };
+      if (userRole === 'worker') {
+        if (userAssignedStationId === targetTripForReceive.origin_station_id && targetTripForReceive.destination_station_id !== userAssignedStationId) {
+          const msg = `⛔ لا يمكن لمحطة الإرسال ("${targetTripForReceive.origin_station_name}") تفريغ أو استقبال الرحلة. التفريغ يتم حصرياً في محطة الوصول ("${targetTripForReceive.destination_station_name}").`;
+          showToast(msg, 'error');
+          return { success: false, error: msg };
+        }
+        if (
+          userAssignedStationId &&
+          targetTripForReceive.destination_station_id !== userAssignedStationId &&
+          targetTripForReceive.partner_destination_station_id !== userAssignedStationId
+        ) {
+          const msg = `⛔ لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTripForReceive.destination_station_name}" فقط`;
+          showToast(msg, 'error');
+          return { success: false, error: msg };
+        }
+      }
+      if (selectedStationId && selectedStationId !== 'all') {
+        if (selectedStationId === targetTripForReceive.origin_station_id && selectedStationId !== targetTripForReceive.destination_station_id) {
+          const msg = `⛔ محطة الإرسال ("${targetTripForReceive.origin_station_name}") لا تستقبل الرحلة. لتفريغها يرجى التبديل لمحطة الاستلام ("${targetTripForReceive.destination_station_name}") أو عرض كافة المحطات.`;
+          showToast(msg, 'error');
+          return { success: false, error: msg };
+        }
       }
     }
 
@@ -6655,19 +7085,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         !targetTrip.is_collaborator_data
     );
     if (isSenderOfPartnerTrip) {
-      const msg = `لا يمكنك استقبال أو تفريغ هذه الرحلة لأنك الطرف المرسل! المدير أو العامل في محطة الوصول "${targetTrip.destination_station_name}" (${targetTrip.partner_workspace_name || 'الشريك'}) هو الوحيد المخول بتفريغها وتأكيد وصولها.`;
+      const msg = `⛔ لا يمكنك استقبال أو تفريغ هذه الرحلة لأنك الطرف المرسل! المدير أو العامل في محطة الوصول "${targetTrip.destination_station_name}" هما الوحيدان المخولان بتفريغها وتأكيد وصولها.`;
       showToast(msg, 'error');
       return { success: false, receivedCount: 0, error: msg };
     }
-    if (
-      userRole === 'worker' &&
-      userAssignedStationId &&
-      targetTrip.destination_station_id !== userAssignedStationId &&
-      targetTrip.partner_destination_station_id !== userAssignedStationId
-    ) {
-      const msg = `لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTrip.destination_station_name}" فقط`;
-      showToast(msg, 'error');
-      return { success: false, receivedCount: 0, error: msg };
+    if (userRole === 'worker') {
+      if (userAssignedStationId === targetTrip.origin_station_id && targetTrip.destination_station_id !== userAssignedStationId) {
+        const msg = `⛔ لا يمكن لمحطة الإرسال ("${targetTrip.origin_station_name}") تفريغ أو استقبال الرحلة. التفريغ يتم حصرياً في محطة الوصول ("${targetTrip.destination_station_name}").`;
+        showToast(msg, 'error');
+        return { success: false, receivedCount: 0, error: msg };
+      }
+      if (
+        userAssignedStationId &&
+        targetTrip.destination_station_id !== userAssignedStationId &&
+        targetTrip.partner_destination_station_id !== userAssignedStationId
+      ) {
+        const msg = `⛔ لا يمكنك استقبال وتفريغ هذه الرحلة لأنها متجهة إلى محطة "${targetTrip.destination_station_name}" فقط`;
+        showToast(msg, 'error');
+        return { success: false, receivedCount: 0, error: msg };
+      }
+    }
+    if (selectedStationId && selectedStationId !== 'all') {
+      if (selectedStationId === targetTrip.origin_station_id && selectedStationId !== targetTrip.destination_station_id) {
+        const msg = `⛔ محطة الإرسال ("${targetTrip.origin_station_name}") لا تستقبل الرحلة. لتفريغها يرجى التبديل لمحطة الاستلام ("${targetTrip.destination_station_name}") أو عرض كافة المحطات.`;
+        showToast(msg, 'error');
+        return { success: false, receivedCount: 0, error: msg };
+      }
     }
 
     const unreceivedIds = targetTrip.loaded_parcel_ids.filter(
@@ -6774,9 +7217,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // حذف كولي نهائياً (للمدير فقط)
+  // حذف كولي نهائياً (للمدير فقط مع حماية غرفة الشراكة)
   const deleteParcel = async (id: string): Promise<{ success: boolean; error?: string }> => {
-    if (userRole !== 'owner' && userRole !== 'platform_owner') {
-      const msg = 'صلاحية حذف الكوليات للمدير المشرف فقط';
+    if (userRole === 'worker') {
+      const msg = '⛔ غير مصرح للعامل بمسح الكوليات أو السجلات نهائياً. زر الحذف محجوب.';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
@@ -6786,13 +7230,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const targetParcel = allParcels.find(p => p.id === id);
     if (!targetParcel) return { success: false, error: 'الكولي غير موجود' };
 
-    // Partnership protection: Sender workspace CANNOT delete a parcel once dispatched/sent to partner!
-    const isSenderWorkspace = targetParcel.is_partnership_parcel && (
-      targetParcel.partner_origin_workspace_id === currentWorkspace?.id ||
-      (!targetParcel.partner_origin_workspace_id && targetParcel.workspace_id === currentWorkspace?.id)
+    if (userRole === 'admin') {
+      // مدير المحطة يحذف فقط كوليات محطته المعين بها
+      if (
+        targetParcel.origin_station_id !== userAssignedStationId &&
+        targetParcel.destination_station_id !== userAssignedStationId
+      ) {
+        const msg = 'غير مصرح: مدير المحطة يمكنه فقط حذف كوليات محطته المعين بها.';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    } else if (userRole !== 'owner' && userRole !== 'platform_owner') {
+      const msg = 'صلاحية حذف الكوليات للمدير فقط';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    // حماية سجلات غرفة الشراكة: لا يمكن لأي أحد مسحها (لا المدير ولا العامل)
+    const isPartnershipParcel = Boolean(
+      targetParcel.is_partnership_parcel ||
+      targetParcel.partner_workspace_id ||
+      targetParcel.partner_origin_workspace_id ||
+      targetParcel.is_collaborator_data
     );
-    if (isSenderWorkspace) {
-      const msg = '🔒 لا يمكنك حذف هذه الكولية: بمجرد إرسال الكولية لغرفة الشراكة، يتم قفل الحذف عن المرسل. المسؤول الوحيد عن إدارتها هو مدير المحطة المستقبلة.';
+    if (isPartnershipParcel) {
+      const msg = '🔒 سجلات غرفة الشراكة محمية ومقفلة نهائياً ولا يمكن مسحها لا من طرف المدير ولا العامل لضمان بقاء الأدلة والوثائق.';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
@@ -6801,17 +7263,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAllParcels(prev => prev.filter(p => p.id !== id));
     allParcelsRef.current = allParcelsRef.current.filter(p => p.id !== id);
 
-    // Record permanent operation audit log entry
+    // توثيق عملية الحذف بالسبب
     const auditEntry: AuditLogEntry = {
       id: isSupabaseConfigured() ? generateUUID() : `audit-del-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       workspace_id: wsId,
       team_id: wsId,
       user_id: currentUser?.id || null,
       user_name: currentUser?.name || 'المدير',
+      actor_role: userRole,
+      station_id: targetParcel.origin_station_id,
+      station_name: targetParcel.origin_station_name,
+      origin_station_name: targetParcel.origin_station_name,
+      destination_station_name: targetParcel.destination_station_name,
       action: 'DELETE',
       table_name: 'parcels',
       record_id: targetParcel.id,
-      reason: `🗑️ قام المدير [${currentUser?.name || 'مدير المحطة'}] بحذف الكولي [${targetParcel.tracking_code || targetParcel.parcel_number}] (المرسل: ${targetParcel.sender_name} ➔ المستلم: ${targetParcel.receiver_name})`,
+      reason: `🗑️ قام المدير [${currentUser?.name || 'المدير'}] بحذف الكولي [${targetParcel.tracking_code || targetParcel.parcel_number}] (المرسل: ${targetParcel.sender_name} ➔ المستلم: ${targetParcel.receiver_name}) — سبب الحذف: إلغاء ومسح الكولي نهائياً من محطة ${targetParcel.origin_station_name}`,
+      details: `محطة الانطلاق: ${targetParcel.origin_station_name} | محطة الوجهة: ${targetParcel.destination_station_name} | ثمن الشحن: ${targetParcel.shipping_fee || targetParcel.amount_due}`,
       old_data: {
         tracking_code: targetParcel.tracking_code,
         parcel_number: targetParcel.parcel_number,
@@ -6845,18 +7313,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         action_title: `🗑️ تم حذف كولي: [${targetParcel.tracking_code || targetParcel.parcel_number}] بواسطة المدير ${currentUser?.name || ''}`,
         actor_name: currentUser?.name || 'المدير',
         actor_role: userRole,
-        details: `حذف الكولي نهائياً: المرسل ${targetParcel.sender_name} | المستلم ${targetParcel.receiver_name}`,
+        details: `حذف الكولي نهائياً: من ${targetParcel.origin_station_name} إلى ${targetParcel.destination_station_name}`,
       }).catch(() => {});
     }
 
-    showToast(`تم حذف الكولي [${targetParcel.tracking_code}] نهائياً مع توثيق العملية في السجل`, 'info');
+    showToast(`تم حذف الكولي [${targetParcel.tracking_code}] نهائياً مع توثيق العملية بالسبب في سجل المراجعة`, 'info');
     return { success: true };
   };
 
-  // حذف رحلة نهائياً (للمدير فقط)
+  // حذف رحلة نهائياً (للمدير فقط مع حماية رحلات غرفة الشراكة)
   const deleteTrip = async (tripId: string): Promise<{ success: boolean; error?: string }> => {
-    if (userRole !== 'owner' && userRole !== 'platform_owner') {
-      const msg = 'صلاحية حذف الرحلات للمدير المشرف فقط';
+    if (userRole === 'worker') {
+      const msg = '⛔ غير مصرح للعامل بمسح الرحلات نهائياً. زر الحذف محجوب.';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
@@ -6866,12 +7334,65 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const targetTrip = allTrips.find(t => t.id === tripId);
     if (!targetTrip) return { success: false, error: 'الرحلة غير موجودة' };
 
+    if (userRole === 'admin') {
+      // مدير المحطة يحذف فقط رحلات محطته المعين بها
+      if (
+        targetTrip.origin_station_id !== userAssignedStationId &&
+        targetTrip.destination_station_id !== userAssignedStationId
+      ) {
+        const msg = 'غير مصرح: مدير المحطة يمكنه فقط حذف رحلات محطته المعين بها.';
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    } else if (userRole !== 'owner' && userRole !== 'platform_owner') {
+      const msg = 'صلاحية حذف الرحلات للمدير فقط';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    // حماية رحلات غرفة الشراكة
+    const isPartnershipTrip = Boolean(
+      targetTrip.partner_workspace_id ||
+      targetTrip.partner_destination_station_id ||
+      targetTrip.partner_workspace_name ||
+      targetTrip.is_collaborator_data
+    );
+    if (isPartnershipTrip) {
+      const msg = '🔒 رحلات وسجلات غرفة الشراكة محمية ومقفلة نهائياً ولا يمكن مسحها لضمان الأدلة والوثائق.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const wsId = targetTrip.workspace_id || currentWorkspace?.id || 'ws-default';
     setAllTrips(prev => {
       const next = prev.filter(t => t.id !== tripId);
       storageService.set('TRIPS', next);
       return next;
     });
+
+    // توثيق حذف الرحلة بالسبب
+    const auditEntry: AuditLogEntry = {
+      id: isSupabaseConfigured() ? generateUUID() : `audit-deltrip-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      workspace_id: wsId,
+      team_id: wsId,
+      user_id: currentUser?.id || null,
+      user_name: currentUser?.name || 'المدير',
+      actor_role: userRole,
+      station_id: targetTrip.origin_station_id,
+      station_name: targetTrip.origin_station_name,
+      origin_station_name: targetTrip.origin_station_name,
+      destination_station_name: targetTrip.destination_station_name,
+      action: 'DELETE',
+      table_name: 'trips',
+      record_id: targetTrip.id,
+      reason: `🗑️ قام المدير [${currentUser?.name || 'المدير'}] بحذف الرحلة [${targetTrip.trip_code}] من [${targetTrip.origin_station_name}] إلى [${targetTrip.destination_station_name}] (السائق: ${targetTrip.driver_name})`,
+      details: `عدد الكوليات المحملة: ${targetTrip.loaded_parcel_ids.length}`,
+      is_partnership: false,
+      old_data: targetTrip,
+      new_data: null,
+      created_at: new Date().toISOString(),
+    };
+    setAuditLogs(prev => [auditEntry, ...prev]);
 
     const supabase = getSupabaseClient();
     if (supabase && isSupabaseConfigured() && isValidUUID(tripId)) {
@@ -6884,7 +7405,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.deleteTrip(wsId, tripId).catch(() => {});
     }
 
-    showToast(`تم حذف الرحلة [${targetTrip.trip_code}] نهائياً`, 'info');
+    showToast(`تم حذف الرحلة [${targetTrip.trip_code}] نهائياً مع توثيق العملية بالسبب في السجل`, 'info');
     return { success: true };
   };
 
@@ -7229,6 +7750,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const wsId = currentWorkspace?.id || 'ws-default';
     const targetStation = stations.find(s => s.id === stationId);
+
+    // 1. تسجيل المحطة في قائمة المحطات المحذوفة رسمياً لتجميد وإيقاف أي عملية عليها فوراً
+    setDeletedStationIds(prev => {
+      const next = Array.from(new Set([...prev, stationId]));
+      try {
+        localStorage.setItem('aman_deleted_station_ids', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    // 2. إزالة المحطة من قائمة المحطات النشطة وتصفير التحديد إذا كانت هي المحددة
     setStations(prev => {
       const next = prev.filter(s => s.id !== stationId);
       if (selectedStationId === stationId) {
@@ -7236,6 +7768,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return next;
     });
+
+    // 3. فك ارتباط وتجميد جميع العمال المعينين في هذه المحطة فوراً
+    const workersAtThisStation = stationWorkers.filter(sw => sw.station_id === stationId);
+    setStationWorkers(prev => prev.filter(sw => sw.station_id !== stationId));
+
+    setWorkspaceMembers(prev =>
+      prev.map(m => {
+        if (m.station_id === stationId) {
+          return {
+            ...m,
+            station_id: undefined,
+            status: m.role === 'worker' ? 'removed' : m.status,
+          };
+        }
+        return m;
+      })
+    );
+
+    // تسجيل العمال المحذوفين أو المعطلين محلياً لطردهم فوراً في جميع التبويبات المفتوحة
+    try {
+      const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
+      for (const sw of workersAtThisStation) {
+        if (sw.user_id) revokedMap[sw.user_id] = true;
+      }
+      localStorage.setItem('alittihadia_revoked_accounts_v1', JSON.stringify(revokedMap));
+    } catch {}
 
     // Remove deleted station from local partnerships cache
     setManagerPartnerships(prev => prev.map(p => {
@@ -7263,7 +7821,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       action: 'DELETE',
       table_name: 'stations',
       record_id: stationId,
-      reason: `🗑️ قام المدير [${currentUser?.name || 'المدير'}] بحذف محطة [${targetStation?.name || stationId}] (${targetStation?.city || ''}) نهائياً`,
+      reason: `🗑️ قام المدير [${currentUser?.name || 'المدير'}] بحذف محطة [${targetStation?.name || stationId}] (${targetStation?.city || ''}) وإيقاف كافة عملياتها وتجميد عمالها نهائياً`,
       old_data: { name: targetStation?.name, city: targetStation?.city, phone: targetStation?.phone },
       new_data: null,
       created_at: new Date().toISOString(),
@@ -7288,14 +7846,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         workspace_name: currentWorkspace?.name || 'Sahara Express',
         actor_id: currentUser?.id || 'sys',
         action_type: 'STATION_DELETE',
-        action_title: `🗑️ تم مسح محطة: [${targetStation?.name || stationId}] بواسطة المدير ${currentUser?.name || ''}`,
+        action_title: `🗑️ تم مسح محطة: [${targetStation?.name || stationId}] وتجميد جميع عملياتها وعمالها بواسطة المدير ${currentUser?.name || ''}`,
         actor_name: currentUser?.name || 'المدير',
         actor_role: userRole,
-        details: `حذف المحطة نهائياً: ${targetStation?.name || ''} (${targetStation?.city || ''})`,
+        details: `حذف المحطة نهائياً وتجميد أي عامل مرتبط بها: ${targetStation?.name || ''} (${targetStation?.city || ''})`,
       }).catch(() => {});
     }
 
-    showToast('تم حذف المحطة وإزالتها من غرفة الشراكة وسجلات الشركاء بنجاح', 'info');
+    showToast('تم حذف المحطة وتوقيف كافة العمليات والعمال المرتبطين بها نهائياً', 'info');
     return { success: true };
   };
 
@@ -9139,6 +9697,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         selectedStationId,
         setSelectedStationId,
         userAssignedStationId,
+        isWorkerStationDeleted,
         currencies,
         stationBalances,
         exchangeRate,

@@ -139,10 +139,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
   const [itemsCount, setItemsCount] = useState('1');
   const [weightKg, setWeightKg] = useState('');
 
-  // Financial fields
-  const [amountDue, setAmountDue] = useState('200');
+  // Financial fields - ديما 0 والمدير أو العامل يعمرها مانويل
+  const [amountDue, setAmountDue] = useState('0');
   const [payer, setPayer] = useState<ParcelPayer>('sender');
-  const [amountPaid, setAmountPaid] = useState('200');
+  const [amountPaid, setAmountPaid] = useState('0');
   const [currency, setCurrency] = useState(currencies[0]?.code || 'MAD');
   const [notes, setNotes] = useState('');
 
@@ -160,9 +160,9 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
     category: 'طرد بضائع عامة',
     itemsCount: '1',
     weightKg: '',
-    amountDue: '200',
+    amountDue: '0',
     payer: 'sender',
-    amountPaid: '200',
+    amountPaid: '0',
     condition: 'normal',
     conditionNotes: '',
   });
@@ -173,7 +173,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
   const [savedCustomers, setSavedCustomers] = useState<SavedCustomer[]>([]);
   const [selectedVipSender, setSelectedVipSender] = useState<SavedCustomer | null>(null);
   const [routeTariffs, setRouteTariffs] = useState<RouteTariff[]>([]);
-  const [autoApplyPrice, setAutoApplyPrice] = useState<boolean>(true);
+  const [autoApplyPrice, setAutoApplyPrice] = useState<boolean>(false);
   const [showTariffEditor, setShowTariffEditor] = useState<boolean>(false);
   const [editBaseFee, setEditBaseFee] = useState<string>('100');
   const [editRatePerKg, setEditRatePerKg] = useState<string>('15');
@@ -208,7 +208,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
       const defaultCurr = st ? st.currency || (st.country === 'MR' ? 'MRU' : 'MAD') : currencies[0]?.code || 'MAD';
       setCurrency(defaultCurr);
 
-      // Reset all sender/receiver/parcel fields cleanly
+      // Reset all sender/receiver/parcel fields cleanly - ديما 0
       setRegistrationMode('single');
       setMultiSubMode('one_receiver');
       setSenderName('');
@@ -219,9 +219,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
       setCategory('طرد بضائع عامة');
       setItemsCount('1');
       setWeightKg('');
-      setAmountDue('200');
+      setAmountDue('0');
       setPayer('sender');
-      setAmountPaid('200');
+      setAmountPaid('0');
+      setAutoApplyPrice(false);
       setNotes('');
       setCondition('normal');
       setConditionNotes('');
@@ -677,19 +678,19 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-center items-center p-2 m-0 bg-black/85 backdrop-blur-md animate-fadeIn overflow-hidden"
+      className="fixed inset-0 z-50 flex justify-center items-center p-2.5 sm:p-4 m-0 bg-black/85 backdrop-blur-md animate-fadeIn overflow-hidden"
       onClick={onClose}
     >
       <div
         dir="rtl"
-        className="w-[94%] max-w-[400px] max-h-[92dvh] rounded-2xl luxury-card border-2 border-[#D4AF37]/65 p-2.5 shadow-2xl text-right overflow-hidden relative z-10 m-0 flex flex-col justify-between gap-2"
+        className="w-[96%] max-w-[420px] max-h-[94dvh] rounded-2xl luxury-card border-2 border-[#D4AF37]/65 p-3.5 shadow-2xl text-right overflow-hidden relative z-10 m-0 flex flex-col justify-between gap-2.5"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Compact Header: Title + Mode Switcher + Close on ONE Row (10% smaller) */}
-        <div className="flex items-center justify-between gap-1.5 border-b border-[#D4AF37]/30 pb-1.5 shrink-0">
-          <div className="flex items-center gap-1 min-w-0">
-            <span className="text-base leading-none">📦</span>
-            <h2 className="text-xs sm:text-sm font-black text-[#F5D799] truncate">
+        {/* Top Header: Title + Mode Switcher + Close on ONE Row */}
+        <div className="flex items-center justify-between gap-2 border-b border-[#D4AF37]/30 pb-2 shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-lg leading-none">📦</span>
+            <h2 className="text-sm sm:text-base font-black text-[#F5D799] truncate">
               تسجيل كولي جديد
             </h2>
             <HelpPopover
@@ -698,11 +699,11 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => setRegistrationMode('single')}
-              className={`py-1 px-2 rounded-xl text-[11px] font-black transition cursor-pointer ${
+              className={`py-1.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer ${
                 registrationMode === 'single' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
@@ -711,7 +712,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <button
               type="button"
               onClick={() => setRegistrationMode('multi')}
-              className={`py-1 px-2 rounded-xl text-[11px] font-black transition cursor-pointer ${
+              className={`py-1.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer ${
                 registrationMode === 'multi' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
@@ -721,19 +722,19 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="إغلاق"
-              className="btn-delete p-1 rounded-xl"
+              className="btn-delete p-1.5 rounded-xl"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         {registrationMode === 'multi' && (
-          <div className="grid grid-cols-2 gap-1.5 shrink-0 animate-fadeIn">
+          <div className="grid grid-cols-2 gap-2 shrink-0 animate-fadeIn">
             <button
               type="button"
               onClick={() => setMultiSubMode('one_receiver')}
-              className={`py-1 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 transition ${
+              className={`py-2 px-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition ${
                 multiSubMode === 'one_receiver' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
@@ -742,7 +743,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <button
               type="button"
               onClick={() => setMultiSubMode('multi_receivers')}
-              className={`py-1 px-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 transition ${
+              className={`py-2 px-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 transition ${
                 multiSubMode === 'multi_receivers' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
@@ -753,29 +754,29 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
 
         {/* Error message */}
         {errorMessage && (
-          <div className="bg-rose-950/60 border border-rose-500/40 p-1.5 rounded-xl text-[11px] text-rose-300 flex items-center gap-1.5 font-black shrink-0">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <div className="bg-rose-950/60 border border-rose-500/40 p-2 rounded-xl text-xs sm:text-sm text-rose-300 flex items-center gap-1.5 font-black shrink-0">
+            <AlertCircle className="w-4 h-4 shrink-0" />
             <span className="truncate">{errorMessage}</span>
           </div>
         )}
 
-        {/* Form Body — Organized 2-Column Grid (10% smaller, no scroll) */}
+        {/* Form Body — Organized 2-Column Grid with Clear, Comfortable Boxes & Text */}
         <form
           onSubmit={handleSubmit}
-          className="flex-1 flex flex-col justify-between gap-2 min-h-0 overflow-hidden text-[11px]"
+          className="flex-1 flex flex-col justify-between gap-2.5 min-h-0 overflow-hidden text-xs sm:text-sm"
         >
           {/* السطر الفوقاني: [ محطة الانطلاق ] حدا [ محطة الوصول ] */}
-          <div className="grid grid-cols-2 gap-2 shrink-0">
+          <div className="grid grid-cols-2 gap-2.5 shrink-0">
             {/* محطة الانطلاق (اليمين) */}
-            <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between">
-              <label className="block text-[#F5D799] font-black text-[11px] mb-1 truncate">
+            <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-1.5">
+              <label className="block text-[#F5D799] font-black text-xs sm:text-sm truncate">
                 📍 محطة الانطلاق
               </label>
               <select
                 value={originStationId}
                 disabled={userRole === 'worker'}
                 onChange={(e) => setOriginStationId(e.target.value)}
-                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-1.5 text-[#FFF8EB] font-black text-[11px] focus:outline-none disabled:opacity-70 truncate"
+                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2.5 py-2.5 text-[#FFF8EB] font-black text-xs sm:text-sm focus:outline-none disabled:opacity-70 truncate"
                 required
               >
                 {stations.map((st) => (
@@ -787,13 +788,13 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             </div>
 
             {/* محطة الوصول (اليسار - حدا محطة الانطلاق) */}
-            <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-1 mb-1">
-                <label className="block text-[#F5D799] font-black text-[11px] truncate">
+            <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-1.5">
+              <div className="flex items-center justify-between gap-1">
+                <label className="block text-[#F5D799] font-black text-xs sm:text-sm truncate">
                   📍 محطة الوصول
                 </label>
                 {selectedPartnerDest && (
-                  <span className="px-1 py-0.2 rounded bg-purple-950/80 border border-purple-400/50 text-purple-200 text-[9px] font-black truncate shrink-0">
+                  <span className="px-1.5 py-0.5 rounded bg-purple-950/80 border border-purple-400/50 text-purple-200 text-[10px] font-black truncate shrink-0">
                     🤝 شريك
                   </span>
                 )}
@@ -807,7 +808,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     prev.map((it) => ({ ...it, destinationStationId: newDest }))
                   );
                 }}
-                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-1.5 text-[#FFF8EB] font-black text-[11px] focus:outline-none truncate"
+                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2.5 py-2.5 text-[#FFF8EB] font-black text-xs sm:text-sm focus:outline-none truncate"
                 required
               >
                 {stations.length > 0 && (
@@ -833,10 +834,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           </div>
 
           {/* السطر اللي تحت منو نيشان: [ اسم المرسل ] تحت محطة الانطلاق | [ اسم المستلم ] تحت محطة الوصول */}
-          <div className="grid grid-cols-2 gap-2 shrink-0">
+          <div className="grid grid-cols-2 gap-2.5 shrink-0">
             {/* اسم المرسل (تحت محطة الانطلاق نيشان) */}
-            <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-1.5">
-              <span className="font-black text-[#F5D799] block text-[11px] truncate">
+            <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
+              <span className="font-black text-[#F5D799] block text-xs sm:text-sm truncate">
                 👤 اسم المرسل
               </span>
               <input
@@ -845,7 +846,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 required
                 value={senderName}
                 onChange={(e) => setSenderName(e.target.value)}
-                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-1.5 text-white font-black text-[11px] focus:outline-none"
+                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2.5 py-2.5 text-white font-black text-xs sm:text-sm focus:outline-none"
               />
               <input
                 type="tel"
@@ -854,14 +855,14 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 value={senderPhone}
                 onChange={(e) => setSenderPhone(e.target.value)}
                 dir="ltr"
-                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-1.5 text-white font-mono font-black text-[11px] focus:outline-none"
+                className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2.5 py-2.5 text-white font-mono font-black text-xs sm:text-sm focus:outline-none"
               />
             </div>
 
             {/* اسم المستلم (تحت محطة الوصول نيشان) */}
             {registrationMode === 'single' || multiSubMode === 'one_receiver' ? (
-              <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-1.5">
-                <span className="font-black text-[#E6C37A] block text-[11px] truncate">
+              <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
+                <span className="font-black text-[#E6C37A] block text-xs sm:text-sm truncate">
                   👤 اسم المستلم
                 </span>
                 <input
@@ -870,7 +871,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   required
                   value={receiverName}
                   onChange={(e) => setReceiverName(e.target.value)}
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-1.5 text-white font-black text-[11px] focus:outline-none"
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2.5 py-2.5 text-white font-black text-xs sm:text-sm focus:outline-none"
                 />
                 <input
                   type="tel"
@@ -879,13 +880,13 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   value={receiverPhone}
                   onChange={(e) => setReceiverPhone(e.target.value)}
                   dir="ltr"
-                  className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-1.5 text-white font-mono font-black text-[11px] focus:outline-none"
+                  className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2.5 py-2.5 text-white font-mono font-black text-xs sm:text-sm focus:outline-none"
                 />
               </div>
             ) : (
-              <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col items-center justify-center text-center">
-                <span className="font-black text-[#E6C37A] text-[11px]">👥 عدة مستلمين</span>
-                <span className="text-[10px] opacity-80 mt-1">يتم تحديد المستلم لكل كولي بالأسفل</span>
+              <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col items-center justify-center text-center">
+                <span className="font-black text-[#E6C37A] text-xs sm:text-sm">👥 عدة مستلمين</span>
+                <span className="text-xs opacity-80 mt-1">يتم تحديد المستلم لكل كولي بالأسفل</span>
               </div>
             )}
           </div>
@@ -893,13 +894,13 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           {registrationMode === 'single' ? (
             <>
               {/* السطر اللي تحت كاع: [ وصف البضاعة ] حدا [ الثمن ] */}
-              <div className="grid grid-cols-2 gap-2 shrink-0">
+              <div className="grid grid-cols-2 gap-2.5 shrink-0">
                 {/* وصف البضاعة (اليمين) */}
-                <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-1.5">
-                  <div className="flex items-center justify-between text-[11px] font-black text-[#F5D799]">
+                <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
+                  <div className="flex items-center justify-between text-xs sm:text-sm font-black text-[#F5D799]">
                     <span className="truncate">📦 وصف البضاعة</span>
                     {(parseInt(itemsCount, 10) || 1) > 1 && (
-                      <span className="text-[10px] font-black shrink-0">🖨️ {itemsCount}</span>
+                      <span className="text-xs font-black shrink-0">🖨️ {itemsCount}</span>
                     )}
                   </div>
                   <input
@@ -908,10 +909,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     required
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-1.5 text-white font-black text-[11px] focus:outline-none"
+                    className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2.5 py-2.5 text-white font-black text-xs sm:text-sm focus:outline-none"
                   />
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-black text-[#F5D799] shrink-0">🔢 العدد:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-[#F5D799] shrink-0">🔢 العدد:</span>
                     <input
                       type="number"
                       min="1"
@@ -921,17 +922,17 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                       placeholder="1"
                       value={itemsCount}
                       onChange={(e) => setItemsCount(e.target.value)}
-                      className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-1.5 text-center text-[#F5C84C] font-mono font-black text-[11px] focus:outline-none"
+                      className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-center text-[#F5C84C] font-mono font-black text-xs sm:text-sm focus:outline-none"
                     />
                   </div>
                 </div>
 
                 {/* الثمن (اليسار - حدا وصف البضاعة) */}
-                <div className="bg-[#1a0f00]/80 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-1.5">
-                  <span className="font-black text-[#F5D799] block text-[11px] truncate">
+                <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
+                  <span className="font-black text-[#F5D799] block text-xs sm:text-sm truncate">
                     💰 الثمن
                   </span>
-                  <div className="grid grid-cols-12 gap-1 items-center">
+                  <div className="grid grid-cols-12 gap-1.5 items-center">
                     <input
                       type="text"
                       inputMode="decimal"
@@ -943,12 +944,12 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         setAutoApplyPrice(false);
                         handleAmountDueChange(val);
                       }}
-                      className="col-span-7 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-1.5 text-center text-white font-mono font-black text-[11px] focus:outline-none"
+                      className="col-span-7 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2.5 text-center text-white font-mono font-black text-xs sm:text-sm focus:outline-none"
                     />
                     <select
                       value={currency}
                       onChange={(e) => setCurrency(e.target.value)}
-                      className="col-span-5 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1 py-1.5 text-white font-mono font-black text-[11px] focus:outline-none"
+                      className="col-span-5 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2.5 text-white font-mono font-black text-xs sm:text-sm focus:outline-none"
                     >
                       {currencies.map((c) => (
                         <option key={c.code} value={c.code}>
@@ -963,7 +964,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                     data-btn-role-fixed="true"
                     onClick={() => handlePayerChange(payer === 'sender' ? 'receiver' : 'sender')}
                     title="اضغط للتبديل بين خالص وكريدي"
-                    className={`w-full py-1.5 px-2 rounded-xl text-[11px] font-black truncate cursor-pointer ${
+                    className={`w-full py-2 px-2.5 rounded-xl text-xs sm:text-sm font-black truncate cursor-pointer ${
                       payer === 'sender' ? 'btn-add' : 'btn-delete'
                     }`}
                   >
@@ -978,29 +979,29 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 disabled={isSubmitting}
                 data-btn-role="add"
                 data-btn-role-fixed="true"
-                className="btn-add w-full py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow disabled:opacity-50 cursor-pointer shrink-0"
+                className="btn-add w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow disabled:opacity-50 cursor-pointer shrink-0"
               >
                 <span>{isSubmitting ? '⏳ جاري التسجيل...' : '✅ تسجيل الكولية وطباعة الملصق 🖨️'}</span>
               </button>
             </>
           ) : (
             /* MULTI-PARCEL STACKED LIST */
-            <div className="flex-1 flex flex-col justify-between gap-1.5 min-h-0 overflow-hidden">
-              <div className="flex-1 overflow-y-auto space-y-1.5 min-h-0">
+            <div className="flex-1 flex flex-col justify-between gap-2 min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
                 {multiItems.map((item, idx) => (
                   <div
                     key={item.id}
-                    className="bg-[#1a0f00]/95 p-1.5 rounded-xl border border-[#D4AF37]/60 space-y-1"
+                    className="bg-[#1a0f00]/95 p-2 rounded-xl border border-[#D4AF37]/60 space-y-1.5"
                   >
                     {multiSubMode === 'multi_receivers' && (
-                      <div className="grid grid-cols-2 gap-1">
+                      <div className="grid grid-cols-2 gap-1.5">
                         <input
                           type="text"
                           required
                           placeholder={`👤 مستلم #${idx + 1} *`}
                           value={item.receiverName}
                           onChange={(e) => updateMultiItem(item.id, { receiverName: e.target.value })}
-                          className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-1 text-white font-black text-[11px]"
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-white font-black text-xs sm:text-sm"
                         />
                         <input
                           type="tel"
@@ -1009,13 +1010,13 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                           placeholder="📞 الهاتف *"
                           value={item.receiverPhone}
                           onChange={(e) => updateMultiItem(item.id, { receiverPhone: e.target.value })}
-                          className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-1 text-white font-mono font-black text-[11px]"
+                          className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-white font-mono font-black text-xs sm:text-sm"
                         />
                       </div>
                     )}
 
-                    <div className="grid grid-cols-12 gap-1 items-center">
-                      <span className="col-span-1 text-[10px] font-black text-[#F5D799] text-center">
+                    <div className="grid grid-cols-12 gap-1.5 items-center">
+                      <span className="col-span-1 text-xs font-black text-[#F5D799] text-center">
                         #{idx + 1}
                       </span>
                       <input
@@ -1025,7 +1026,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         placeholder="🔢"
                         value={item.itemsCount}
                         onChange={(e) => updateMultiItem(item.id, { itemsCount: e.target.value })}
-                        className="col-span-2 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1 py-1 text-white font-mono font-black text-[11px] text-center"
+                        className="col-span-2 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2 text-white font-mono font-black text-xs sm:text-sm text-center"
                       />
                       <input
                         type="text"
@@ -1033,7 +1034,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         placeholder="📦 الوصف *"
                         value={item.description}
                         onChange={(e) => updateMultiItem(item.id, { description: e.target.value })}
-                        className="col-span-4 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-1 text-white font-black text-[11px]"
+                        className="col-span-4 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2 py-2 text-white font-black text-xs sm:text-sm"
                       />
                       <input
                         type="number"
@@ -1042,7 +1043,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         placeholder="💰 الثمن"
                         value={item.amountDue}
                         onChange={(e) => updateMultiItem(item.id, { amountDue: e.target.value })}
-                        className="col-span-2 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1 py-1 text-white font-mono font-black text-[11px] text-center"
+                        className="col-span-2 w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-1.5 py-2 text-white font-mono font-black text-xs sm:text-sm text-center"
                       />
                       <button
                         type="button"
@@ -1051,7 +1052,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                             payer: item.payer === 'sender' ? 'receiver' : 'sender',
                           })
                         }
-                        className={`col-span-2 py-1 px-1 rounded-xl text-[10px] font-black truncate cursor-pointer ${
+                        className={`col-span-2 py-2 px-1.5 rounded-xl text-xs font-black truncate cursor-pointer ${
                           item.payer === 'sender' ? 'btn-add' : 'btn-delete'
                         }`}
                       >
@@ -1061,9 +1062,9 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleRemoveMultiItem(item.id)}
-                          className="col-span-1 btn-delete p-1 rounded-xl text-[11px] font-bold flex items-center justify-center"
+                          className="col-span-1 btn-delete p-2 rounded-xl text-xs font-bold flex items-center justify-center"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
@@ -1072,9 +1073,9 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               </div>
 
               {/* Bottom Bar for Multi Mode */}
-              <div className="bg-black/55 p-1.5 rounded-xl border border-[#F5C84C]/40 space-y-1 shrink-0">
+              <div className="bg-black/55 p-2 rounded-xl border border-[#F5C84C]/40 space-y-2 shrink-0">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <input
                       type="number"
                       min={1}
@@ -1082,18 +1083,18 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                       value={multiItems.length}
                       onChange={(e) => handleSetBulkCount(parseInt(e.target.value, 10) || 1)}
                       title="عدد الكوليات"
-                      className="w-11 bg-[#120a00] border border-[#F5C84C] rounded-xl px-1 py-1 text-center text-[#F5C84C] font-mono font-black text-[11px]"
+                      className="w-12 bg-[#120a00] border border-[#F5C84C] rounded-xl px-1.5 py-1.5 text-center text-[#F5C84C] font-mono font-black text-xs sm:text-sm"
                     />
                     <button
                       type="button"
                       onClick={handleAddMultiItem}
-                      className="btn-add px-2 py-1 rounded-xl font-black text-[11px] shrink-0"
+                      className="btn-add px-2.5 py-1.5 rounded-xl font-black text-xs sm:text-sm shrink-0"
                     >
                       + زيد كولية
                     </button>
                   </div>
 
-                  <span className="text-[11px] font-black text-[#F5C84C] font-mono truncate">
+                  <span className="text-xs sm:text-sm font-black text-[#F5C84C] font-mono truncate">
                     💰 المجموع: {multiTotalDue} {currency}
                   </span>
                 </div>
@@ -1103,7 +1104,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                   disabled={isSubmitting}
                   data-btn-role="add"
                   data-btn-role-fixed="true"
-                  className="btn-add w-full py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="btn-add w-full py-3 px-4 rounded-xl font-black text-sm sm:text-base flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <span>
                     {isSubmitting ? '⏳ جاري التسجيل...' : `✅ تأكيد وتسجيل (${multiItems.length}) كوليات وطباعة 🖨️`}

@@ -20,8 +20,8 @@ export const StationScopeBar: React.FC = () => {
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // يظهر فقط للمدير أو مشرف المنصة للتنقل السريع بين المحطات
-  if (userRole !== 'owner' && userRole !== 'platform_owner' && userRole !== 'admin') {
+  // يظهر فقط للمدير العام أو مشرف المنصة للتنقل السريع بين المحطات
+  if (userRole !== 'owner' && userRole !== 'platform_owner') {
     return null;
   }
 

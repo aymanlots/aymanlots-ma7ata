@@ -48,6 +48,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
     currentWorkspace,
     userRole, 
     userAssignedStationId,
+    isWorkerStationDeleted,
     stationBalances,
     selectedStationId,
     hideAmounts,
@@ -60,7 +61,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
     showToast 
   } = useApp();
 
-  const workerStationId = userRole === 'worker' ? (userAssignedStationId || selectedStationId || stations[0]?.id || '') : '';
+  const workerStationId = userRole === 'worker' ? ((!isWorkerStationDeleted && userAssignedStationId) ? userAssignedStationId : '') : '';
 
   // Filters synchronized with globally selected active station
   const [filterStation, setFilterStation] = useState<string>(() =>
@@ -349,6 +350,27 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
         return { label: type, shortLabel: type, color: 'bg-black/50 text-white/80' };
     }
   };
+
+  if (userRole === 'worker' && isWorkerStationDeleted) {
+    return (
+      <div className="luxury-card p-6 sm:p-8 text-center rounded-[24px] my-6 space-y-4 border-2 border-rose-500/50 bg-black/85 shadow-2xl">
+        <div className="w-16 h-16 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center text-3xl mx-auto shadow-lg">
+          ⛔
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="text-base sm:text-lg font-black text-rose-400">
+            تم إيقاف أو حذف هذه المحطة من طرف المدير
+          </h3>
+          <p className="text-xs sm:text-sm text-gray-300 font-bold leading-relaxed max-w-sm mx-auto">
+            قام المدير بمسح أو إيقاف هذه المحطة نهائياً. تم تجميد وإيقاف جميع العمليات على هذا الحساب.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs font-mono font-black text-rose-300">
+          🔒 العمليات موقوفة بأمر من المدير
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2.5 pb-28 text-right">
@@ -982,15 +1004,22 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
                                 </button>
                               </>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => setDeletingTx(tx)}
-                              className="btn-delete px-2 py-1 rounded-lg transition flex items-center gap-1 text-[10px] font-black"
-                              title="حذف السند نهائياً من النظام (للمدير فقط)"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>حذف</span>
-                            </button>
+                            {/* حماية سجلات غرفة الشراكة: مقفلة نهائياً عن الحذف، والعمال محجوب عنهم زر الحذف */}
+                            {(tx.is_partnership || tx.partner_workspace_id || tx.room_id || tx.svr_id || tx.hawala_meta?.is_partnership || tx.metadata?.is_partnership || tx.description?.includes('شراكة') || tx.description?.includes('غرفة الشراكة')) ? (
+                              <span className="text-[10px] text-emerald-400 font-bold px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-1" title="سجلات غرفة الشراكة محمية ومقفلة نهائياً ولا يمكن مسحها لضمان الأدلة">
+                                <span>🔒 سجل شراكة دائم</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setDeletingTx(tx)}
+                                className="btn-delete px-2 py-1 rounded-lg transition flex items-center gap-1 text-[10px] font-black"
+                                title="حذف السند نهائياً من النظام (للمدير فقط)"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>حذف</span>
+                              </button>
+                            )}
                           </>
                         )}
                       </div>

@@ -55,6 +55,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     stations,
     selectedStationId,
     userAssignedStationId,
+    isWorkerStationDeleted,
     stationBalances,
     currencies,
     transactions,
@@ -87,8 +88,13 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   const [visibleRecentOpsCount, setVisibleRecentOpsCount] = useState<number>(10);
 
   const unclaimedDaysThreshold = currentWorkspace?.unclaimed_days_threshold ?? 7;
-  const currentStation =
-    stations.find((s) => s.id === (userAssignedStationId || selectedStationId)) || stations[0];
+  
+  // لا يمكن للعامل استخدام أي محطة أخرى إذا تم حذف محطته المخصصة
+  const currentStation = useMemo(() => {
+    if (isWorkerStationDeleted || !userAssignedStationId) return null;
+    return stations.find((s) => s.id === userAssignedStationId) || null;
+  }, [isWorkerStationDeleted, userAssignedStationId, stations]);
+
   const balances = currentStation ? stationBalances[currentStation.id] || {} : {};
   const activeCurrencies = currencies.filter((c) => c.is_active);
 
@@ -253,12 +259,23 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     }
   };
 
-  if (!currentStation) {
+  if (isWorkerStationDeleted || !currentStation) {
     return (
-      <div className="luxury-card p-10 text-center rounded-[24px] my-6">
-        <Store className="w-12 h-12 text-[#F5C84C] mx-auto mb-3 opacity-80" />
-        <h3 className="text-lg font-extrabold text-white mb-1">لم يتم تعيينك في أي محطة بعد</h3>
-        <p className="text-sm text-white/80">يرجى التواصل مع مدير المحطة لتعيينك في محطة العمل الخاصة بك.</p>
+      <div className="luxury-card p-6 sm:p-8 text-center rounded-[24px] my-6 space-y-4 border-2 border-rose-500/50 bg-black/85 shadow-2xl">
+        <div className="w-16 h-16 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center text-3xl mx-auto shadow-lg">
+          ⛔
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="text-base sm:text-lg font-black text-rose-400">
+            تم إيقاف أو حذف هذه المحطة من طرف المدير
+          </h3>
+          <p className="text-xs sm:text-sm text-gray-300 font-bold leading-relaxed max-w-sm mx-auto">
+            قام المدير بمسح أو إيقاف هذه المحطة نهائياً. تم تجميد وإيقاف جميع العمليات (الإرسال، الاستلام، التحويل، وصرف العملة) نهائياً على هذا الحساب.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs font-mono font-black text-rose-300">
+          🔒 العمليات موقوفة بأمر من المدير
+        </div>
       </div>
     );
   }

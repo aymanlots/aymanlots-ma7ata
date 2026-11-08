@@ -28,6 +28,20 @@
     font-weight: 900 !important;
   }
 
+  /* تكبير الخانات والكتابة قليلاً في التطبيق كامل باش تبان واضحة ومقادة */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    min-height: 42px !important;
+    font-size: 0.9rem !important;
+    line-height: 1.35 !important;
+  }
+
+  label {
+    font-size: 0.84rem !important;
+    line-height: 1.35 !important;
+  }
+
   /* Remove number input spinners to prevent decimal points and numbers from being cut off on mobile */
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {

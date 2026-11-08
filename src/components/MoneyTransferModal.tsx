@@ -37,7 +37,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
     payoutMoneyTransfer,
   } = useApp();
 
-  const workerStationId = userRole === 'worker' ? (userAssignedStationId || selectedStationId || stations[0]?.id || null) : null;
+  const workerStationId = userRole === 'worker' ? userAssignedStationId : null;
   const activeStationId =
     workerStationId || (selectedStationId && selectedStationId !== 'all' ? selectedStationId : null);
 
@@ -55,6 +55,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
   const [sendAmount, setSendAmount] = useState('');
   const [sendCurrency, setSendCurrency] = useState<'MAD' | 'MRU'>('MAD');
   const [payoutCurrency, setPayoutCurrency] = useState<'MAD' | 'MRU'>('MAD');
+  const [customExchangeRate, setCustomExchangeRate] = useState('0');
   const [commissionAmount, setCommissionAmount] = useState('0');
   const [notes, setNotes] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,6 +84,10 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
       setSendCurrency(c);
       setPayoutCurrency(c);
     }
+    // سعر الصرف ومصاريف التحويلة ديما يطلعو 0
+    setCustomExchangeRate('0');
+    setCommissionAmount('0');
+    setSendAmount('');
   }, [isOpen, activeStationId, stations]);
 
   const originStation = stations.find(s => s.id === originStationId);
@@ -90,18 +95,35 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
 
   const numericSend = Number(sendAmount) || 0;
   const numericCommission = Math.max(0, Number(commissionAmount) || 0);
+  const numericRate = Math.max(0, Number(customExchangeRate) || 0);
 
   const payoutAmount = useMemo(() => {
     if (numericSend <= 0) return 0;
-    if (sendCurrency === payoutCurrency) return numericSend;
+    if (sendCurrency === payoutCurrency) {
+      if (numericRate > 0 && numericRate !== 1) {
+        return Math.round(numericSend * numericRate * 100) / 100;
+      }
+      return numericSend;
+    }
+    if (numericRate <= 0) {
+      return 0;
+    }
     if (sendCurrency === 'MAD' && payoutCurrency === 'MRU') {
-      return Math.round(numericSend * exchangeRate * 100) / 100;
+      if (numericRate >= 1) {
+        return Math.round(numericSend * numericRate * 100) / 100;
+      } else {
+        return Math.round((numericSend / numericRate) * 100) / 100;
+      }
     }
     if (sendCurrency === 'MRU' && payoutCurrency === 'MAD') {
-      return exchangeRate > 0 ? Math.round((numericSend / exchangeRate) * 100) / 100 : 0;
+      if (numericRate >= 1) {
+        return Math.round((numericSend / numericRate) * 100) / 100;
+      } else {
+        return Math.round(numericSend * numericRate * 100) / 100;
+      }
     }
-    return numericSend;
-  }, [numericSend, sendCurrency, payoutCurrency, exchangeRate]);
+    return Math.round(numericSend * numericRate * 100) / 100;
+  }, [numericSend, sendCurrency, payoutCurrency, numericRate]);
 
   // فلترة الحوالات حسب المحطة المختارة (أو عرض الكل إذا كان المختار 'all')
   const scopedTransfers = useMemo(() => {
@@ -156,7 +178,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
         send_currency: sendCurrency,
         payout_amount: payoutAmount,
         payout_currency: payoutCurrency,
-        exchange_rate: exchangeRate,
+        exchange_rate: numericRate > 0 ? numericRate : (sendCurrency === payoutCurrency ? 1 : 1),
         commission_amount: numericCommission,
         notes: notes.trim() || undefined,
       });
@@ -171,6 +193,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
       setReceiverName('');
       setReceiverPhone('');
       setSendAmount('');
+      setCustomExchangeRate('0');
       setCommissionAmount('0');
       setNotes('');
       setActiveTab('list');
@@ -218,16 +241,16 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex justify-center items-stretch p-0 m-0 overflow-hidden animate-fadeIn"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex justify-center items-center p-2.5 sm:p-4 m-0 overflow-hidden animate-fadeIn"
       onClick={onClose}
     >
       <div
         dir="rtl"
-        className="luxury-card border-x-2 border-y-0 border-[#D4AF37]/65 rounded-none w-full max-w-[430px] h-[100dvh] min-h-[100dvh] max-h-[100dvh] p-2.5 shadow-2xl m-0 flex flex-col justify-between overflow-hidden text-right"
+        className="luxury-card border-2 border-[#D4AF37]/65 rounded-2xl w-[96%] max-w-[420px] max-h-[94dvh] p-3.5 shadow-2xl m-0 flex flex-col justify-between gap-2.5 overflow-hidden text-right"
         onClick={e => e.stopPropagation()}
       >
-        {/* Top Compact Header: Title + Tabs + Close on ONE Row */}
-        <div className="flex items-center justify-between gap-1.5 border-b border-white/15 pb-1.5 shrink-0">
+        {/* Top Header: Title + Tabs + Close on ONE Row */}
+        <div className="flex items-center justify-between gap-1.5 border-b border-white/15 pb-2 shrink-0">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-lg leading-none">💸</span>
             <h3 className="text-sm sm:text-base font-black text-white truncate">
@@ -235,7 +258,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
             </h3>
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               data-btn-role="add"
@@ -243,7 +266,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               data-btn-active={activeTab === 'send' ? 'true' : 'false'}
               data-btn-active-fixed="true"
               onClick={() => setActiveTab('send')}
-              className="btn-add py-1.5 px-2.5 rounded-xl text-xs font-black transition cursor-pointer"
+              className="btn-add py-1.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer"
             >
               + حوالة داخلة
             </button>
@@ -254,11 +277,11 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               data-btn-active={activeTab === 'list' ? 'true' : 'false'}
               data-btn-active-fixed="true"
               onClick={() => setActiveTab('list')}
-              className="btn-delete py-1.5 px-2.5 rounded-xl text-xs font-black transition flex items-center gap-1 cursor-pointer"
+              className="btn-delete py-1.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition flex items-center gap-1 cursor-pointer"
             >
               <span>- حوالة خارجة ({scopedTransfers.length})</span>
               {pendingCountForScope > 0 && (
-                <span className="badge-pill px-1 rounded-full bg-white text-[#C1272D] text-[9px] font-black">
+                <span className="badge-pill px-1 rounded-full bg-white text-[#C1272D] text-[10px] font-black">
                   {pendingCountForScope}
                 </span>
               )}
@@ -280,62 +303,92 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
         {activeTab === 'send' ? (
           <form
             onSubmit={handleCreateTransfer}
-            className="flex-1 flex flex-col justify-between gap-1.5 py-1.5 min-h-0 overflow-hidden text-xs sm:text-sm"
+            className="flex-1 flex flex-col justify-between gap-2.5 min-h-0 overflow-hidden text-xs sm:text-sm"
           >
             {formError && (
-              <div className="p-1.5 rounded-xl bg-rose-950/70 border border-rose-500/40 text-xs font-black text-rose-200 shrink-0 truncate">
+              <div className="p-2 rounded-xl bg-rose-950/70 border border-rose-500/40 text-xs sm:text-sm font-black text-rose-200 shrink-0 truncate">
                 {formError}
               </div>
             )}
 
-            {/* 1. من محطة الإرسال (+) */}
-            <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-              <label className="block text-xs text-white/90 font-black mb-1 truncate">
-                📍 من محطة الإرسال (+)
-              </label>
-              <select
-                value={originStationId}
-                disabled={userRole === 'worker'}
-                onChange={e => {
-                  if (userRole === 'worker') return;
-                  const nextOrigin = e.target.value;
-                  setOriginStationId(nextOrigin);
-                  if (nextOrigin === destStationId) {
-                    const other = stations.find(s => s.id !== nextOrigin);
-                    if (other) setDestStationId(other.id);
-                  }
-                  const st = stations.find(s => s.id === nextOrigin);
-                  if (st) {
-                    const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
-                    setSendCurrency(c);
-                  }
-                }}
-                className="w-full bg-black/65 border border-white/20 rounded-xl px-2 py-2 text-xs text-white font-black focus:outline-none disabled:opacity-75 truncate"
-              >
-                {(userRole === 'worker' && workerStationId
-                  ? stations.filter(s => s.id === workerStationId)
-                  : stations
-                ).map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.city})
-                  </option>
-                ))}
-              </select>
+            {/* السطر الفوقاني: [ محطة الإرسال ] حدا [ محطة الاستلام ] */}
+            <div className="grid grid-cols-2 gap-2.5 shrink-0">
+              {/* من محطة الإرسال (+) */}
+              <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+                <label className="block text-xs sm:text-sm text-white/90 font-black truncate">
+                  📍 محطة الإرسال (+)
+                </label>
+                <select
+                  value={originStationId}
+                  disabled={userRole === 'worker'}
+                  onChange={e => {
+                    if (userRole === 'worker') return;
+                    const nextOrigin = e.target.value;
+                    setOriginStationId(nextOrigin);
+                    if (nextOrigin === destStationId) {
+                      const other = stations.find(s => s.id !== nextOrigin);
+                      if (other) setDestStationId(other.id);
+                    }
+                    const st = stations.find(s => s.id === nextOrigin);
+                    if (st) {
+                      const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
+                      setSendCurrency(c);
+                    }
+                  }}
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white font-black focus:outline-none disabled:opacity-75 truncate"
+                >
+                  {(userRole === 'worker' && workerStationId
+                    ? stations.filter(s => s.id === workerStationId)
+                    : stations
+                  ).map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.city})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* إلى محطة الاستلام (−) */}
+              <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+                <label className="block text-xs sm:text-sm text-white/90 font-black truncate">
+                  📍 محطة الاستلام (−)
+                </label>
+                <select
+                  value={destStationId}
+                  onChange={e => {
+                    const nextDest = e.target.value;
+                    setDestStationId(nextDest);
+                    const st = stations.find(s => s.id === nextDest);
+                    if (st) {
+                      const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
+                      setPayoutCurrency(c);
+                    }
+                  }}
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white font-black focus:outline-none truncate"
+                >
+                  {stations.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.city})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* 2. بيانات المرسل */}
-            <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-              <span className="font-black text-white block text-xs mb-1 truncate">
-                👤 المرسل (الاسم + 📞 الهاتف)
-              </span>
-              <div className="grid grid-cols-2 gap-1.5">
+            {/* السطر الثاني: [ اسم المرسل ] تحت محطة الإرسال | [ اسم المستلم ] تحت محطة الاستلام */}
+            <div className="grid grid-cols-2 gap-2.5 shrink-0">
+              {/* بيانات المرسل */}
+              <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-2">
+                <span className="font-black text-white block text-xs sm:text-sm truncate">
+                  👤 اسم المرسل
+                </span>
                 <input
                   type="text"
                   required
                   value={senderName}
                   onChange={e => setSenderName(e.target.value)}
                   placeholder="👤 اسم المرسل *"
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2 py-2 text-xs font-black text-white focus:outline-none"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm font-black text-white focus:outline-none"
                 />
                 <input
                   type="tel"
@@ -343,50 +396,22 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   value={senderPhone}
                   onChange={e => setSenderPhone(e.target.value)}
                   placeholder="📞 هاتف المرسل"
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2 py-2 text-xs font-black text-white font-mono focus:outline-none"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm font-black text-white font-mono focus:outline-none"
                 />
               </div>
-            </div>
 
-            {/* 3. إلى محطة الاستلام (−) */}
-            <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-              <label className="block text-xs text-white/90 font-black mb-1 truncate">
-                📍 إلى محطة الاستلام (−)
-              </label>
-              <select
-                value={destStationId}
-                onChange={e => {
-                  const nextDest = e.target.value;
-                  setDestStationId(nextDest);
-                  const st = stations.find(s => s.id === nextDest);
-                  if (st) {
-                    const c: 'MAD' | 'MRU' = (st.currency === 'MRU' || st.default_currency === 'MRU' || st.country === 'MR') ? 'MRU' : 'MAD';
-                    setPayoutCurrency(c);
-                  }
-                }}
-                className="w-full bg-black/65 border border-white/20 rounded-xl px-2 py-2 text-xs text-white font-black focus:outline-none truncate"
-              >
-                {stations.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.city})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 4. بيانات المستلم */}
-            <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-              <span className="font-black text-white block text-xs mb-1 truncate">
-                👤 المستلم (الاسم + 📞 الهاتف)
-              </span>
-              <div className="grid grid-cols-2 gap-1.5">
+              {/* بيانات المستلم */}
+              <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-2">
+                <span className="font-black text-white block text-xs sm:text-sm truncate">
+                  👤 اسم المستلم
+                </span>
                 <input
                   type="text"
                   required
                   value={receiverName}
                   onChange={e => setReceiverName(e.target.value)}
                   placeholder="👤 اسم المستلم *"
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2 py-2 text-xs font-black text-white focus:outline-none"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm font-black text-white focus:outline-none"
                 />
                 <input
                   type="tel"
@@ -394,78 +419,129 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   value={receiverPhone}
                   onChange={e => setReceiverPhone(e.target.value)}
                   placeholder="📞 هاتف المستلم"
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2 py-2 text-xs font-black text-white font-mono focus:outline-none"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm font-black text-white font-mono focus:outline-none"
                 />
               </div>
             </div>
 
-            {/* 5. المبلغ المرسل */}
-            <div className="bg-black/55 p-2 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-center shrink-0">
-              <div className="flex items-center justify-between text-xs font-black mb-1">
-                <span>💰 المبلغ المرسل *</span>
-                <span className="text-emerald-400 font-mono" dir="ltr">
-                  ➕ {(numericSend + numericCommission).toLocaleString('en-US')} {sendCurrency}
-                </span>
-              </div>
-              <input
-                type="text"
-                inputMode="decimal"
-                required
-                dir="ltr"
-                value={sendAmount}
-                onChange={e => {
-                  const val = e.target.value.replace(/[^0-9.]/g, '');
-                  setSendAmount(val);
-                }}
-                placeholder="0.00"
-                className="w-full bg-black/65 border-2 border-[#D4AF37]/60 rounded-xl px-2.5 py-2 text-sm font-mono font-black text-[#F5C84C] text-center focus:outline-none"
-              />
-            </div>
-
-            {/* 6. عملة الإيداع (+) وعملة التسليم (−) + الصافي */}
-            <div className="bg-black/55 p-2 rounded-xl border border-white/15 flex flex-col justify-center shrink-0">
-              <div className="flex items-center justify-between text-xs font-black mb-1">
-                <span>💱 العملة (إيداع ➔ تسليم)</span>
-                <span className="text-rose-400 font-mono" dir="ltr">
-                  ➖ الصافي: {payoutAmount.toLocaleString('en-US')} {payoutCurrency}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
+            {/* السطر الثالث: [ المبلغ المرسل ] حدا [ العملة والصافي ] */}
+            <div className="grid grid-cols-2 gap-2.5 shrink-0">
+              {/* المبلغ المرسل */}
+              <div className="bg-black/55 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
+                <div className="flex items-center justify-between text-xs sm:text-sm font-black">
+                  <span className="truncate">💰 المبلغ المرسل *</span>
+                </div>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  required
+                  dir="ltr"
+                  value={sendAmount}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^0-9.]/g, '');
+                    setSendAmount(val);
+                  }}
+                  placeholder="0.00"
+                  className="w-full bg-black/65 border-2 border-[#D4AF37]/60 rounded-xl px-2.5 py-2.5 text-sm sm:text-base font-mono font-black text-[#F5C84C] text-center focus:outline-none"
+                />
                 <select
                   value={sendCurrency}
                   onChange={e => setSendCurrency(e.target.value as 'MAD' | 'MRU')}
                   title="عملة الإيداع (+)"
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2 py-2 text-xs font-black text-emerald-400 focus:outline-none"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-xs sm:text-sm font-black text-emerald-400 focus:outline-none"
                 >
-                  <option value="MAD">➕ إيداع بالدرهم (MAD)</option>
-                  <option value="MRU">➕ إيداع بالأوقية (MRU)</option>
+                  <option value="MAD">➕ إيداع (MAD)</option>
+                  <option value="MRU">➕ إيداع (MRU)</option>
                 </select>
+              </div>
 
+              {/* عملة التسليم (−) + الصافي */}
+              <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-2">
+                <span className="text-xs sm:text-sm font-black truncate">
+                  💱 الصافي للتسليم (−)
+                </span>
+                <div
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-sm sm:text-base font-mono font-black text-rose-400 text-center truncate"
+                  dir="ltr"
+                >
+                  {payoutAmount.toLocaleString('en-US')} {payoutCurrency}
+                </div>
                 <select
                   value={payoutCurrency}
                   onChange={e => setPayoutCurrency(e.target.value as 'MAD' | 'MRU')}
                   title="عملة التسليم (−)"
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2 py-2 text-xs font-black text-[#F5C84C] focus:outline-none"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-xs sm:text-sm font-black text-[#F5C84C] focus:outline-none"
                 >
-                  <option value="MAD">➖ تسليم بالدرهم (MAD)</option>
-                  <option value="MRU">➖ تسليم بالأوقية (MRU)</option>
+                  <option value="MAD">➖ تسليم (MAD)</option>
+                  <option value="MRU">➖ تسليم (MRU)</option>
                 </select>
               </div>
             </div>
 
-            {/* 7. زر التأكيد الكبير فالتحت */}
+            {/* السطر الرابع: [ سعر الصرف ] حدا [ مصاريف التحويلة ] - ديما يطلعو 0 ويتعمرو مانويل */}
+            <div className="grid grid-cols-2 gap-2.5 shrink-0">
+              {/* سعر الصرف */}
+              <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+                <div className="flex items-center justify-between text-xs sm:text-sm font-black text-white">
+                  <span className="truncate">📊 سعر الصرف</span>
+                  <span className="text-[10px] text-amber-300 font-mono">
+                    {sendCurrency === payoutCurrency ? '1:1' : `${sendCurrency} ➔ ${payoutCurrency}`}
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  dir="ltr"
+                  value={customExchangeRate}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^0-9.]/g, '');
+                    setCustomExchangeRate(val);
+                  }}
+                  placeholder="0"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-sm sm:text-base font-mono font-black text-white text-center focus:outline-none"
+                />
+                <span className="text-[10px] text-gray-400 text-center font-bold">
+                  (ديما 0 - تعمير يدوي)
+                </span>
+              </div>
+
+              {/* مصاريف التحويلة */}
+              <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
+                <div className="flex items-center justify-between text-xs sm:text-sm font-black text-white">
+                  <span className="truncate">💵 مصاريف التحويلة</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">+{sendCurrency}</span>
+                </div>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  dir="ltr"
+                  value={commissionAmount}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^0-9.]/g, '');
+                    setCommissionAmount(val);
+                  }}
+                  placeholder="0"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-sm sm:text-base font-mono font-black text-white text-center focus:outline-none"
+                />
+                <span className="text-[10px] text-gray-400 text-center font-bold">
+                  (المجموع: {(numericSend + numericCommission).toLocaleString('en-US')} {sendCurrency})
+                </span>
+              </div>
+            </div>
+
+            {/* زر التأكيد الكبير فالتحت */}
             <button
               type="submit"
               disabled={isSubmitting}
               data-btn-role="add"
               data-btn-role-fixed="true"
-              className="btn-add w-full py-3 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-1.5 cursor-pointer shadow-md shrink-0"
+              className="btn-add w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer shadow-md shrink-0"
             >
               <span>{isSubmitting ? '⏳ جاري الإرسال...' : '✅ تأكيد وإرسال الحوالة الآن 💸'}</span>
             </button>
           </form>
         ) : (
-          <div className="flex-1 flex flex-col justify-between gap-2 py-1.5 min-h-0 overflow-hidden">
+          <div className="flex-1 flex flex-col justify-between gap-2.5 min-h-0 overflow-hidden">
             <div className="relative shrink-0">
               <Search className="w-4 h-4 text-[#F5C84C] absolute right-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -473,7 +549,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="ابحث برقم الحوالة (HWL-)، اسم المرسل أو المستلم..."
-                className="w-full bg-black/65 border border-white/20 rounded-xl pr-10 pl-4 py-2 text-xs text-white focus:outline-none focus:border-[#F5C84C]"
+                className="w-full bg-black/65 border border-white/20 rounded-xl pr-10 pl-4 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-[#F5C84C]"
               />
             </div>
 
@@ -563,7 +639,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
 
                       {t.status === 'pending' ? (
                         <div className="flex flex-col gap-2 pt-1">
-                          {userRole !== 'worker' || t.destination_station_id === workerStationId ? (
+                          {(userRole === 'worker' ? (workerStationId === t.destination_station_id && workerStationId !== t.origin_station_id) : (selectedStationId === 'all' || !selectedStationId || selectedStationId === t.destination_station_id)) ? (
                             <>
                               <div className="text-[11px] text-white/80 font-bold">
                                 رصيد لاكيس {t.destination_station_name} الحالي:{' '}

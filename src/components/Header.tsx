@@ -308,14 +308,14 @@ export const Header: React.FC<HeaderProps> = ({
                 {userRole === 'worker' ? 'محطتك المخصصة للعمل:' : 'المحطة الحالية النشطة:'}
               </span>
               <div className="grid grid-cols-2 gap-2">
-                {(userRole === 'worker'
+                {((userRole === 'worker' || userRole === 'admin')
                   ? stations.filter(s => !userAssignedStationId || s.id === userAssignedStationId)
                   : stations
                 ).map(station => (
                   <button
                     key={station.id}
                     onClick={() => {
-                      if (userRole !== 'worker') {
+                      if (userRole === 'owner' || userRole === 'platform_owner') {
                         setSelectedStationId(station.id);
                       }
                       setMobileMenuOpen(false);
