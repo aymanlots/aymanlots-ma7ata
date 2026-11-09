@@ -20,6 +20,8 @@ import {
   ChevronDown,
   X,
   Crown,
+  Users,
+  User,
 } from 'lucide-react';
 import { NewVoucherModal } from './NewVoucherModal';
 import { MoneyTransferModal } from './MoneyTransferModal';
@@ -31,6 +33,7 @@ import {
   formatDateTimeStandard,
   formatTrackingCodeNumeric,
   matchesTrackingCode,
+  validateParcelScanOwnership,
 } from '../utils/logisticsFeatures';
 
 interface OwnerDashboardProps {
@@ -59,6 +62,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   onOpenNewParcel,
   onOpenLedger,
   onOpenParcels,
+  onOpenSettings,
+  onOpenTeamSettings,
   onOpenPlatformOwner,
 }) => {
   const {
@@ -67,24 +72,34 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     stations,
     selectedStationId,
     setSelectedStationId,
+    workspaceMembers,
     stationBalances,
     currencies,
     transactions,
+    auditLogs,
     deleteTransaction,
     moneyTransfers,
     payoutMoneyTransfer,
     parcels,
     formatAmount,
     showToast,
+    t,
   } = useApp();
 
-  const isOwner = userRole === 'owner' || userRole === 'platform_owner';
-  const isAllStations = selectedStationId === 'all' || (!selectedStationId && stations.length > 1);
+  const isOwner = userRole === 'owner' || userRole === 'admin' || userRole === 'platform_owner';
+  const isAllStations = selectedStationId === 'all' || !selectedStationId;
   const activeStation = useMemo(() => {
     if (isAllStations) return null;
-    return stations.find(s => s.id === selectedStationId) || stations[0] || null;
+    return stations.find(s => s.id === selectedStationId) || null;
   }, [isAllStations, stations, selectedStationId]);
 
+  const scopedWorkers = useMemo(() => {
+    const workers = workspaceMembers.filter(m => m.role === 'worker');
+    if (!activeStation) return workers;
+    return workers.filter(w => w.station_id === activeStation.id);
+  }, [workspaceMembers, activeStation]);
+
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [confirmDeleteTxId, setConfirmDeleteTxId] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -135,7 +150,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       ? parcels.filter(
           p =>
             p.origin_station_id === activeStation.id ||
-            p.destination_station_id === activeStation.id
+            ((p.destination_station_id === activeStation.id ||
+              p.partner_destination_station_id === activeStation.id) &&
+              p.status !== 'registered' &&
+              p.status !== 'pending')
         )
       : parcels;
     return baseParcels
@@ -153,7 +171,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       .slice(0, 6);
   }, [parcels, searchQuery, activeStation]);
 
-  // Scoped Parcels, Transactions, and Pending Hawalas for the active station (excluding unshipped incoming partner parcels so they only appear in sender's stock)
+  // Scoped Parcels, Transactions, and Pending Hawalas for the active station (excluding unshipped parcels from other stations so they only appear in their origin station)
   const scopedParcels = useMemo(() => {
     const visibleParcels = parcels.filter(p => {
       const isIncomingPartner = Boolean(
@@ -170,8 +188,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     return visibleParcels.filter(
       p =>
         p.origin_station_id === activeStation.id ||
-        p.destination_station_id === activeStation.id ||
-        p.partner_destination_station_id === activeStation.id
+        ((p.destination_station_id === activeStation.id ||
+          p.partner_destination_station_id === activeStation.id) &&
+          p.status !== 'registered' &&
+          p.status !== 'pending')
     );
   }, [parcels, activeStation, currentWorkspace?.id]);
 
@@ -184,11 +204,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   const scopedPendingHawalas = useMemo(() => {
     const pending = moneyTransfers.filter(t => t.status === 'pending');
     if (!activeStation) return pending;
-    return pending.filter(
-      t =>
-        t.destination_station_id === activeStation.id ||
-        t.origin_station_id === activeStation.id
-    );
+    return pending.filter(t => t.destination_station_id === activeStation.id);
   }, [moneyTransfers, activeStation]);
 
   // Dynamic Cash totals for the current scope (1, 2, 3+ currencies e.g. MAD, MRU, EUR)
@@ -295,6 +311,16 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     const found = parcels.find(p => matchesTrackingCode(p, code));
     setScannerOpen(false);
     if (found) {
+      const scanValidation = validateParcelScanOwnership(
+        found,
+        currentWorkspace?.id,
+        userRole,
+        undefined
+      );
+      if (!scanValidation.allowed) {
+        showToast(scanValidation.reason || '⛔ لا تملك صلاحية مسح هذا الكولي (ينتمي لمدير آخر)', 'error');
+        return;
+      }
       setSelectedParcelDetail(found);
     } else {
       setSearchQuery(code.trim());
@@ -302,8 +328,13 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     }
   };
 
+  const {
+    language,
+  } = useApp();
+  const isRtl = language === 'ar' || language === 'hassaniya';
+
   return (
-    <div className="space-y-3.5 pb-36 text-right animate-fadeIn" dir="rtl">
+    <div className={`space-y-3.5 pb-36 ${isRtl ? 'text-right' : 'text-left'} animate-fadeIn`} dir={isRtl ? 'rtl' : 'ltr'}>
       {/* 1. شريط البحث السريع عن كولي (بتصميم شفاف مضبب واضح + مربع صغير للسكان في آخره) */}
       <div className="relative">
         <div className="luxury-card rounded-2xl p-1.5 flex items-center gap-2 border border-white/20">
@@ -314,8 +345,8 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             onChange={e => setSearchQuery(e.target.value)}
             placeholder={
               activeStation
-                ? `ابحث عن كولي في ${activeStation.name} (كود 0000466، مرسل، مستلم)...`
-                : 'ابحث بكود التتبع (مثال: 0000466) أو اسم المرسل/المستلم...'
+                ? `${t('searchInStation', 'ابحث عن كولي في')} ${activeStation.name}...`
+                : t('searchPlaceholder', 'ابحث بكود التتبع (مثال: 0000466) أو اسم المرسل/المستلم...')
             }
             className="flex-1 bg-transparent text-xs font-bold text-white placeholder-white/75 focus:outline-none py-2 px-1"
           />
@@ -323,10 +354,10 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              aria-label="مسح البحث"
+              aria-label={t('clearSearch', 'مسح')}
               className="btn-cancel px-2 py-1 rounded-lg text-[10px] font-bold shrink-0 cursor-pointer"
             >
-              مسح
+              {t('clearSearch', 'مسح')}
             </button>
           )}
           <button
@@ -336,7 +367,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               else setScannerOpen(true);
             }}
             className="btn-gold w-9 h-9 rounded-xl flex items-center justify-center shrink-0 cursor-pointer"
-            title="مسح الباركود أو QR بالكاميرا"
+            title={t('scannerTitle', 'مسح الباركود أو QR بالكاميرا')}
           >
             <QrCode className="w-4 h-4" />
           </button>
@@ -378,7 +409,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           <div className="flex items-center gap-2">
             <Package className="w-5 h-5 text-[#F5C84C]" />
             <h3 className="text-sm sm:text-base font-black text-white">
-              📦 {activeStation ? activeStation.name : 'الكوليات'} ({parcelStats.total})
+              {activeStation ? activeStation.name : t('navParcels', 'الكوليات')} ({parcelStats.total})
             </h3>
           </div>
 
@@ -388,7 +419,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             className="btn-hero-action btn-add px-4 py-3 rounded-[12px] font-black text-sm sm:text-base flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-5 h-5" />
-            <span>➕ تسجيل كولي جديد</span>
+            <span>{t('newParcel', 'تسجيل كولي جديد')}</span>
           </button>
         </div>
 
@@ -397,7 +428,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             onClick={handleGoToParcelsAction}
             className="bg-black/50 border border-white/15 rounded-xl p-2.5 cursor-pointer hover:border-[#F5C84C]/50 transition"
           >
-            <span className="text-[10px] font-bold text-white/80 block">بالمكتب</span>
+            <span className="text-[10px] font-bold text-white/80 block">{t('inOffice', 'بالمكتب')}</span>
             <span className="text-base font-black font-mono text-[#F5C84C]">
               {parcelStats.waiting}
             </span>
@@ -406,7 +437,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             onClick={handleGoToParcelsAction}
             className="bg-black/50 border border-white/15 rounded-xl p-2.5 cursor-pointer hover:border-[#F5C84C]/50 transition"
           >
-            <span className="text-[10px] font-bold text-white/80 block">في الطريق</span>
+            <span className="text-[10px] font-bold text-white/80 block">{t('inTransit', 'في الطريق')}</span>
             <span className="text-base font-black font-mono text-[#F5C84C]">
               {parcelStats.inTransit}
             </span>
@@ -415,7 +446,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             onClick={handleGoToParcelsAction}
             className="bg-black/50 border border-white/15 rounded-xl p-2.5 cursor-pointer hover:border-[#F5C84C]/50 transition"
           >
-            <span className="text-[10px] font-bold text-white/80 block">وصل للمحطة</span>
+            <span className="text-[10px] font-bold text-white/80 block">{t('arrivedAtStation', 'وصل للمحطة')}</span>
             <span className="text-base font-black font-mono text-[#F5C84C]">
               {parcelStats.arrived}
             </span>
@@ -424,12 +455,306 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             onClick={handleGoToParcelsAction}
             className="bg-black/50 border border-white/15 rounded-xl p-2.5 cursor-pointer hover:border-[#F5C84C]/50 transition"
           >
-            <span className="text-[10px] font-bold text-white/80 block">تم التسليم</span>
+            <span className="text-[10px] font-bold text-white/80 block">{t('deliveredToCustomer', 'تم التسليم')}</span>
             <span className="text-base font-black font-mono text-emerald-400">
               {parcelStats.delivered}
             </span>
           </div>
         </div>
+      </div>
+
+      {/* 2.5 عمال المحطة المختارة (أو كل المحطات) — كل عامل ببطونة ديالو تعرض خدمتو بوحدو */}
+      <div className="luxury-card rounded-[22px] p-3.5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Users className="w-4 h-4 text-[#F5C84C] shrink-0" />
+            <h3
+              key={`workers-heading-${activeStation?.id || 'all'}-${scopedWorkers.length}`}
+              className="text-xs sm:text-sm font-black text-white truncate"
+            >
+              {activeStation
+                ? `عمال ${activeStation.name} (${scopedWorkers.length})`
+                : `عمال المحطات (${scopedWorkers.length})`}
+            </h3>
+          </div>
+          {scopedWorkers.length > 0 && (
+            <span className="text-[10px] font-bold text-[#F5C84C]">
+              اضغط على اسم العامل لعرض عملياته
+            </span>
+          )}
+        </div>
+
+        {scopedWorkers.length === 0 ? (
+          <div className="text-[11px] text-white/70 bg-black/40 border border-white/10 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+            <span>
+              {activeStation
+                ? `لا يوجد عامل معين في ${activeStation.name} حالياً`
+                : 'لا يوجد عمال مسجلون حالياً'}
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {scopedWorkers.map(w => {
+              const stName = stations.find(s => s.id === w.station_id)?.name || 'محطة';
+              const isSelected = selectedWorkerId === w.user_id;
+              return (
+                <button
+                  key={`${w.user_id}-${w.profile?.name || ''}-${stName}`}
+                  type="button"
+                  data-btn-role={isSelected ? 'add' : 'info'}
+                  data-btn-role-fixed="true"
+                  onClick={() => setSelectedWorkerId(prev => (prev === w.user_id ? null : w.user_id))}
+                  className={`px-3 py-2 rounded-xl border flex items-center gap-1.5 text-xs font-black transition active:scale-95 cursor-pointer ${
+                    isSelected
+                      ? 'btn-add border-emerald-400 shadow-lg'
+                      : 'bg-black/60 border-[#D4AF37]/40 text-white hover:border-[#F5C84C]'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5 shrink-0" />
+                  <span>{w.profile?.name || 'عامل'}</span>
+                  <span className="text-[10px] opacity-90 font-bold">
+                    ({stName})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* بطاقة تفاصيل العامل المختار: سميتو والمحطة ديالو + شنو دار + آخر العمليات اللي دار مرتبين من الجديد للقديم مع التاريخ والوقت */}
+        {(() => {
+          if (!selectedWorkerId) return null;
+          const workerObj = scopedWorkers.find(w => w.user_id === selectedWorkerId);
+          if (!workerObj) return null;
+
+          const workerId = workerObj.user_id;
+          const workerName = workerObj.profile?.name || 'عامل';
+          const workerPhone = workerObj.profile?.phone || '';
+          const workerStation = stations.find(s => s.id === workerObj.station_id);
+          const workerStationName = workerStation?.name || 'غير محدد';
+
+          // جمع جميع العمليات الخاصة بهذا العامل حصرياً (بـ user_id ديالو فقط باش ما يتخلطش مع حتى عامل آخر)
+          interface WorkerActivityItem {
+            id: string;
+            category: 'parcel' | 'cash' | 'hawala' | 'other';
+            badge: string;
+            title: string;
+            details: string;
+            stationName: string;
+            timestamp: string;
+          }
+
+          const activityMap = new Map<string, WorkerActivityItem>();
+
+          // 1. الكوليات التي سجلها العامل أو قام بتحديث حالتها أو قبض خلاصها
+          parcels.forEach(p => {
+            if (p.created_by === workerId) {
+              const key = `parcel-create-${p.id}`;
+              activityMap.set(key, {
+                id: key,
+                category: 'parcel',
+                badge: '📦 تسجيل كولي',
+                title: `تسجيل كولي جديد [${p.tracking_code}] (${p.origin_station_name} ➔ ${p.destination_station_name})`,
+                details: `المرسل: ${p.sender_name} | المستلم: ${p.receiver_name} | ثمن الشحن: ${p.amount_due} ${p.currency}`,
+                stationName: p.origin_station_name || workerStationName,
+                timestamp: p.created_at,
+              });
+            }
+
+            (p.status_history || []).forEach((h, idx) => {
+              if (h.changed_by_id === workerId && h.status !== 'registered') {
+                const statusLabel =
+                  h.status === 'delivered'
+                    ? '✅ تسليم كولي للمستلم'
+                    : h.status === 'arrived'
+                    ? '📥 استقبال وتفريغ كولي فالستوك'
+                    : h.status === 'in_transit'
+                    ? '🚚 شحن كولي فالرحلة'
+                    : `تحديث حالة كولي (${h.status})`;
+                const key = `parcel-status-${p.id}-${h.timestamp}-${idx}`;
+                activityMap.set(key, {
+                  id: key,
+                  category: 'parcel',
+                  badge: '📦 حركة كولي',
+                  title: `${statusLabel} [${p.tracking_code}]`,
+                  details: `المستلم: ${p.receiver_name}${h.notes ? ` — ${h.notes}` : ''}`,
+                  stationName:
+                    h.status === 'in_transit'
+                      ? p.origin_station_name || workerStationName
+                      : p.destination_station_name || workerStationName,
+                  timestamp: h.timestamp,
+                });
+              }
+            });
+          });
+
+          // 2. العمليات المالية فـ لاكيس والحوالات التي نفذها هذا العامل حصرياً
+          transactions.forEach(tx => {
+            if (tx.created_by !== workerId) return;
+            const isHawala = Boolean(tx.hawala_transfer_id || tx.hawala_meta);
+            const isOut = tx.type === 'cash_out' || tx.type === 'goods_payment' || tx.type === 'parcel_cod_payout';
+            const sign = isOut ? '-' : '+';
+            const key = `tx-${tx.id}`;
+            activityMap.set(key, {
+              id: key,
+              category: isHawala ? 'hawala' : 'cash',
+              badge: isHawala
+                ? isOut
+                  ? '💸 تسليم حوالة'
+                  : '💸 إرسال حوالة'
+                : isOut
+                ? '📤 سحب من الصندوق'
+                : '📥 إيداع في الصندوق',
+              title: `${tx.reason || (isOut ? 'سحب مالي من لاكيس' : 'إيداع مالي فلاكيس')} (${sign}${tx.amount} ${tx.currency})`,
+              details: tx.note || `المبلغ: ${sign}${tx.amount} ${tx.currency}`,
+              stationName: tx.station_name || workerStationName,
+              timestamp: tx.created_at,
+            });
+          });
+
+          // 3. سجل العمليات الإضافية الخاصة بهذا العامل حصرياً (من auditLogs)
+          auditLogs.forEach(log => {
+            if (log.user_id !== workerId) return;
+            // تجنب التكرار إذا كانت العملية مسجلة أعلاه عبر الكولي أو السند المالي
+            if (log.table_name === 'transactions' && activityMap.has(`tx-${log.record_id}`)) return;
+            if (log.table_name === 'parcels' && log.action === 'INSERT' && activityMap.has(`parcel-create-${log.record_id}`)) return;
+            if (log.table_name === 'parcels' && log.action === 'STATUS_CHANGE') return;
+
+            const key = `audit-${log.id}`;
+            const cat: WorkerActivityItem['category'] =
+              log.table_name === 'parcels'
+                ? 'parcel'
+                : log.table_name === 'hawala_transfers'
+                ? 'hawala'
+                : log.table_name === 'transactions'
+                ? 'cash'
+                : 'other';
+            activityMap.set(key, {
+              id: key,
+              category: cat,
+              badge:
+                cat === 'parcel'
+                  ? '📦 كولي'
+                  : cat === 'hawala'
+                  ? '💸 حوالة'
+                  : cat === 'cash'
+                  ? '💰 صندوق'
+                  : '📋 عملية',
+              title: log.reason || `${log.action} (${log.table_name})`,
+              details: log.details || '',
+              stationName: log.station_name || workerStationName,
+              timestamp: log.created_at,
+            });
+          });
+
+          // ترتيب جميع عمليات العامل من الجديد للقديم (الأحدث أولاً)
+          const workerActivities = Array.from(activityMap.values()).sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+
+          const parcelOpsCount = workerActivities.filter(a => a.category === 'parcel').length;
+          const cashOpsCount = workerActivities.filter(a => a.category === 'cash').length;
+          const hawalaOpsCount = workerActivities.filter(a => a.category === 'hawala').length;
+
+          return (
+            <div
+              key={`worker-card-${workerId}`}
+              className="mt-2 bg-black/75 border-2 border-emerald-500/60 rounded-2xl p-3.5 space-y-3 animate-fadeIn"
+            >
+              {/* رأس بطاقة العامل: سميتو + المحطة ديالو + زر إغلاق */}
+              <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2.5">
+                <div className="space-y-0.5 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2 py-0.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black">
+                      👤 العامل
+                    </span>
+                    <h4 className="text-sm font-black text-white truncate">{workerName}</h4>
+                    {workerPhone && (
+                      <span dir="ltr" className="text-[11px] font-mono text-white/75">
+                        ({workerPhone})
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-black text-[#F5C84C]">
+                    📍 المحطة ديالو: {workerStationName}{' '}
+                    {workerStation?.city ? `(${workerStation.city})` : ''}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedWorkerId(null)}
+                  className="btn-cancel px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>إغلاق</span>
+                </button>
+              </div>
+
+              {/* ملخص شنو دار هاد العامل بوحدو */}
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-black/60 border border-white/15 rounded-xl p-2">
+                  <span className="text-[10px] font-bold text-white/75 block">📦 الكوليات</span>
+                  <span className="text-sm font-black font-mono text-[#F5C84C]">{parcelOpsCount}</span>
+                </div>
+                <div className="bg-black/60 border border-white/15 rounded-xl p-2">
+                  <span className="text-[10px] font-bold text-white/75 block">💰 الصندوق</span>
+                  <span className="text-sm font-black font-mono text-emerald-400">{cashOpsCount}</span>
+                </div>
+                <div className="bg-black/60 border border-white/15 rounded-xl p-2">
+                  <span className="text-[10px] font-bold text-white/75 block">💸 الحوالات</span>
+                  <span className="text-sm font-black font-mono text-amber-300">{hawalaOpsCount}</span>
+                </div>
+              </div>
+
+              {/* قائمة آخر العمليات اللي دار مرتبين من الجديد للقديم مع التاريخ والوقت */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#F5C84C]">
+                    🕒 آخر العمليات اللي دار ({workerActivities.length}) — من الجديد للقديم:
+                  </span>
+                </div>
+
+                {workerActivities.length === 0 ? (
+                  <div className="text-center py-5 text-xs text-white/70 bg-black/40 rounded-xl border border-white/10">
+                    لم يقم العامل ({workerName}) بتسجيل أي عملية حتى الآن.
+                  </div>
+                ) : (
+                  <div className="max-h-72 overflow-y-auto space-y-2 pr-0.5">
+                    {workerActivities.map(act => (
+                      <div
+                        key={act.id}
+                        className="p-2.5 rounded-xl bg-black/60 border border-white/15 space-y-1"
+                      >
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="px-2 py-0.5 rounded-lg bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#F5C84C] text-[10px] font-black">
+                            {act.badge}
+                          </span>
+                          <span
+                            dir="ltr"
+                            className="text-[10px] font-mono font-bold text-emerald-300 bg-black/60 px-2 py-0.5 rounded-md border border-white/10"
+                          >
+                            🕒 {formatDateTimeStandard(act.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-xs font-black text-white leading-snug">{act.title}</p>
+                        {act.details && (
+                          <p className="text-[11px] font-semibold text-white/80 leading-snug">
+                            {act.details}
+                          </p>
+                        )}
+                        <div className="text-[10px] font-bold text-white/60 flex items-center justify-between pt-0.5">
+                          <span>👤 العامل: {workerName}</span>
+                          <span>📍 المحطة: {act.stationName}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 3. صندوق (لاكيس) المحطة: مطوي افتراضياً حتى يدخل المستخدم للصندوق ليرى الفلوس */}
@@ -452,7 +777,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             </div>
             <div className="flex items-center gap-1.5">
               <h3 className="text-sm sm:text-base font-black text-white">
-                💰 {activeStation ? `لاكيس ${activeStation.name}` : 'لاكيس المحطات'}
+                {activeStation ? `${t('cashRegister', 'صندوق')} ${activeStation.name}` : t('stationsCashbox', 'صندوق المحطات')}
               </h3>
               <HelpPopover text="اضغط لعرض أرصدة الصناديق (درهم / أوقية)، الإيداع، السحب، الحوالات، وصرف العملة." />
             </div>
@@ -467,7 +792,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               }}
               className="btn-cancel px-2.5 py-1.5 rounded-xl text-[11px] font-black cursor-pointer"
             >
-              الصناديق
+              {t('navCash', 'الصناديق')}
             </button>
             <ChevronDown
               className={`w-5 h-5 text-[#F5C84C] transition-transform duration-200 ${
@@ -479,7 +804,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
         {isCashboxOpen && (
           <div className="pt-3 border-t border-white/15 space-y-3.5 animate-fadeIn">
-            {/* أرصدة الصناديق ديناميكية حسب العملات المتاحة (1 عملة = 1 صندوق، 2 عملات = 2 صناديق، 3 عملات أو أكثر = 3 صناديق) */}
+            {/* أرصدة الصناديق ديناميكية حسب العملات المتاحة */}
             <div className={`grid gap-2.5 ${
               scopedCurrencies.length === 1 ? 'grid-cols-1' :
               scopedCurrencies.length === 2 ? 'grid-cols-2' :
@@ -522,7 +847,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               })}
             </div>
 
-            {/* الأزرار الأربعة المنظمة للعمليات المالية في المحطة (الإيداع والسحب بحجم كبير وبارز) */}
+            {/* الأزرار الأربعة المنظمة للعمليات المالية فالمحطة */}
             <div className="grid grid-cols-2 gap-3 pt-1">
               <button
                 type="button"
@@ -530,7 +855,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 className="btn-hero-action btn-add py-3.5 px-4 rounded-[12px] font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer"
               >
                 <ArrowDownLeft className="w-5 h-5" />
-                <span>➕ إيداع</span>
+                <span>{t('deposit', 'إيداع')}</span>
               </button>
 
               <button
@@ -539,7 +864,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 className="btn-hero-action btn-delete py-3.5 px-4 rounded-[12px] font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer"
               >
                 <ArrowUpRight className="w-5 h-5" />
-                <span>➖ سحب</span>
+                <span>{t('withdraw', 'سحب')}</span>
               </button>
 
               <button
@@ -551,7 +876,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 className="btn-gold py-3 px-3.5 rounded-[12px] font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer relative"
               >
                 <Banknote className="w-4 h-4" />
-                <span>💸 حوالة</span>
+                <span>{t('remittance', 'حوالة')}</span>
                 {scopedPendingHawalas.length > 0 && (
                   <span className="badge-pill px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-black">
                     {scopedPendingHawalas.length}
@@ -569,7 +894,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 }`}
               >
                 <ArrowLeftRight className="w-4 h-4" />
-                <span>💱 صرف عملة</span>
+                <span>{t('currencyExchange', 'صرف عملة')}</span>
               </button>
             </div>
 
@@ -583,72 +908,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         )}
       </div>
 
-      {/* 4. حوالات المحطة الجارية (بزر مستقل لإظهار أو إخفاء السجل) */}
-      {scopedPendingHawalas.length > 0 && (
-        <div className="space-y-2.5">
-          <button
-            type="button"
-            data-btn-role="info"
-            data-btn-role-fixed="true"
-            data-btn-active={isCashboxOpen ? undefined : undefined}
-            data-btn-active-fixed="true"
-            onClick={() => {
-              setHawalaInitialTab('list');
-              setHawalaModalOpen(true);
-            }}
-            className="btn-gold w-full py-3 px-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2 cursor-pointer shadow-md"
-          >
-            <span className="flex items-center gap-2">
-              <Banknote className="w-4 h-4 shrink-0" />
-              <span>💸 سجل الحوالات بانتظار التسليم ({scopedPendingHawalas.length})</span>
-            </span>
-            <span className="text-[11px] font-black">عرض السجل ←</span>
-          </button>
-        </div>
-      )}
+      {/* 4 & 5. الحوالات تدار من زر الحوالة فالصندوق أعلاه، والمحطات تدار من الشريط العلوي الموحد */}
 
-      {/* 5. عند اختيار "الكل" فقط: عرض أسماء المحطات فقط */}
-      {isAllStations && stations.length > 0 && (
-        <div className="luxury-card rounded-[22px] p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Store className="w-4 h-4 text-[#F5C84C]" />
-              <h3 className="text-sm font-black text-white">
-                🏪 المحطات ({stations.length})
-              </h3>
-              <HelpPopover text="اضغط على أي محطة للدخول إليها وحدها وعرض كولياتها وصناديقها فقط." />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            {stations.map(st => {
-              const stParcelsCount = parcels.filter(
-                p => p.origin_station_id === st.id || p.destination_station_id === st.id
-              ).length;
-
-              return (
-                <button
-                  key={st.id}
-                  type="button"
-                  onClick={() => setSelectedStationId(st.id)}
-                  className="btn-cancel rounded-2xl p-3 text-right transition flex items-center justify-between gap-2 cursor-pointer"
-                >
-                  <div className="min-w-0">
-                    <p className="text-xs font-black truncate">
-                      {st.country === 'MA' ? '🇲🇦' : '🇲🇷'} {st.name}
-                    </p>
-                    <p className="text-[10px] opacity-80 mt-0.5 truncate">
-                      {st.city} • {stParcelsCount} كولي
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* 6. بوطونة مستقلة لسجل العمليات المالية (مخفي افتراضياً: كليكي يطلع السجل، كليكي عاود يتخبى) */}
+      {/* 6. بوطونة مستقلة لسجل العمليات المالية */}
       <div className="space-y-2.5">
         <button
           type="button"
@@ -662,10 +924,9 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           <span className="flex items-center gap-2">
             <Clock className="w-4 h-4 shrink-0" />
             <span>
-              📋{' '}
               {activeStation
-                ? `سجل عمليات ${activeStation.name} (${scopedTransactions.length})`
-                : `سجل العمليات المالية (${scopedTransactions.length})`}
+                ? `${t('stationTxs', 'سجل عمليات')} ${activeStation.name} (${scopedTransactions.length})`
+                : `${t('financialTxsRegistry', 'سجل العمليات المالية')} (${scopedTransactions.length})`}
             </span>
           </span>
           <ChevronDown
@@ -711,38 +972,6 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         >
                           {formatAmount(tx.amount, tx.currency, isOut ? '-' : '+')}
                         </span>
-
-                        {isOwner &&
-                          (confirmDeleteTxId === tx.id ? (
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  await deleteTransaction(tx.id);
-                                  setConfirmDeleteTxId(null);
-                                }}
-                                className="btn-delete px-2 py-1 rounded-lg text-[10px] font-black cursor-pointer"
-                              >
-                                تأكيد
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteTxId(null)}
-                                className="btn-cancel px-1.5 py-1 rounded-lg text-[10px] cursor-pointer"
-                              >
-                                إلغاء
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteTxId(tx.id)}
-                              className="btn-delete p-1.5 rounded-lg transition cursor-pointer"
-                              title="حذف العملية"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          ))}
                       </div>
                     </div>
                   );
@@ -753,35 +982,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         )}
       </div>
 
-      {/* Commercial Features: Subscription Management */}
-      {onOpenPlatformOwner && userRole === 'platform_owner' && (
-        <div className="space-y-2.5">
-          <div className="grid grid-cols-1 gap-2.5">
-            <button
-              type="button"
-              onClick={onOpenPlatformOwner}
-              className="luxury-card rounded-[20px] p-3.5 border border-[#D4AF37]/50 hover:border-[#F5C84C] transition flex items-center justify-between gap-2.5 text-right cursor-pointer shadow-lg"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#F5C84C] flex items-center justify-center shrink-0">
-                  <Crown className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-[#F5C84C] truncate">
-                    إدارة اشتراكات الشركات
-                  </p>
-                  <p className="text-[10px] text-white/75 truncate">
-                    تفعيل / توقيف حسابات الشركات المشتركة
-                  </p>
-                </div>
-              </div>
-              <span className="px-2.5 py-1 rounded-lg bg-[#F5C84C] text-slate-950 font-black text-[10px] shrink-0">
-                إدارة
-              </span>
-            </button>
-          </div>
-        </div>
-      )}
+      {/* إدارة اشتراكات الشركات موجودة في الشريط العلوي (زر التاج) وفي الإعدادات بدون تكرار */}
 
       {/* نافذة التنبيه عند تسليم حوالة ولاكيس المحطة خاوية */}
       {pendingPayoutWarningTransfer && (

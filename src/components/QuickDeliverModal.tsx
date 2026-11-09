@@ -437,7 +437,6 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
               title="مسح رمز QR أو باركود الكولي"
             >
               <Scan className="w-4 h-4 text-[#F5C84C]" />
-              <span>📷</span>
             </button>
           </form>
 
@@ -545,7 +544,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
                 className="btn-gold inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm shadow transition active:scale-95 cursor-pointer"
               >
                 <Scan className="w-4 h-4" />
-                <span>📷 مسح باركود الكولي</span>
+                <span>مسح باركود الكولي</span>
               </button>
             </div>
           ) : (
@@ -693,8 +692,8 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
                 <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
                 <span>
                   {isSubmitting 
-                    ? '⏳ جاري التسليم...' 
-                    : `✅ تأكيد تسليم (${selectedParcels.length}) كوليات للزبون`}
+                    ? 'جاري التسليم...' 
+                    : `تأكيد تسليم (${selectedParcels.length}) كوليات للزبون`}
                 </span>
               </button>
             </form>

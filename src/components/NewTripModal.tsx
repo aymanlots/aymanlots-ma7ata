@@ -103,6 +103,8 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
     const validOrigin =
       userRole === 'worker' && userAssignedStationId
         ? userAssignedStationId
+        : selectedStationId && selectedStationId !== 'all' && stations.some(s => s.id === selectedStationId)
+        ? selectedStationId
         : stations.some(s => s.id === originStationId)
         ? originStationId
         : defaultOriginId;
@@ -401,14 +403,15 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
 
           {/* 5. زر التأكيد الكبير فالتحت */}
           <button
-            type="submit"
+            type="button"
+            onClick={handleSubmit}
             disabled={isSubmitting}
             data-btn-role="add"
             data-btn-role-fixed="true"
             className="btn-add w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer shadow-md shrink-0"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>{isSubmitting ? '⏳ جاري الإنشاء...' : '✅ تأكيد وإنشاء الرحلة الآن 🚚'}</span>
+            <span>{isSubmitting ? 'جاري الإنشاء...' : 'تأكيد وإنشاء الرحلة الآن'}</span>
           </button>
         </form>
       </div>

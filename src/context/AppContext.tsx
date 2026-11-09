@@ -40,9 +40,10 @@ import {
   MoneyTransfer,
   ManagerPartnership,
   PartnershipSettlement,
-  PartnershipStationInfo
+  PartnershipStationInfo,
+  AppNotification
 } from '../types/database';
-import { translations } from '../lib/i18n';
+import { SUPPORTED_LANGUAGES, getTranslation, getSavedLanguage, saveLanguage } from '../lib/i18n';
 import { parcelService } from '../services/parcelService';
 import { tripService } from '../services/tripService';
 import { cashService } from '../services/cashService';
@@ -55,6 +56,11 @@ import {
   canControlParcelOrigin,
   canControlParcelDestination,
   canAcceptOrRejectPartnerParcel,
+  validateParcelScanOwnership,
+  isPack2CustomBrandingAllowed,
+  sanitizeOfficialBrandLogo,
+  OFFICIAL_APP_LOGO_PATH,
+  OFFICIAL_APP_BRAND_NAME,
 } from '../utils/logisticsFeatures';
 import { auth as firebaseAuth, googleProvider } from '../lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
@@ -225,6 +231,14 @@ interface AppContextType {
   acceptAllPendingPartnerParcels: (
     parcelIds?: string[]
   ) => Promise<{ success: boolean; acceptedCount: number; error?: string }>;
+  confirmParcelTripArrived: (parcelId: string) => Promise<{ success: boolean; error?: string }>;
+  confirmTripArrivedAtDestination: (tripId: string) => Promise<{ success: boolean; error?: string; trip?: Trip }>;
+
+  // Real-time Notifications (للمدير وللعامل المعني)
+  notifications: AppNotification[];
+  unreadNotificationsCount: number;
+  markAllNotificationsRead: () => void;
+  clearNotifications: () => void;
 
   // Account Terminated Real-time Watchdog Notice
   accountTerminatedNotice: { isOpen: boolean; reason: 'deleted' | 'suspended'; message: string };
@@ -540,25 +554,22 @@ const AppContext = createContext<AppContextType | null>(null);
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const isSupabaseLive = isSupabaseConfigured();
 
-  // Language State - Fixed to Modern Standard Arabic ('ar') as requested
-  const [language, setLanguageState] = useState<Language>('ar');
+  // Language State - Supporting 5 Languages: ar, hassaniya, fr, en, es
+  const [language, setLanguageState] = useState<Language>(() => {
+    return getSavedLanguage();
+  });
 
-  const setLanguage = (_lang: Language) => {
-    setLanguageState('ar');
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    saveLanguage(lang);
   };
 
   useEffect(() => {
-    try {
-      localStorage.setItem('sahara_app_lang', 'ar');
-      document.documentElement.dir = 'rtl';
-      document.documentElement.lang = 'ar';
-    } catch {}
-  }, []);
+    saveLanguage(language);
+  }, [language]);
 
   const t = (key: string, fallback?: string): string => {
-    const dict = (translations as any).ar;
-    if (dict && dict[key]) return dict[key];
-    return fallback !== undefined ? fallback : key;
+    return getTranslation(language, key, fallback);
   };
 
   // Theme Mode: Dark Mode ('dark') is the default on first visit
@@ -830,14 +841,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return tripService.getRememberedPlates();
   });
 
-  // 11. Subscription (Strictly linked to Manager's Workspace)
+  // 11. Subscription (Strictly linked to Manager's Workspace - Single 30-Day Trial Once Only)
   const [subscription, setSubscription] = useState<Subscription | null>(() => {
     const wsId = currentWorkspace?.id || 'ws-default';
+    let fixedCreatedAt = currentWorkspace?.created_at;
+    if (!fixedCreatedAt) {
+      const savedAnchor = localStorage.getItem(`alittihadia_trial_anchor_${wsId}`);
+      if (savedAnchor) {
+        fixedCreatedAt = savedAnchor;
+      } else {
+        fixedCreatedAt = new Date().toISOString();
+        try {
+          localStorage.setItem(`alittihadia_trial_anchor_${wsId}`, fixedCreatedAt);
+        } catch {}
+      }
+    }
     const wsEndDate =
       currentWorkspace?.subscription_end_date ||
-      (currentWorkspace?.created_at
-        ? new Date(new Date(currentWorkspace.created_at).getTime() + 30 * 86400000).toISOString()
-        : undefined);
+      new Date(new Date(fixedCreatedAt).getTime() + 30 * 86400000).toISOString();
     const saved = localStorage.getItem('aman_subscription');
     if (saved) {
       try {
@@ -848,7 +869,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             workspace_id: wsId,
             team_id: wsId,
             status: currentWorkspace?.subscription_status || parsed.status || 'active',
-            end_date: currentWorkspace?.subscription_end_date || parsed.end_date,
+            end_date: currentWorkspace?.subscription_end_date || parsed.end_date || wsEndDate,
           };
         }
       } catch {}
@@ -858,9 +879,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       workspace_id: wsId,
       team_id: wsId,
       status: currentWorkspace?.subscription_status || 'active',
-      start_date: currentWorkspace?.created_at || new Date().toISOString(),
-      end_date: wsEndDate || new Date(Date.now() + 30 * 86400000).toISOString(),
-      created_at: currentWorkspace?.created_at || new Date().toISOString(),
+      start_date: fixedCreatedAt,
+      end_date: wsEndDate,
+      created_at: fixedCreatedAt,
     };
   });
 
@@ -932,11 +953,92 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     activityLabel?: string;
   }[]>([]);
 
-  const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
+  const [selectedStationIdState, setSelectedStationIdState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('alittihadia_selected_station_id') || null;
+    } catch {
+      return null;
+    }
+  });
+  const setSelectedStationId = useCallback((id: string | null) => {
+    setSelectedStationIdState(id);
+    try {
+      if (id) {
+        localStorage.setItem('alittihadia_selected_station_id', id);
+      } else {
+        localStorage.removeItem('alittihadia_selected_station_id');
+      }
+    } catch {}
+  }, []);
+  const selectedStationId = selectedStationIdState;
   const [isPlatformOwner, setIsPlatformOwner] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const isOnline = useOnlineStatus();
   const realtimeChannelRef = useRef<any>(null);
+
+  // 17. Real-time In-App Notifications State (للمدير وللعامل المعني)
+  const [allNotifications, setAllNotifications] = useState<AppNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem('alittihadia_notifications_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  const pushNotification = useCallback(
+    (params: {
+      workspace_id?: string;
+      target_station_id?: string | null;
+      target_role?: 'owner' | 'worker' | 'all';
+      title: string;
+      message: string;
+      type?: AppNotification['type'];
+      parcel_id?: string;
+      trip_id?: string;
+      partnership_id?: string;
+    }) => {
+      const wsId = params.workspace_id || currentWorkspace?.id || 'ws-default';
+      const newNotif: AppNotification = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        workspace_id: wsId,
+        target_station_id: params.target_station_id || null,
+        target_role: params.target_role || 'all',
+        title: params.title,
+        message: params.message,
+        type: params.type || 'partnership',
+        is_read: false,
+        created_at: new Date().toISOString(),
+        parcel_id: params.parcel_id,
+        trip_id: params.trip_id,
+        partnership_id: params.partnership_id,
+      };
+      setAllNotifications((prev) => {
+        const next = [newNotif, ...prev].slice(0, 120);
+        try {
+          localStorage.setItem('alittihadia_notifications_v1', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    },
+    [currentWorkspace?.id]
+  );
+
+  // Cross-tab synchronization for notifications
+  useEffect(() => {
+    const handleStorageNotif = (e: StorageEvent) => {
+      if (e.key === 'alittihadia_notifications_v1' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setAllNotifications(parsed);
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageNotif);
+    return () => window.removeEventListener('storage', handleStorageNotif);
+  }, []);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
@@ -969,8 +1071,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             plan_name:
               item.plan_name ||
               (item.plan_tier === 'plan_2_two_stations'
-                ? 'الباك الأول (99 درهم — محطتين)'
-                : 'الباك الثاني (199 درهم — الباقة الشاملة)'),
+                ? 'الباك الأول (149 درهم — محطتين)'
+                : 'الباك الثاني (299 درهم — الباقة الشاملة)'),
             max_workers: item.max_workers ?? (item.plan_tier === 'plan_2_two_stations' ? 2 : 999),
             max_stations: item.max_stations ?? (item.plan_tier === 'plan_2_two_stations' ? 2 : 999),
             max_collaborations: item.max_collaborations ?? 99,
@@ -986,8 +1088,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             plan_name:
               item.plan_name ||
               (item.plan_tier === 'plan_2_two_stations'
-                ? 'الباك الأول (99 درهم — محطتين)'
-                : 'الباك الثاني (199 درهم — الباقة الشاملة)'),
+                ? 'الباك الأول (149 درهم — محطتين)'
+                : 'الباك الثاني (299 درهم — الباقة الشاملة)'),
             start_date: item.created_at || new Date().toISOString(),
             end_date: endDate,
             is_trial: false,
@@ -1129,8 +1231,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           plan_name:
             item.plan_name ||
             (item.plan_tier === 'plan_2_two_stations'
-              ? 'الباك الأول (99 درهم — محطتين)'
-              : 'الباك الثاني (199 درهم — الباقة الشاملة)'),
+              ? 'الباك الأول (149 درهم — محطتين)'
+              : 'الباك الثاني (299 درهم — الباقة الشاملة)'),
           start_date: item.created_at || new Date().toISOString(),
           end_date: endDate,
           is_trial: false,
@@ -1472,12 +1574,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, [currentUser?.id, currentWorkspace?.id, loadWorkspaceFromCloud]);
 
-  // Determine User Role in current workspace:
-  // - platform_owner: مالك المنصة
-  // - owner: المدير العام (يتحكم في كل المحطات، يضيف ويحذف محطات ومدراء)
-  // - admin: مدير المحطة (يتحكم فقط في محطته المعين بها، يضيف عمال محطته، يشوف سجلاتها ويقبل عملياتها)
-  // - worker: العامل (يشتغل فقط في محطته ولا يملك صلاحية حذف سجلات أو محطات أو عمال)
-  const userRole: UserRole = useMemo(() => {
+  // Determine User Role in current workspace (3 Strict Roles):
+  // 1. platform_owner: Super Admin (صاحب التطبيق 0618961387)
+  // 2. owner: Admin (مول الشركة، اللي كيدير الاشتراك وكيتحكم فالمحطات والعمال ديالو)
+  // 3. worker: User (العامل، كيخدم غير فالمحطة ديالو اللي عطاه ليها الـ Admin)
+  const userRole: UserRole = useMemo<UserRole>(() => {
     if (!currentUser) return 'worker';
     
     // الأمان المحكم: دور مالك المنصة يأتي حصراً من جدول platform_owners عبر دالة RPC آمنة في السحابة، وليس من localStorage أبداً
@@ -1485,15 +1586,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return 'platform_owner';
     }
     if (!currentWorkspace) return 'owner';
+    if (currentWorkspace.created_by === currentUser.id) return 'owner';
     const member = workspaceMembers.find(m => m.user_id === currentUser.id && m.status === 'active');
-    if (member?.role === 'owner') return 'owner';
-    if (member?.role === 'admin') return 'admin';
-    return member?.role || (currentWorkspace.created_by === currentUser.id ? 'owner' : 'worker');
+    if (member?.role === 'owner' || member?.role === 'admin') return 'owner';
+    if (member?.role === 'worker') return 'worker';
+    return 'owner';
   }, [currentUser, currentWorkspace, workspaceMembers, isPlatformOwner]);
 
-  // الباك الأول (99 درهم): محطتين (2) فقط + عامل واحد (1) لكل محطة + الملصقات والبونات باسم ولوغو التطبيق الرسمي
+  // الباك الأول (149 درهم): محطتين (2) فقط + 2 عمال + الملصقات والبونات باسم ولوغو التطبيق الرسمي
   const isPlan2TwoStations = useMemo(() => {
     if (!currentWorkspace) return false;
+    const pName = (currentWorkspace.plan_name || '').trim();
+    if (pName.includes('تجريبي') || pName.includes('30 يوم') || pName.includes('مجاناً')) {
+      return false;
+    }
     return currentWorkspace.plan_tier === 'plan_2_two_stations';
   }, [currentWorkspace]);
 
@@ -1510,7 +1616,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return wsStations.slice(0, 2);
   }, [stations, isPlan2TwoStations, currentWorkspace?.id]);
 
-  // Determine user's assigned station if worker or station manager (admin)
+  // Determine user's assigned station if worker (User = العامل)
   const rawAssignedWorkerStationId = useMemo(() => {
     if (!currentUser) return null;
     const assignment = stationWorkers.find(sw => sw.user_id === currentUser.id);
@@ -1523,29 +1629,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   }, [currentUser, stationWorkers, workspaceMembers]);
 
-  // فحص صارم: هل تم حذف أو إيقاف المحطة المخصصة للعامل أو مدير المحطة من طرف المدير العام؟
-  // إذا تم مسح المحطة، يتجمد كل من العامل ومدير المحطة فوراً ويتوقف كل شيء
+  // فحص صارم للعامل فقط: هل تم حذف أو إيقاف المحطة المخصصة للعامل من طرف الـ Admin؟
   const isWorkerStationDeleted = useMemo(() => {
     if (!currentUser) return false;
-    // المدير العام لا يرتبط بمحطة واحدة، بينما مدير المحطة والعامل يرتبطان بمحطتهما المحددة
-    if (userRole !== 'worker' && userRole !== 'admin') return false;
-    // إذا لم تكن هناك محطة معينة نهائياً
+    if (userRole !== 'worker') return false;
     if (!rawAssignedWorkerStationId) return true;
-    // إذا كانت المحطة مسجلة في قائمة المحطات المحذوفة من طرف المدير العام
     if (deletedStationIds.includes(rawAssignedWorkerStationId)) return true;
-    // إذا كانت قائمة المحطات غير فارغة والمحطة لم تعد موجودة فيها
     if (visibleStations.length > 0 && !visibleStations.some(s => s.id === rawAssignedWorkerStationId)) {
       return true;
     }
-    // إذا قام المدير العام بمسح جميع المحطات
     if (visibleStations.length === 0) return true;
     return false;
   }, [currentUser, userRole, rawAssignedWorkerStationId, deletedStationIds, visibleStations]);
 
   const userAssignedStationId = useMemo(() => {
     if (!currentUser) return null;
-    if (userRole === 'worker' || userRole === 'admin') {
-      // إذا تم حذف المحطة من طرف المدير العام، يصبح العامل أو مدير المحطة بدون محطة ويتم تجميده فوراً
+    if (userRole === 'worker') {
       if (isWorkerStationDeleted) return null;
       return rawAssignedWorkerStationId;
     }
@@ -1553,21 +1652,80 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [currentUser, userRole, isWorkerStationDeleted, rawAssignedWorkerStationId, visibleStations]);
 
   useEffect(() => {
-    if (userRole === 'worker' || userRole === 'admin') {
+    if (userRole === 'worker') {
       if (isWorkerStationDeleted || !userAssignedStationId) {
-        setSelectedStationId(null);
+        setSelectedStationIdState(null);
       } else {
-        setSelectedStationId(userAssignedStationId);
+        setSelectedStationIdState(userAssignedStationId);
       }
     } else if (visibleStations.length === 0) {
-      if (selectedStationId !== null) setSelectedStationId(null);
+      if (selectedStationId !== null) setSelectedStationIdState(null);
     } else if (selectedStationId === 'all') {
-      // الحفاظ على اختيار "كافة المحطات" للمدير بدون إعادة التعيين التلقائي للمحطة الأولى
+      // الحفاظ على اختيار "كل المحطات" للمدير بدون إعادة التعيين التلقائي للمحطة الأولى
       return;
-    } else if (!selectedStationId || !visibleStations.some(s => s.id === selectedStationId)) {
-      setSelectedStationId(visibleStations[0]?.id || null);
+    } else if (selectedStationId && visibleStations.some(s => s.id === selectedStationId)) {
+      // المحطة المختارة موجودة وصحيحة — تبقى مفتوحة الفوق كما هي
+      return;
+    } else {
+      let savedId: string | null = null;
+      try {
+        savedId = localStorage.getItem('alittihadia_selected_station_id');
+      } catch {}
+      if (savedId === 'all' || (savedId && visibleStations.some(s => s.id === savedId))) {
+        setSelectedStationIdState(savedId);
+      } else {
+        setSelectedStationId(visibleStations[0]?.id || null);
+      }
     }
-  }, [userRole, userAssignedStationId, isWorkerStationDeleted, visibleStations, selectedStationId]);
+  }, [userRole, userAssignedStationId, isWorkerStationDeleted, visibleStations, selectedStationId, setSelectedStationId]);
+
+  // Filtered Notifications for Current User (Manager sees workspace notifications scoped to selected station; Worker sees notifications for their assigned station)
+  const notifications: AppNotification[] = useMemo(() => {
+    if (!currentWorkspace) return [];
+    const wsId = currentWorkspace.id;
+    return allNotifications.filter((n) => {
+      if (n.workspace_id !== wsId) return false;
+      if (userRole === 'worker') {
+        if (n.target_role === 'owner') return false;
+        if (n.target_station_id && userAssignedStationId && n.target_station_id !== userAssignedStationId) {
+          return false;
+        }
+      } else if (selectedStationId && selectedStationId !== 'all') {
+        if (n.target_station_id && n.target_station_id !== selectedStationId) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [allNotifications, currentWorkspace, userRole, userAssignedStationId, selectedStationId]);
+
+  const unreadNotificationsCount = useMemo(() => {
+    return notifications.filter((n) => !n.is_read).length;
+  }, [notifications]);
+
+  const markAllNotificationsRead = useCallback(() => {
+    if (!currentWorkspace) return;
+    const wsId = currentWorkspace.id;
+    setAllNotifications((prev) => {
+      const next = prev.map((n) => (n.workspace_id === wsId ? { ...n, is_read: true } : n));
+      try {
+        localStorage.setItem('alittihadia_notifications_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, [currentWorkspace]);
+
+  const clearNotifications = useCallback(() => {
+    if (!currentWorkspace) return;
+    const wsId = currentWorkspace.id;
+    setAllNotifications((prev) => {
+      const next = prev.filter((n) => n.workspace_id !== wsId);
+      try {
+        localStorage.setItem('alittihadia_notifications_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, [currentWorkspace]);
 
   // ============================================================================
   // MULTI-ADMIN ISOLATION & OPTIONAL COLLABORATION FILTERING
@@ -1587,11 +1745,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // If worker: strictly isolate to their assigned station in their own workspace
       if (userRole === 'worker') {
         if (!userAssignedStationId || tx.station_id !== userAssignedStationId) return false;
+      } else if (selectedStationId && selectedStationId !== 'all') {
+        // When Admin switches to a specific station in the top bar, show only that station's transactions
+        if (tx.station_id !== selectedStationId) return false;
       }
 
       return true;
     });
-  }, [currentWorkspace, allTransactions, userRole, userAssignedStationId]);
+  }, [currentWorkspace, allTransactions, userRole, userAssignedStationId, selectedStationId]);
 
   // Strictly isolate visible workspace members to currentWorkspace only so no admin or worker sees members of another workspace
   // And attach station_id from stationWorkers. If on الباك الثاني (عامل واحد لكل محطة), cap workers to 1 per active station.
@@ -1613,10 +1774,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!isPlan2TwoStations) return rawMembers;
 
     const activeStationIds = new Set(visibleStations.map(s => s.id));
-    const occupiedStations = new Set<string>();
     // Sort so real (non-demo) workers take priority over demo workers
     const sorted = [...rawMembers].sort((a, b) => Number(Boolean(a.is_demo)) - Number(Boolean(b.is_demo)));
     const allowedIds = new Set<string>();
+    let activeWorkersCount = 0;
 
     for (const m of sorted) {
       if (m.role === 'admin' || m.role === 'owner') {
@@ -1625,9 +1786,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       const stId = m.station_id || visibleStations[0]?.id || '';
       if (!activeStationIds.has(stId)) continue;
-      if (occupiedStations.has(stId)) continue;
-      if (occupiedStations.size >= 2) continue;
-      occupiedStations.add(stId);
+      if (activeWorkersCount >= 2) continue;
+      activeWorkersCount++;
       allowedIds.add(m.user_id);
     }
 
@@ -1663,15 +1823,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         // منع مشاركة البيانات التجريبية مع المدراء المتعاونين نهائياً
         if (pWs !== myWsId && p.is_demo) return false;
 
-        // If worker: strictly isolate to parcels originating or arriving at their specific assigned station (including partnership parcels)
+        // If worker: strictly isolate to parcels originating at their station, or shipped parcels arriving at their station
         if (userRole === 'worker') {
           if (pWs !== myWsId) return false;
           if (!userAssignedStationId) return false;
           const isOrigin = p.origin_station_id === userAssignedStationId;
-          const isDest =
-            p.destination_station_id === userAssignedStationId ||
-            p.partner_destination_station_id === userAssignedStationId;
-          if (!isOrigin && !isDest) return false;
+          const isShippedToDest =
+            (p.destination_station_id === userAssignedStationId ||
+              p.partner_destination_station_id === userAssignedStationId) &&
+            p.status !== 'registered' &&
+            p.status !== 'pending';
+          if (!isOrigin && !isShippedToDest) return false;
+        } else if (selectedStationId && selectedStationId !== 'all') {
+          // When Admin switches to a specific station in the top bar, show strictly that station's own parcels (plus shipped incoming parcels)
+          const isOrigin = p.origin_station_id === selectedStationId;
+          const isShippedToDest =
+            (p.destination_station_id === selectedStationId ||
+              p.partner_destination_station_id === selectedStationId) &&
+            p.status !== 'registered' &&
+            p.status !== 'pending';
+          if (!isOrigin && !isShippedToDest) return false;
         }
 
         return true;
@@ -1687,10 +1858,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
           : p;
       });
-  }, [currentWorkspace, collaborations, allParcels, userRole, userAssignedStationId]);
+  }, [currentWorkspace, collaborations, allParcels, userRole, userAssignedStationId, selectedStationId]);
 
   // Visible Trips:
-  // Strictly isolated: Workers only see trips originating from or heading to their assigned station!
+  // Strictly isolated: Workers only see trips originating from or heading to their assigned station; Admin sees selected station's trips when switched!
   const trips: Trip[] = useMemo(() => {
     if (!currentWorkspace) return [];
     const myWsId = currentWorkspace.id;
@@ -1700,21 +1871,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (!userAssignedStationId) return false;
         const isOrigin = t.origin_station_id === userAssignedStationId;
         const isDest =
-          t.destination_station_id === userAssignedStationId ||
-          t.partner_destination_station_id === userAssignedStationId;
+          (t.destination_station_id === userAssignedStationId ||
+            t.partner_destination_station_id === userAssignedStationId) &&
+          t.status !== 'loading';
+        if (!isOrigin && !isDest) return false;
+      } else if (selectedStationId && selectedStationId !== 'all') {
+        const isOrigin = t.origin_station_id === selectedStationId;
+        const isDest =
+          (t.destination_station_id === selectedStationId ||
+            t.partner_destination_station_id === selectedStationId) &&
+          t.status !== 'loading';
         if (!isOrigin && !isDest) return false;
       }
       return true;
     });
-  }, [currentWorkspace, allTrips, userRole, userAssignedStationId]);
+  }, [currentWorkspace, allTrips, userRole, userAssignedStationId, selectedStationId]);
 
   useEffect(() => {
     storageService.set('TRIPS', allTrips);
   }, [allTrips]);
 
-  // Station Balances Calculation (Strictly Real Transactions Only)
+  // Station Balances Calculation (Strictly Real Transactions Only, Isolated per station_id)
   const stationBalances = useMemo(() => {
     const balances: Record<string, Record<string, number>> = {};
+    const myWsId = currentWorkspace?.id;
 
     stations.forEach(s => {
       balances[s.id] = {};
@@ -1723,8 +1903,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     });
 
-    transactions.forEach(tx => {
+    allTransactions.forEach(tx => {
       if (tx.status !== 'confirmed' || tx.deleted_at) return;
+      const txWs = tx.workspace_id || tx.team_id || '';
+      if (myWsId && txWs && txWs !== myWsId) return;
+      if (!tx.station_id) return;
       if (!balances[tx.station_id]) {
         balances[tx.station_id] = {};
       }
@@ -1748,7 +1931,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     return balances;
-  }, [stations, currencies, transactions]);
+  }, [stations, currencies, allTransactions, currentWorkspace]);
 
   // Local Storage Persistence
   useEffect(() => {
@@ -2120,7 +2303,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }).catch(() => {});
 
-    // 2. Real-time subscription from Firebase Firestore (reflects additions, edits, AND deletions/wipes immediately)
+    // 2. Real-time subscription from Firebase Firestore (reflects additions, edits, AND deletions/wipes immediately across all users in the room)
     const unsubscribe = firebaseSyncService.subscribeToWorkspace(wsId, {
       onWorkspace: (remoteWs) => {
         if (!remoteWs) return;
@@ -2133,6 +2316,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           storageService.remove('TRIPS');
         }
         setCurrentWorkspace(prev => (prev ? { ...prev, ...remoteWs } : remoteWs));
+        try {
+          if (remoteWs.custom_brand_name !== undefined || remoteWs.custom_brand_logo_url !== undefined) {
+            const cleanLogo = sanitizeOfficialBrandLogo(remoteWs.custom_brand_logo_url);
+            localStorage.setItem(
+              `alittihadia_branding_${wsId}`,
+              JSON.stringify({
+                custom_brand_name: remoteWs.custom_brand_name || '',
+                custom_brand_subtitle: remoteWs.custom_brand_subtitle || '',
+                custom_brand_phone: remoteWs.custom_brand_phone || '',
+                custom_brand_logo_url: cleanLogo,
+              })
+            );
+            localStorage.setItem(
+              'alittihadia_sticker_branding_v1',
+              JSON.stringify({
+                agencyName: remoteWs.custom_brand_name || remoteWs.name || OFFICIAL_APP_BRAND_NAME,
+                agencyPhone: remoteWs.custom_brand_phone || remoteWs.owner_phone || '',
+                logoUrl: cleanLogo,
+              })
+            );
+            window.dispatchEvent(new Event('sticker-branding-updated'));
+          }
+        } catch {}
         if (remoteWs.subscription_end_date || remoteWs.created_at) {
           setSubscription(prev => ({
             id: prev?.id || `sub-${wsId}`,
@@ -2160,6 +2366,71 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           localStorage.setItem(`alittihadia_guided_tour_completed_${wsId}`, 'true');
         }
         setStations(cleanList);
+        setSelectedStationIdState(prevSelected => {
+          if (prevSelected && prevSelected !== 'all' && !cleanList.some(s => s.id === prevSelected)) {
+            return cleanList.length > 0 ? 'all' : null;
+          }
+          return prevSelected;
+        });
+
+        // Cascade any renamed station names into parcels, transactions, and hawalas immediately
+        if (cleanList.length > 0) {
+          const stNameMap = new Map<string, string>(cleanList.map(s => [s.id, s.name]));
+          setAllParcels(prev => {
+            let changedAny = false;
+            const next = prev.map(p => {
+              let changed = false;
+              const np = { ...p };
+              const newOrig = stNameMap.get(p.origin_station_id);
+              if (newOrig && np.origin_station_name !== newOrig) {
+                np.origin_station_name = newOrig;
+                changed = true;
+              }
+              const newDest = stNameMap.get(p.destination_station_id);
+              if (newDest && np.destination_station_name !== newDest) {
+                np.destination_station_name = newDest;
+                changed = true;
+              }
+              if (changed) changedAny = true;
+              return changed ? np : p;
+            });
+            if (changedAny) {
+              allParcelsRef.current = next;
+              return next;
+            }
+            return prev;
+          });
+          setAllTransactions(prev => {
+            let changedAny = false;
+            const next = prev.map(tx => {
+              let changed = false;
+              const ntx = { ...tx };
+              const newStName = stNameMap.get(tx.station_id);
+              if (newStName && ntx.station_name !== newStName) {
+                ntx.station_name = newStName;
+                changed = true;
+              }
+              if (ntx.hawala_meta) {
+                const newHOrig = stNameMap.get(ntx.hawala_meta.origin_station_id);
+                const newHDest = stNameMap.get(ntx.hawala_meta.destination_station_id);
+                if (
+                  (newHOrig && ntx.hawala_meta.origin_station_name !== newHOrig) ||
+                  (newHDest && ntx.hawala_meta.destination_station_name !== newHDest)
+                ) {
+                  ntx.hawala_meta = {
+                    ...ntx.hawala_meta,
+                    origin_station_name: newHOrig || ntx.hawala_meta.origin_station_name,
+                    destination_station_name: newHDest || ntx.hawala_meta.destination_station_name,
+                  };
+                  changed = true;
+                }
+              }
+              if (changed) changedAny = true;
+              return changed ? ntx : tx;
+            });
+            return changedAny ? next : prev;
+          });
+        }
       },
       onParcels: (remoteParcels) => {
         const cleanParcels = (remoteParcels || []).map(p => ({
@@ -2168,10 +2439,79 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           team_id: wsId,
         }));
         setAllParcels(prev => {
+          const prevById = new Map<string, Parcel>(prev.map(item => [item.id, item]));
+          for (const rp of cleanParcels) {
+            const oldP = prevById.get(rp.id);
+            const targetStId = rp.partner_destination_station_id || rp.destination_station_id || rp.origin_station_id;
+            if (!oldP && (rp.is_partnership_parcel || rp.partner_origin_workspace_id)) {
+              pushNotification({
+                workspace_id: wsId,
+                target_station_id: targetStId,
+                target_role: 'all',
+                title: `📦 طلب كولية شراكة جديد [${rp.tracking_code}]`,
+                message: `كولية واردة من "${rp.partner_origin_workspace_name || rp.origin_station_name}" نحو محطة "${rp.destination_station_name}" (المستلم: ${rp.receiver_name})`,
+                type: 'parcel',
+                parcel_id: rp.id,
+              });
+            } else if (oldP) {
+              if (oldP.partner_acceptance_status !== rp.partner_acceptance_status) {
+                if (rp.partner_acceptance_status === 'accepted') {
+                  pushNotification({
+                    workspace_id: wsId,
+                    target_station_id: targetStId,
+                    target_role: 'all',
+                    title: `✅ تم قبول الكولية [${rp.tracking_code}] في الشراكة`,
+                    message: `وافق المدير في محطة "${rp.destination_station_name}" على استقبال الكولية — جاهزة للرحلة والشحن`,
+                    type: 'parcel',
+                    parcel_id: rp.id,
+                  });
+                } else if (rp.partner_acceptance_status === 'rejected') {
+                  pushNotification({
+                    workspace_id: wsId,
+                    target_station_id: targetStId,
+                    target_role: 'all',
+                    title: `❌ تم رفض الكولية [${rp.tracking_code}]`,
+                    message: `تم رفض الكولية من طرف محطة "${rp.destination_station_name}"${rp.partner_rejection_reason ? ` — السبب: ${rp.partner_rejection_reason}` : ''}`,
+                    type: 'parcel',
+                    parcel_id: rp.id,
+                  });
+                }
+              } else if (!oldP.trip_arrived_at && rp.trip_arrived_at) {
+                pushNotification({
+                  workspace_id: wsId,
+                  target_station_id: targetStId,
+                  target_role: 'all',
+                  title: `🏁 وصلات الكولية [${rp.tracking_code}] للمحطة`,
+                  message: `وصلت رحلة الكولية إلى محطة "${rp.destination_station_name}" — بانتظار التفريغ في الستوك`,
+                  type: 'parcel',
+                  parcel_id: rp.id,
+                });
+              } else if (oldP.status !== rp.status) {
+                const statusMapAr: Record<string, string> = {
+                  in_transit: '🚚 انطلقت في الرحلة (في الطريق)',
+                  arrived: '📥 تم تفريغها في ستوك المحطة',
+                  delivered: '✅ تم تسليمها النهائي للمستلم',
+                };
+                if (statusMapAr[rp.status]) {
+                  pushNotification({
+                    workspace_id: wsId,
+                    target_station_id: targetStId,
+                    target_role: 'all',
+                    title: `${statusMapAr[rp.status]} — [${rp.tracking_code}]`,
+                    message: `الكولية (${rp.origin_station_name} ➔ ${rp.destination_station_name}) للمستلم: ${rp.receiver_name}`,
+                    type: 'parcel',
+                    parcel_id: rp.id,
+                  });
+                }
+              }
+            }
+          }
           const otherWsParcels = prev.filter(p => p.workspace_id && p.workspace_id !== wsId && p.team_id !== wsId);
-          return [...cleanParcels, ...otherWsParcels].sort(
+          const mergedList = [...cleanParcels, ...otherWsParcels].sort(
             (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
+          allParcelsRef.current = mergedList;
+          return mergedList;
         });
       },
       onTransactions: (remoteTxs) => {
@@ -2184,11 +2524,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const cleanTrips = (remoteTrips || [])
           .map(t => ({ ...t, workspace_id: wsId }))
           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        setAllTrips(cleanTrips);
+        allTripsRef.current = cleanTrips;
+        setAllTrips(prev => {
+          const prevMap = new Map<string, Trip>(prev.map(item => [item.id, item]));
+          for (const rt of cleanTrips) {
+            const oldT = prevMap.get(rt.id);
+            const targetSt = rt.partner_destination_station_id || rt.destination_station_id;
+            if (!oldT && rt.status === 'departed') {
+              pushNotification({
+                workspace_id: wsId,
+                target_station_id: targetSt,
+                target_role: 'all',
+                title: `🚚 رحلة شحن قادمة [${rt.trip_code}]`,
+                message: `انطلقت رحلة السائق ${rt.driver_name} من "${rt.origin_station_name}" نحو "${rt.destination_station_name}" (${rt.loaded_parcel_ids?.length || 0} كوليات)`,
+                type: 'trip',
+                trip_id: rt.id,
+              });
+            } else if (oldT && oldT.status !== rt.status && rt.status === 'arrived') {
+              pushNotification({
+                workspace_id: wsId,
+                target_station_id: targetSt,
+                target_role: 'all',
+                title: `🏁 وصلات الرحلة [${rt.trip_code}]`,
+                message: `وصلت رحلة السائق ${rt.driver_name} إلى محطة "${rt.destination_station_name}"`,
+                type: 'trip',
+                trip_id: rt.id,
+              });
+            }
+          }
+          return cleanTrips;
+        });
       },
       onMembers: (remoteMembers) => {
-        if (remoteMembers && remoteMembers.length > 0) {
-          const syncedMembers = remoteMembers.map(m => ({ ...m, workspace_id: wsId }));
+        if (Array.isArray(remoteMembers)) {
+          const syncedMembers = remoteMembers
+            .filter(m => !(m as any).deleted && m.status === 'active')
+            .map(m => ({ ...m, workspace_id: wsId }));
           setWorkspaceMembers(syncedMembers);
           setStationWorkers(
             syncedMembers
@@ -2205,9 +2576,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       },
     });
 
+    // 3. Universal Cross-Tab Instant Sync (for all users/tabs on the same browser without refresh)
+    const handleUniversalTabStorageSync = (e: StorageEvent) => {
+      if (!e.newValue) return;
+      try {
+        if (e.key === 'aman_stations') {
+          const updatedStations = JSON.parse(e.newValue) as Station[];
+          setStations(updatedStations);
+        } else if (e.key === 'aman_deleted_station_ids') {
+          const updatedDeleted = JSON.parse(e.newValue) as string[];
+          setDeletedStationIds(updatedDeleted);
+        } else if (e.key === 'aman_workspace_members') {
+          const updatedMembers = JSON.parse(e.newValue) as WorkspaceMember[];
+          setWorkspaceMembers(updatedMembers);
+        } else if (e.key === 'aman_station_workers') {
+          const updatedSw = JSON.parse(e.newValue) as StationWorker[];
+          setStationWorkers(updatedSw);
+        } else if (e.key === 'ittihadiya_parcels') {
+          const updatedParcels = JSON.parse(e.newValue) as Parcel[];
+          allParcelsRef.current = updatedParcels;
+          setAllParcels(updatedParcels);
+        } else if (e.key === 'aman_transactions') {
+          const updatedTxs = JSON.parse(e.newValue) as Transaction[];
+          setAllTransactions(updatedTxs);
+        } else if (e.key === 'aman_workspace') {
+          const updatedWs = JSON.parse(e.newValue) as Workspace;
+          if (updatedWs && updatedWs.id === wsId) {
+            setCurrentWorkspace(updatedWs);
+          }
+        }
+      } catch {}
+    };
+    window.addEventListener('storage', handleUniversalTabStorageSync);
+
     return () => {
       isCancelled = true;
       unsubscribe();
+      window.removeEventListener('storage', handleUniversalTabStorageSync);
     };
   }, [currentWorkspace?.id]);
 
@@ -2225,8 +2630,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (!isWorkerSession) return;
 
-    // 1. Check local revocation list
-    if (isAccountRevokedLocally(currentUser.id, currentUser.phone)) {
+    // 1. Check local revocation list or if assigned station was deleted (إلا مسح محطة، تمسح من كلشي، والعامل ديالها يخرج)
+    if (
+      isAccountRevokedLocally(currentUser.id, currentUser.phone) ||
+      (rawAssignedWorkerStationId &&
+        (deletedStationIds.includes(rawAssignedWorkerStationId) ||
+          (stations.length > 0 && !stations.some(s => s.id === rawAssignedWorkerStationId))))
+    ) {
       forceRevokedWorkerLogout();
       return;
     }
@@ -2256,6 +2666,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     currentWorkspace,
     workspaceMembers,
     isPlatformOwner,
+    rawAssignedWorkerStationId,
+    deletedStationIds,
+    stations,
     isAccountRevokedLocally,
     forceRevokedWorkerLogout,
   ]);
@@ -2410,12 +2823,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    // 3. Check workspace subscription (blocks BOTH Admin/Manager and Worker from adding, sending, or receiving anything)
+        // 3. Check workspace subscription (Post-Expiry Read-Only Mode: blocks adding/editing/deleting while keeping 100% of data visible for viewing)
     if (isSubscriptionExpired) {
       const msg =
         effectiveSubscriptionStatus === 'suspended'
-          ? 'تم تعليق اشتراك مساحة العمل: لا يمكن للمدير أو العامل إضافة أو إرسال أو استقبال أي عملية حتى يتم تفعيل الاشتراك.'
-          : 'انتهت فترة الـ 30 يوماً للاشتراك: لا يمكن للمدير أو العامل إضافة أو إرسال أو استقبال أي شيء حتى يتم تجديد الاشتراك.';
+          ? '⛔ تم تعليق اشتراك مساحة العمل: الحساب في وضع المشاهدة فقط ولا يمكن إضافة أو تعديل أو حذف أي عملية حتى تفعيل الاشتراك.'
+          : '🔒 انتهت الفترة التجريبية (30 يوماً) — حسابك الآن في وضع المشاهدة فقط (بياناتك وسجلاتك محفوظة بالكامل 100%). يرجى تجديد الاشتراك (الباك الأول 149 درهم أو الباك الثاني 299 درهم) لإضافة أو تعديل العمليات.';
       showToast(msg, 'error');
       return { allowed: false, error: msg };
     }
@@ -2446,9 +2859,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return Math.max(1, Math.ceil(secondsUntilExpiry / 86400));
   }, [secondsUntilExpiry]);
 
+  // Automatic 3-Day Pre-Expiry Notification Alert (Requirement 5)
+  useEffect(() => {
+    if (!currentWorkspace || !currentUser) return;
+    if (!isSubscriptionExpired && daysUntilExpiry > 0 && daysUntilExpiry <= 3) {
+      const warnKey = `alittihadia_3day_warn_${currentWorkspace.id}_${daysUntilExpiry}`;
+      if (!localStorage.getItem(warnKey)) {
+        try {
+          localStorage.setItem(warnKey, 'true');
+        } catch {}
+        pushNotification({
+          workspace_id: currentWorkspace.id,
+          target_role: 'all',
+          title: `⏳ تنبيه: متبقي ${daysUntilExpiry} أيام على انتهاء الفترة التجريبية`,
+          message: `يرجى تجديد الاشتراك (الباك الأول 149 درهم أو الباك الثاني 299 درهم) لتفادي تحول الحساب إلى وضع المشاهدة فقط.`,
+          type: 'subscription',
+        });
+      }
+    }
+  }, [currentWorkspace?.id, currentUser?.id, isSubscriptionExpired, daysUntilExpiry, pushNotification]);
+
   const subscriptionRemainingLabel = useMemo(() => {
     if (isSubscriptionExpired || secondsUntilExpiry <= 0) {
-      return 'منتهٍ (00:00)';
+      return 'منتهٍ (وضع المشاهدة فقط)';
     }
     if (secondsUntilExpiry <= 3600) {
       const mins = Math.floor(secondsUntilExpiry / 60);
@@ -3644,7 +4077,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const activeWorkers = visibleWorkspaceMembers.filter(m => m.role === 'worker' && m.status === 'active' && !m.is_demo);
     if (activeWorkers.length >= maxWorkers) {
       const msg = isPlan2TwoStations
-        ? 'تم بلوغ الحد الأقصى للعمال في الباك الأول (99 درهم): عاملان فقط (عامل واحد في كل محطة من المحطتين). يرجى الترقية إلى الباك الثاني (199 درهم) لإضافة عمال إضافيين.'
+        ? 'تم بلوغ الحد الأقصى للعمال في الباك الأول (149 درهم = 2 محطات + 2 عمال). يرجى الترقية إلى الباك الثاني (299 درهم = بزاف ديال المحطات والعمال) لإضافة عمال إضافيين.'
         : `تم بلوغ الحد الأقصى للعمال المسموح به في باقتك الحالية (${maxWorkers} عمال). يرجى ترقية الباقة لإضافة المزيد.`;
       showToast(msg, 'error');
       return { success: false, error: msg };
@@ -3823,6 +4256,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const respondToCollaboration = async (collabId: string, accept: boolean) => {
+    if (userRole === 'worker') {
+      const msg = '⛔ العامل ليس لديه صلاحية القبول أو الرفض في الشراكة. المدير وحده هو الذي يقبل أو يرفض.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
@@ -3928,17 +4366,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Real-time listener for partnerships involving currentWorkspace
   useEffect(() => {
     if (!currentWorkspace?.id || !firebaseSyncService.isAvailable()) return;
+    const wsId = currentWorkspace.id;
     const unsub = firebaseSyncService.subscribeToManagerPartnerships(
-      currentWorkspace.id,
+      wsId,
       (partnerships) => {
-        setManagerPartnerships(partnerships);
-        try {
-          localStorage.setItem('alittihadia_manager_partnerships_v1', JSON.stringify(partnerships));
-        } catch {}
+        setManagerPartnerships((prev) => {
+          const prevMap = new Map<string, ManagerPartnership>(prev.map(item => [item.id, item]));
+          for (const p of partnerships) {
+            const oldP = prevMap.get(p.id);
+            const isA = p.workspace_a_id === wsId;
+            const partnerName = isA ? p.workspace_b_name : p.workspace_a_name;
+            if (!oldP && p.status === 'pending' && p.initiated_by_workspace_id !== wsId) {
+              pushNotification({
+                workspace_id: wsId,
+                target_role: 'owner',
+                title: `🤝 طلب شراكة جديد من "${partnerName}"`,
+                message: `أرسل المدير في "${partnerName}" طلب شراكة رسمي — افتح غرفة الشراكة للقبول`,
+                type: 'partnership',
+                partnership_id: p.id,
+              });
+            } else if (oldP && oldP.status === 'pending' && p.status === 'active') {
+              pushNotification({
+                workspace_id: wsId,
+                target_role: 'all',
+                title: `✅ تم تفعيل الشراكة مع "${partnerName}"`,
+                message: `أصبحت محطات "${partnerName}" متاحة الآن للإرسال والاستقبال المباشر`,
+                type: 'partnership',
+                partnership_id: p.id,
+              });
+            }
+          }
+          try {
+            localStorage.setItem('alittihadia_manager_partnerships_v1', JSON.stringify(partnerships));
+          } catch {}
+          return partnerships;
+        });
       }
     );
     return () => unsub();
-  }, [currentWorkspace?.id]);
+  }, [currentWorkspace?.id, pushNotification]);
 
   const loadRegisteredManagersNetwork = useCallback(async () => {
     if (!firebaseSyncService.isAvailable()) return;
@@ -3952,10 +4418,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const sendPartnershipRequest = async (targetWorkspaceId: string): Promise<{ success: boolean; error?: string }> => {
     if (!currentWorkspace || !currentUser) return { success: false, error: 'غير مسجل الدخول' };
+    if (userRole === 'worker') {
+      const msg = '⛔ العامل ليس لديه صلاحية إرسال أو قبول طلبات الشراكة. المدير وحده يملك الصلاحية الكاملة.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
     if (targetWorkspaceId === currentWorkspace.id) return { success: false, error: 'لا يمكنك إقامة شراكة مع مساحة عملك الخاصة' };
 
     const myStations: PartnershipStationInfo[] = stations
-      .filter(s => (!s.workspace_id || s.workspace_id === currentWorkspace.id) && !s.is_demo)
+      .filter(s => (!s.workspace_id || s.workspace_id === currentWorkspace.id) && !s.is_demo && !deletedStationIds.includes(s.id))
       .map(s => ({
         id: s.id,
         name: s.name,
@@ -4005,17 +4478,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       await firebaseSyncService.savePartnership(newPartnership);
     }
 
+    pushNotification({
+      workspace_id: currentWorkspace.id,
+      target_role: 'owner',
+      title: `📤 تم إرسال طلب شراكة إلى "${newPartnership.workspace_b_name}"`,
+      message: `بانتظار موافقة وقبول المدير في شركة "${newPartnership.workspace_b_name}"`,
+      type: 'partnership',
+      partnership_id: partnershipId,
+    });
+
     showToast(`تم إرسال طلب الشراكة بنجاح إلى شركة "${newPartnership.workspace_b_name}"`, 'success');
     return { success: true };
   };
 
   const respondToPartnershipRequest = async (partnershipId: string, accept: boolean): Promise<{ success: boolean; error?: string }> => {
     if (!currentWorkspace) return { success: false, error: 'غير مسجل الدخول' };
+    if (userRole === 'worker') {
+      const msg = '⛔ العامل ليس لديه صلاحية القبول أو الرفض في الشراكة. المدير وحده هو الذي يقبل أو يرفض.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
     const p = managerPartnerships.find(item => item.id === partnershipId);
     if (!p) return { success: false, error: 'الشراكة غير موجودة' };
 
     const myStations: PartnershipStationInfo[] = stations
-      .filter(s => (!s.workspace_id || s.workspace_id === currentWorkspace.id) && !s.is_demo)
+      .filter(s => (!s.workspace_id || s.workspace_id === currentWorkspace.id) && !s.is_demo && !deletedStationIds.includes(s.id))
       .map(s => ({
         id: s.id,
         name: s.name,
@@ -4046,6 +4536,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const partnerName = isA ? p.workspace_b_name : p.workspace_a_name;
+    pushNotification({
+      workspace_id: currentWorkspace.id,
+      target_role: 'all',
+      title: accept ? `🤝 تم قبول وتفعيل الشراكة مع "${partnerName}"` : `❌ تم رفض طلب الشراكة مع "${partnerName}"`,
+      message: accept
+        ? `قام المدير بتفعيل الشراكة الرسمية مع "${partnerName}" — يمكن الآن إرسال واستقبال الكوليات والرحلات`
+        : `قام المدير برفض طلب الشراكة`,
+      type: 'partnership',
+      partnership_id: partnershipId,
+    });
+
     showToast(accept ? `🤝 تم تفعيل الشراكة الرسمية بنجاح مع "${partnerName}"!` : `تم رفض طلب الشراكة`, accept ? 'success' : 'info');
     return { success: true };
   };
@@ -4061,6 +4562,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   ): Promise<{ success: boolean; error?: string }> => {
     if (!currentWorkspace || !currentUser) return { success: false, error: 'غير مسجل الدخول' };
+    if (userRole === 'worker') {
+      const msg = '⛔ التسويات المالية في غرفة الشراكة من صلاحية المدير فقط.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
     const p = managerPartnerships.find(item => item.id === partnershipId);
     if (!p) return { success: false, error: 'الشراكة غير موجودة' };
 
@@ -4088,6 +4597,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (firebaseSyncService.isAvailable()) {
       await firebaseSyncService.recordPartnershipSettlement(partnershipId, newSettlement);
     }
+
+    pushNotification({
+      workspace_id: currentWorkspace.id,
+      target_role: 'owner',
+      title: `💳 تسوية مالية مع "${partnerWsName}"`,
+      message: `تم تسجيل دفعة تسوية بمبلغ ${data.amount} ${data.currency} لصالح "${partnerWsName}"`,
+      type: 'partnership',
+      partnership_id: partnershipId,
+    });
 
     showToast(`✅ تم تسجيل دفعة تسوية مالية بمبلغ ${data.amount} ${data.currency} لصالح "${partnerWsName}" بنجاح`, 'success');
     return { success: true };
@@ -4135,6 +4653,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       await firebaseSyncService.syncPartnerParcel(partnerWorkspaceId, updatedParcel);
     }
 
+    pushNotification({
+      workspace_id: currentWorkspace?.id,
+      target_station_id: p.origin_station_id,
+      target_role: 'all',
+      title: `📤 المرحلة 1 (طلب): كولية [${p.tracking_code}]`,
+      message: `تم إرسال طلب الكولية إلى "${updatedParcel.partner_destination_station_name}" (${partnerWsName}) — بانتظار قبول المدير الشريك`,
+      type: 'parcel',
+      parcel_id: p.id,
+    });
+
     showToast(`تم إرسال طلب قبول الكولي [${p.tracking_code}] إلى محطة الشريك "${updatedParcel.partner_destination_station_name}"`, 'success');
     return { success: true };
   };
@@ -4147,6 +4675,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!currentUser || !currentWorkspace) {
       return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
     }
+    // القاعدة 1: العامل ما عندو ما يقبل. اللي كيقبل هو المدير بوحدو.
+    if (userRole === 'worker') {
+      const msg = '⛔ العامل ليس لديه صلاحية القبول أو الرفض في الشراكة. المدير وحده هو الذي يقبل أو يرفض طلبات الكوليات.';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
@@ -4154,10 +4688,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!parcel) return { success: false, error: 'الكولية غير موجودة' };
 
     if (!canAcceptOrRejectPartnerParcel(parcel, currentWorkspace.id, userRole, userAssignedStationId)) {
-      const msg =
-        userRole === 'worker'
-          ? `لا يمكنك قبول أو رفض هذه الكولية لأنها موجهة إلى محطة "${parcel.destination_station_name}" فقط`
-          : 'لا تملك صلاحية البت في طلب هذه الكولية';
+      const msg = 'لا تملك صلاحية البت في طلب هذه الكولية (القبول والرفض للمدير المستقبل فقط)';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
@@ -4165,7 +4696,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const nowIso = new Date().toISOString();
     const rejectionNote =
       decision === 'rejected'
-        ? reason?.trim() || 'تم رفض استلام الكولية من طرف محطة الشريك المستقبلة'
+        ? reason?.trim() || 'تم رفض استلام الكولية من طرف المدير المستقبل'
         : null;
 
     const historyEntry: ParcelStatusHistoryEntry = {
@@ -4175,7 +4706,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       changed_by_name: currentUser.name,
       notes:
         decision === 'accepted'
-          ? `✅ تم قبول الكولية الواردة من الشريك (${parcel.partner_origin_workspace_name || 'الشريك'}) في محطة "${parcel.destination_station_name}" بواسطة ${currentUser.name}`
+          ? `✅ المرحلة 2 (قبول): وافق المدير ${currentUser.name} على الكولية الواردة من (${parcel.partner_origin_workspace_name || parcel.origin_station_name}) نحو محطة "${parcel.destination_station_name}"`
           : `❌ تم رفض الكولية الواردة من الشريك في محطة "${parcel.destination_station_name}" — السبب: ${rejectionNote}`,
     };
 
@@ -4201,9 +4732,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    const targetStId = updated.partner_destination_station_id || updated.destination_station_id;
+    pushNotification({
+      workspace_id: currentWorkspace.id,
+      target_station_id: targetStId,
+      target_role: 'all',
+      title:
+        decision === 'accepted'
+          ? `✅ المرحلة 2 (قبول): كولية [${parcel.tracking_code}]`
+          : `❌ تم رفض الكولية [${parcel.tracking_code}]`,
+      message:
+        decision === 'accepted'
+          ? `وافق المدير ${currentUser.name} على كولية محطة "${parcel.destination_station_name}" — بانتظار انطلاق الرحلة`
+          : `رفض المدير الكولية الموجهة إلى "${parcel.destination_station_name}"`,
+      type: 'parcel',
+      parcel_id: parcel.id,
+    });
+
     showToast(
       decision === 'accepted'
-        ? `✅ تم قبول الكولية [${parcel.tracking_code}] بنجاح في محطة "${parcel.destination_station_name}"`
+        ? `✅ تم قبول الكولية [${parcel.tracking_code}] بنجاح في محطة "${parcel.destination_station_name}" وإشعار العامل والمرسل`
         : `❌ تم رفض الكولية [${parcel.tracking_code}] وإشعار المدير المرسل`,
       decision === 'accepted' ? 'success' : 'info'
     );
@@ -4215,6 +4763,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   ): Promise<{ success: boolean; acceptedCount: number; error?: string }> => {
     if (!currentUser || !currentWorkspace) {
       return { success: false, acceptedCount: 0, error: 'يرجى تسجيل الدخول أولاً' };
+    }
+    if (userRole === 'worker') {
+      const msg = '⛔ العامل ليس لديه صلاحية القبول أو الرفض في الشراكة. المدير وحده هو الذي يقبل أو يرفض.';
+      showToast(msg, 'error');
+      return { success: false, acceptedCount: 0, error: msg };
     }
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, acceptedCount: 0, error: writeCheck.error };
@@ -4239,7 +4792,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         timestamp: nowIso,
         changed_by_id: currentUser.id,
         changed_by_name: currentUser.name,
-        notes: `✅ تم قبول الكولية الواردة من الشريك (${p.partner_origin_workspace_name || 'الشريك'}) في محطة "${p.destination_station_name}" بواسطة ${currentUser.name}`,
+        notes: `✅ المرحلة 2 (قبول): وافق المدير ${currentUser.name} على الكولية الواردة من (${p.partner_origin_workspace_name || 'الشريك'}) نحو محطة "${p.destination_station_name}"`,
       };
       const updated: Parcel = {
         ...p,
@@ -4268,8 +4821,143 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
+    pushNotification({
+      workspace_id: currentWorkspace.id,
+      target_role: 'all',
+      title: `✅ قبول جماعي (${updatedItems.length} كوليات)`,
+      message: `قام المدير ${currentUser.name} بقبول ${updatedItems.length} كولية في غرفة الشراكة — جاهزة للرحلة والشحن`,
+      type: 'parcel',
+    });
+
     showToast(`✅ تم قبول (${updatedItems.length}) كولية واردة من غرفة الشراكة بنجاح`, 'success');
     return { success: true, acceptedCount: updatedItems.length };
+  };
+
+  // المرحلة 4 من ترتيب الشراكة الصارم (طلب -> قبول -> رحلة -> وصلات -> تفريغ -> تسليم)
+  const confirmParcelTripArrived = async (parcelId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser || !currentWorkspace) {
+      return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const parcel = allParcelsRef.current.find(p => p.id === parcelId);
+    if (!parcel) return { success: false, error: 'الكولية غير موجودة' };
+
+    if (!canControlParcelDestination(parcel, currentWorkspace.id, userRole, userAssignedStationId)) {
+      const msg = `⛔ لا يمكنك تأكيد وصول الرحلة (وصلات) لأنها متجهة إلى محطة "${parcel.destination_station_name}" فقط`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    if (parcel.status !== 'in_transit') {
+      const msg = `⛔ الترتيب الصارم للشراكة (طلب -> قبول -> رحلة -> وصلات -> تفريغ -> تسليم): لا يمكن تأكيد "وصلات" قبل انطلاق "رحلة" الكولية!`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    const nowIso = new Date().toISOString();
+    const historyEntry: ParcelStatusHistoryEntry = {
+      status: parcel.status,
+      timestamp: nowIso,
+      changed_by_id: currentUser.id,
+      changed_by_name: currentUser.name,
+      notes: `🏁 المرحلة 4 (وصلات): وصلت الرحلة الحاملة للكولية إلى محطة "${parcel.destination_station_name}" — جاهزة للتفريغ في الستوك`,
+    };
+
+    const updated: Parcel = {
+      ...parcel,
+      trip_arrived_at: nowIso,
+      last_scanned_by_name: currentUser.name,
+      last_scanned_at_station: parcel.destination_station_name,
+      status_history: [...(parcel.status_history || []), historyEntry],
+      updated_at: nowIso,
+    };
+
+    const nextParcels = allParcelsRef.current.map(p => (p.id === parcelId ? updated : p));
+    allParcelsRef.current = nextParcels;
+    setAllParcels(nextParcels);
+
+    if (firebaseSyncService.isAvailable()) {
+      await firebaseSyncService.syncParcel(updated.workspace_id, updated).catch(() => {});
+      const counterpartWsId =
+        updated.partner_origin_workspace_id && updated.partner_origin_workspace_id !== updated.workspace_id
+          ? updated.partner_origin_workspace_id
+          : updated.partner_workspace_id && updated.partner_workspace_id !== updated.workspace_id
+          ? updated.partner_workspace_id
+          : null;
+      if (counterpartWsId) {
+        await firebaseSyncService.syncPartnerParcelStatusBack(counterpartWsId, updated.id, updated).catch(() => {});
+      }
+    }
+
+    pushNotification({
+      workspace_id: currentWorkspace.id,
+      target_station_id: parcel.partner_destination_station_id || parcel.destination_station_id,
+      target_role: 'all',
+      title: `🏁 المرحلة 4 (وصلات): كولية [${parcel.tracking_code}]`,
+      message: `وصلت الكولية إلى محطة "${parcel.destination_station_name}" — اضغط على «📥 تفريغ» لإدخالها للستوك`,
+      type: 'parcel',
+      parcel_id: parcel.id,
+    });
+
+    showToast(`🏁 تم تأكيد مرحلة «وصلات» للكولية [${parcel.tracking_code}] — يمكنك الآن الضغط على «📥 تفريغ»`, 'success');
+    return { success: true };
+  };
+
+  const confirmTripArrivedAtDestination = async (
+    tripId: string
+  ): Promise<{ success: boolean; error?: string; trip?: Trip }> => {
+    if (!currentUser || !currentWorkspace) {
+      return { success: false, error: 'يرجى تسجيل الدخول أولاً' };
+    }
+    const writeCheck = checkWriteAllowed();
+    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
+
+    const targetTrip = allTripsRef.current.find(t => t.id === tripId);
+    if (!targetTrip) return { success: false, error: 'الرحلة غير موجودة' };
+
+    const nowIso = new Date().toISOString();
+    const updatedTrip: Trip = {
+      ...targetTrip,
+      status: 'arrived',
+      arrived_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    const nextTrips = allTripsRef.current.map(t => (t.id === tripId ? updatedTrip : t));
+    allTripsRef.current = nextTrips;
+    setAllTrips(nextTrips);
+
+    const loadedSet = new Set(targetTrip.loaded_parcel_ids || []);
+    const modifiedParcels: Parcel[] = [];
+    const nextParcels = allParcelsRef.current.map(p => {
+      if (!loadedSet.has(p.id) || p.status !== 'in_transit') return p;
+      const up: Parcel = {
+        ...p,
+        trip_arrived_at: nowIso,
+        updated_at: nowIso,
+      };
+      modifiedParcels.push(up);
+      return up;
+    });
+    allParcelsRef.current = nextParcels;
+    setAllParcels(nextParcels);
+
+    syncTripAndParcelsAcrossWorkspaces(updatedTrip, modifiedParcels);
+
+    pushNotification({
+      workspace_id: currentWorkspace.id,
+      target_station_id: targetTrip.partner_destination_station_id || targetTrip.destination_station_id,
+      target_role: 'all',
+      title: `🏁 المرحلة 4 (وصلات): الرحلة [${targetTrip.trip_code}]`,
+      message: `وصلت رحلة السائق ${targetTrip.driver_name} إلى محطة "${targetTrip.destination_station_name}" — جاهزة للتفريغ`,
+      type: 'trip',
+      trip_id: targetTrip.id,
+    });
+
+    showToast(`🏁 تم تأكيد وصول الرحلة [${targetTrip.trip_code}] إلى محطة "${targetTrip.destination_station_name}" — جاهزة للتفريغ`, 'success');
+    return { success: true, trip: updatedTrip };
   };
 
   // Check if any data records exist in workspace
@@ -4348,25 +5036,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!currentWorkspace) return { success: false, error: 'لا توجد مساحة عمل نشطة' };
 
     // فحص الصلاحيات الصارم:
-    // - المدير العام يملك إضافة الجميع
-    // - مدير المحطة (admin) يضيف عمال فقط وفي محطته المعين بها فقط
-    // - العامل ممنوع نهائياً من إضافة أي عضو
+    // - الـ Admin (owner / admin) يملك إضافة العمال وتعيينهم في محطاته
+    // - العامل (worker) ممنوع نهائياً من إضافة أي عضو
     if (userRole === 'worker') {
       const msg = 'غير مصرح: العمال لا يملكون صلاحية إضافة العمال أو المدراء.';
       showToast(msg, 'error');
       return { success: false, error: msg };
-    }
-    if (userRole === 'admin') {
-      if (stationId !== userAssignedStationId) {
-        const msg = 'غير مصرح: مدير المحطة يمكنه فقط إضافة عمال لمحطته المعين بها.';
-        showToast(msg, 'error');
-        return { success: false, error: msg };
-      }
-      if (role !== 'worker') {
-        const msg = 'غير مصرح: مدير المحطة يمكنه فقط إضافة عمال (وليس مدراء آخرين).';
-        showToast(msg, 'error');
-        return { success: false, error: msg };
-      }
     }
 
     const canonicalPhone = cleanPhoneNumber(phone);
@@ -4389,14 +5064,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (isPlan2TwoStations) {
         const targetStation = visibleStations.find(s => s.id === stationId);
         if (!targetStation) {
-          const msg = 'الباك الأول (99 درهم) يسمح بالعمل على محطتين (2) فقط.';
-          showToast(msg, 'error');
-          return { success: false, error: msg };
-        }
-        // Check if this station already has a real worker assigned (1 worker per station rule)
-        const existingRealWorkerInStation = realActiveWorkers.find(w => w.station_id === stationId);
-        if (existingRealWorkerInStation) {
-          const msg = `محطة "${targetStation.name}" فيها عامل مسجل بالفعل (${existingRealWorkerInStation.profile?.name || 'عامل'})! الباك الأول (99 درهم) يسمح بعامل واحد (1) فقط في كل محطة. اختر المحطة الثانية أو قم بالترقية إلى الباك الثاني (199 درهم).`;
+          const msg = 'الباك الأول (149 درهم) يسمح بفتح محطتين (2) فقط.';
           showToast(msg, 'error');
           return { success: false, error: msg };
         }
@@ -4404,7 +5072,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       if (realActiveWorkers.length >= maxWorkers) {
         const msg = isPlan2TwoStations
-          ? 'تم بلوغ الحد الأقصى للعمال في الباك الأول (99 درهم): عاملان فقط (عامل واحد في كل محطة من المحطتين). يرجى الترقية إلى الباك الثاني (199 درهم) لإضافة عمال أكثر.'
+          ? 'تم بلوغ الحد الأقصى للعمال في الباك الأول (149 درهم = 2 محطات + 2 عمال). يرجى الترقية إلى الباك الثاني (299 درهم = بزاف ديال المحطات والعمال) لإضافة عمال أكثر.'
           : `تم بلوغ الحد الأقصى للعمال المسموح به في باقتك الحالية (${maxWorkers} عمال). يرجى ترقية الباقة لإضافة المزيد.`;
         showToast(msg, 'error');
         return { success: false, error: msg };
@@ -4590,10 +5258,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
     const effectiveStationId =
-      userRole === 'worker' && userAssignedStationId ? userAssignedStationId : data.station_id;
+      userRole === 'worker' && userAssignedStationId
+        ? userAssignedStationId
+        : data.station_id && data.station_id !== 'all'
+        ? data.station_id
+        : selectedStationId && selectedStationId !== 'all'
+        ? selectedStationId
+        : stations[0]?.id || data.station_id;
 
     if (userRole === 'worker') {
-      if (isWorkerStationDeleted || !userAssignedStationId || data.station_id !== userAssignedStationId) {
+      if (isWorkerStationDeleted || !userAssignedStationId || effectiveStationId !== userAssignedStationId) {
         const msg = '⛔ لا تملك صلاحية تسجيل عمليات مالية: محطتك تم حذفها أو إيقافها من طرف المدير.';
         showToast(msg, 'error');
         return { success: false, error: msg };
@@ -4620,7 +5294,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id: txId,
       workspace_id: wsId,
       team_id: wsId,
-      station_id: data.station_id,
+      station_id: effectiveStationId,
       created_by: currentUser.id,
       type: data.type,
       amount: Math.round(Number(data.amount) * 100) / 100,
@@ -4693,6 +5367,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           details: newTx.reason || newTx.note || newTx.type,
         })
         .catch(() => {});
+    }
+
+    if (!data.parcel_id && !data.hawala_transfer_id) {
+      const isOut = newTx.type === 'cash_out' || newTx.type === 'goods_payment';
+      pushNotification({
+        workspace_id: wsId,
+        target_station_id: effectiveStationId,
+        target_role: 'all',
+        title: `${isOut ? '📤 سحب من الصندوق' : '📥 إيداع في الصندوق'} — ${st?.name || 'المحطة'}`,
+        message: `${currentUser.name}: ${isOut ? '-' : '+'}${newTx.amount} ${newTx.currency}${newTx.reason ? ` (${newTx.reason})` : ''}`,
+        type: 'cashbox',
+      });
     }
 
     showToast(`تم تسجيل السند بنجاح بمبلغ ${newTx.amount} ${newTx.currency}`, 'success');
@@ -4770,201 +5456,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true };
   };
 
-  const cancelTransaction = async (id: string, reason: string) => {
-    if (userRole !== 'owner') return { success: false, error: 'صلاحية إلغاء السندات للمشرف فقط' };
-    const writeCheck = checkWriteAllowed();
-    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
-
-    const currentTx = allTransactions.find(t => t.id === id);
-    if (!currentTx) return { success: false, error: 'السند غير موجود' };
-
-    const writtenReason = reason.trim() || 'إلغاء السند وإرجاع المبلغ للصندوق';
-    const cancelEntry = {
-      edited_at: new Date().toISOString(),
-      edited_by_id: currentUser?.id || 'owner',
-      edited_by_name: currentUser?.name || 'المدير العام',
-      reason: writtenReason,
-      action: 'CANCEL' as const,
-      previous_data: {
-        amount: currentTx.amount,
-        status: currentTx.status
-      }
-    };
-
-    const updated: Transaction = { 
-      ...currentTx, 
-      status: 'cancelled' as const, 
-      cancelled_by_name: currentUser?.name || 'المدير العام',
-      cancelled_at: new Date().toISOString(),
-      cancel_reason: writtenReason,
-      edit_history: [...(currentTx.edit_history || []), cancelEntry],
-      note: `${currentTx.note ? currentTx.note + ' | ' : ''}[تم الإلغاء: ${writtenReason}]`,
-      updated_at: new Date().toISOString() 
-    };
-    const nextTxs = allTransactions.map(t => t.id === id ? updated : t);
-    setAllTransactions(nextTxs);
-
-    const audit: AuditLogEntry = {
-      id: isSupabaseConfigured() ? generateUUID() : `audit-${Date.now()}`,
-      workspace_id: currentTx.workspace_id,
-      team_id: currentTx.workspace_id,
-      user_id: currentUser?.id || null,
-      user_name: currentUser?.name || 'المدير العام',
-      action: 'CANCEL',
-      table_name: 'transactions',
-      record_id: updated.id,
-      old_data: currentTx,
-      new_data: updated,
-      created_at: new Date().toISOString(),
-    };
-    setAuditLogs(prev => [audit, ...prev]);
-
-    if (isSupabaseConfigured()) {
-      const synced = await cashService.syncTransactionAndAuditToCloud(
-        updated,
-        audit,
-        (msg: string) => showToast(msg, 'error')
-      );
-      if (!synced) {
-        setAllTransactions(prev => prev.map(t => t.id === id ? { ...t, pending_sync: true } : t));
-      } else {
-        const balances = cashService.calculateStationBalances(stations, nextTxs);
-        const curr = updated.currency === 'MRU' ? 'MRU' : 'MAD';
-        const bal = balances[updated.station_id]?.[curr] ?? 0;
-        await cashService.syncStationBalanceToCloud(updated.station_id, updated.workspace_id, curr, bal);
-      }
-    }
-
-    if (firebaseSyncService.isAvailable()) {
-      firebaseSyncService.syncTransaction(updated.workspace_id, updated).catch(() => {});
-    }
-
-    showToast('تم إلغاء السند وتحديث رصيد الصندوق وتوثيق السبب', 'info');
-    return { success: true };
+  const cancelTransaction = async (_id: string, _reason: string) => {
+    const msg = '🔒 سجل العمليات دائم ولا يمكن إلغاؤه أو مسحه. الصندوق يتزاد وينقص فقط من بطونة الإيداع والسحب.';
+    showToast(msg, 'info');
+    return { success: false, error: msg };
   };
 
-  // حذف سند مالي نهائياً (للمدير فقط مع حماية دائمة لغرفة الشراكة)
-  const deleteTransaction = async (id: string): Promise<{ success: boolean; error?: string }> => {
-    if (userRole === 'worker') {
-      const msg = '⛔ غير مصرح للعامل بمسح السجلات المالية نهائياً. زر المسح محجوب.';
-      showToast(msg, 'error');
-      return { success: false, error: msg };
-    }
-    const writeCheck = checkWriteAllowed();
-    if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
-
-    const targetTx = allTransactions.find(t => t.id === id);
-    if (!targetTx) return { success: false, error: 'السند غير موجود' };
-
-    if (userRole === 'admin') {
-      // مدير المحطة يحذف فقط سندات محطته المعين بها
-      if (targetTx.station_id !== userAssignedStationId) {
-        const msg = 'غير مصرح: مدير المحطة يمكنه فقط حذف سجلات محطته المعين بها.';
-        showToast(msg, 'error');
-        return { success: false, error: msg };
-      }
-    } else if (userRole !== 'owner' && userRole !== 'platform_owner') {
-      const msg = 'صلاحية حذف السندات المالية للمدير فقط';
-      showToast(msg, 'error');
-      return { success: false, error: msg };
-    }
-
-    // حماية سجلات غرفة الشراكة: لا المدير ولا العامل ولا أي أحد يمكنه مسحها لضمان الأدلة
-    const isPartnershipTx = Boolean(
-      targetTx.is_partnership ||
-      targetTx.partner_workspace_id ||
-      targetTx.room_id ||
-      targetTx.svr_id ||
-      targetTx.hawala_meta?.is_partnership ||
-      targetTx.metadata?.is_partnership ||
-      targetTx.description?.includes('شراكة') ||
-      targetTx.description?.includes('غرفة الشراكة')
-    );
-    if (isPartnershipTx) {
-      const msg = '🔒 سجلات غرفة الشراكة محمية ومقفلة نهائياً ولا يمكن مسحها لا من طرف المدير ولا العامل لضمان الأدلة والوثائق.';
-      showToast(msg, 'error');
-      return { success: false, error: msg };
-    }
-
-    const wsId = targetTx.workspace_id || currentWorkspace?.id || 'ws-default';
-    setAllTransactions(prev => prev.filter(t => t.id !== id));
-
-    // توثيق عملية الحذف بالسبب
-    const txStation = stations.find(s => s.id === targetTx.station_id);
-    const auditEntry: AuditLogEntry = {
-      id: isSupabaseConfigured() ? generateUUID() : `audit-deltx-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      workspace_id: wsId,
-      team_id: wsId,
-      user_id: currentUser?.id || null,
-      user_name: currentUser?.name || 'المدير',
-      actor_role: userRole,
-      station_id: targetTx.station_id,
-      station_name: txStation?.name || 'المحطة',
-      action: 'DELETE',
-      table_name: 'transactions',
-      record_id: targetTx.id,
-      reason: `🗑️ قام المدير [${currentUser?.name || 'المدير'}] بحذف السند المالي [${targetTx.type}] بمبلغ ${targetTx.amount} ${targetTx.currency} في محطة [${txStation?.name || 'المحطة'}] — سبب الحذف: مسح السند المالي`,
-      details: targetTx.reason || targetTx.note || '',
-      is_partnership: false,
-      old_data: targetTx,
-      new_data: null,
-      created_at: new Date().toISOString(),
-    };
-    setAuditLogs(prev => [auditEntry, ...prev]);
-
-    const supabase = getSupabaseClient();
-    if (supabase && isSupabaseConfigured() && isValidUUID(id)) {
-      try {
-        await supabase.from('transactions').delete().eq('id', id);
-      } catch {}
-    }
-
-    if (firebaseSyncService.isAvailable()) {
-      firebaseSyncService.deleteTransaction(wsId, id).catch(() => {});
-    }
-
-    showToast('تم حذف السند المالي مع توثيق العملية بالسبب في سجل العمليات', 'info');
-    return { success: true };
+  // سجل العمليات والصندوق دائم ولا يمكن مسحه نهائياً (الصندوق يتغير فقط من بطونة الإيداع والسحب)
+  const deleteTransaction = async (_id: string): Promise<{ success: boolean; error?: string }> => {
+    const msg = '🔒 سجل العمليات دائم ولا يمكن مسحه نهائياً. الصندوق يتزاد وينقص فقط من بطونة الإيداع والسحب.';
+    showToast(msg, 'info');
+    return { success: false, error: msg };
   };
 
-  // حذف عملية من سجل العمليات (للمدير فقط مع حماية غرفة الشراكة نهائياً)
-  const deleteAuditLog = (id: string) => {
-    if (userRole === 'worker' || (userRole !== 'owner' && userRole !== 'platform_owner')) {
-      showToast('⛔ غير مصرح للعامل بمسح سجل العمليات نهائياً', 'error');
-      return;
-    }
-    const log = auditLogs.find(a => a.id === id);
-    const isPartnershipLog = log && (
-      log.is_partnership ||
-      log.action?.includes('PARTNERSHIP') ||
-      log.reason?.includes('شراكة') ||
-      log.reason?.includes('غرفة الشراكة') ||
-      log.details?.includes('شراكة')
-    );
-    if (isPartnershipLog) {
-      showToast('🔒 سجلات غرفة الشراكة محمية ومقفلة نهائياً ولا يمكن مسحها لا من طرف المدير ولا العامل لضمان الأدلة.', 'error');
-      return;
-    }
-    setAuditLogs(prev => prev.filter(a => a.id !== id));
-    showToast('تم مسح العملية من السجل بنجاح', 'info');
+  const deleteAuditLog = (_id: string) => {
+    showToast('🔒 سجل العمليات دائم ولا يمكن مسحه نهائياً، كل حركة تبقى مسجلة فيه.', 'info');
   };
 
   const clearAuditLogs = () => {
-    if (userRole === 'worker' || (userRole !== 'owner' && userRole !== 'platform_owner')) {
-      showToast('⛔ غير مصرح للعامل بمسح سجل العمليات نهائياً', 'error');
-      return;
-    }
-    // الحفاظ التام على سجلات غرفة الشراكة كدليل دائم
-    const preserved = auditLogs.filter(a =>
-      a.is_partnership ||
-      a.action?.includes('PARTNERSHIP') ||
-      a.reason?.includes('شراكة') ||
-      a.reason?.includes('غرفة الشراكة') ||
-      a.details?.includes('شراكة')
-    );
-    setAuditLogs(preserved);
-    localStorage.setItem('aman_audit_logs', JSON.stringify(preserved));
-    showToast('تم مسح السجلات العادية مع الحفاظ التام على سجلات غرفة الشراكة المقفلة كدليل دائم', 'info');
+    showToast('🔒 سجل العمليات دائم ولا يمكن مسحه نهائياً، كل حركة تبقى مسجلة فيه.', 'info');
   };
 
   // تنفيذ عملية صرف العملة الفعلية في لاكيس المحطة (بين الدرهم MAD والأوقية MRU أو العكس)
@@ -5133,8 +5643,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       );
     }
 
+    if (selectedStationId && selectedStationId !== 'all') {
+      return list.filter(
+        t => t.origin_station_id === selectedStationId || t.destination_station_id === selectedStationId
+      );
+    }
+
     return list;
-  }, [currentWorkspace, allTransactions, stations, userRole, userAssignedStationId]);
+  }, [currentWorkspace, allTransactions, stations, userRole, userAssignedStationId, selectedStationId]);
 
   const createMoneyTransfer = async (params: {
     origin_station_id: string;
@@ -5159,25 +5675,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const payoutAmt = Math.round(Number(params.payout_amount) * 100) / 100;
     const commAmt = Math.max(0, Math.round((Number(params.commission_amount) || 0) * 100) / 100);
 
+    const effectiveOriginStationId =
+      userRole === 'worker' && userAssignedStationId
+        ? userAssignedStationId
+        : params.origin_station_id && params.origin_station_id !== 'all'
+        ? params.origin_station_id
+        : selectedStationId && selectedStationId !== 'all'
+        ? selectedStationId
+        : params.origin_station_id;
+
     if (userRole === 'worker') {
-      if (isWorkerStationDeleted || !userAssignedStationId || params.origin_station_id !== userAssignedStationId) {
+      if (isWorkerStationDeleted || !userAssignedStationId || effectiveOriginStationId !== userAssignedStationId) {
         const msg = '⛔ لا تملك صلاحية إرسال حوالة: محطتك تم حذفها أو إيقافها من طرف المدير.';
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
     }
 
-    if (!params.origin_station_id || !params.destination_station_id) {
+    if (!effectiveOriginStationId || !params.destination_station_id) {
       return { success: false, error: 'يرجى تحديد محطة الإرسال ومحطة الاستلام' };
     }
-    if (params.origin_station_id === params.destination_station_id) {
+    if (effectiveOriginStationId === params.destination_station_id) {
       return { success: false, error: 'يرجى اختيار محطة استلام مختلفة عن محطة الإرسال' };
     }
     if (!params.sender_name.trim() || !params.receiver_name.trim() || sendAmt <= 0 || payoutAmt <= 0) {
       return { success: false, error: 'يرجى إدخال اسم المرسل والمستلم والمبلغ بشكل صحيح' };
     }
 
-    const originSt = stations.find(s => s.id === params.origin_station_id && !deletedStationIds.includes(s.id));
+    const originSt = stations.find(s => s.id === effectiveOriginStationId && !deletedStationIds.includes(s.id));
     if (!originSt) {
       const msg = '⛔ محطة إرسال الحوالة تم حذفها أو غير موجودة من طرف المدير. تم إيقاف العملية.';
       showToast(msg, 'error');
@@ -5201,7 +5726,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       transfer_code: transferCode,
       secret_pin: secretPin,
       workspace_id: wsId,
-      origin_station_id: params.origin_station_id,
+      origin_station_id: effectiveOriginStationId,
       destination_station_id: params.destination_station_id,
       origin_station_name: originSt?.name || 'محطة الإرسال',
       destination_station_name: destSt?.name || 'محطة الاستلام',
@@ -5246,6 +5771,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const existing = JSON.parse(localStorage.getItem('alittihadia_hawala_transfers_v1') || '[]');
       localStorage.setItem('alittihadia_hawala_transfers_v1', JSON.stringify([newTransfer, ...existing]));
     } catch {}
+
+    pushNotification({
+      workspace_id: wsId,
+      target_station_id: params.destination_station_id,
+      target_role: 'all',
+      title: `💸 حوالة مالية جديدة [${transferCode}]`,
+      message: `${currentUser.name} سجل حوالة من "${originSt?.name || ''}" إلى "${destSt?.name || ''}" بمبلغ ${payoutAmt} ${params.payout_currency} للمستلم: ${params.receiver_name.trim()}`,
+      type: 'cashbox',
+    });
 
     showToast(
       `تم تسجيل الحوالة [${transferCode}] وإضافة +${totalCashIn} ${params.send_currency} في لاكيس ${originSt?.name || 'المحطة'}`,
@@ -5363,6 +5897,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     } catch {}
 
+    pushNotification({
+      workspace_id: target.workspace_id || currentWorkspace?.id || 'ws-default',
+      target_station_id: target.origin_station_id,
+      target_role: 'all',
+      title: `✅ تم تسليم الحوالة [${target.transfer_code}]`,
+      message: `تم صرف وتسليم ${target.payout_amount} ${target.payout_currency} للمستلم "${target.receiver_name}" في محطة "${target.destination_station_name}" بواسطة ${currentUser.name}`,
+      type: 'cashbox',
+    });
+
     showToast(
       `تم تسليم الحوالة [${target.transfer_code}] وخصم -${target.payout_amount} ${target.payout_currency} من لاكيس ${target.destination_station_name} مع توثيق العملية بالسبب في السجل`,
       'success'
@@ -5399,15 +5942,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
+    const effectiveOriginStationId =
+      userRole === 'worker' && userAssignedStationId
+        ? userAssignedStationId
+        : data.origin_station_id && data.origin_station_id !== 'all'
+        ? data.origin_station_id
+        : selectedStationId && selectedStationId !== 'all'
+        ? selectedStationId
+        : data.origin_station_id;
+
     if (userRole === 'worker') {
-      if (isWorkerStationDeleted || !userAssignedStationId || data.origin_station_id !== userAssignedStationId) {
+      if (isWorkerStationDeleted || !userAssignedStationId || effectiveOriginStationId !== userAssignedStationId) {
         const msg = '⛔ لا تملك صلاحية الإرسال: المحطة تم حذفها أو إيقافها من طرف المدير، أو أنك تحاول الإرسال من محطة غير مخصصة لك.';
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
     }
 
-    const originSt = stations.find(s => s.id === data.origin_station_id && !deletedStationIds.includes(s.id));
+    const originSt = stations.find(s => s.id === effectiveOriginStationId && !deletedStationIds.includes(s.id));
     if (!originSt) {
       const msg = '⛔ محطة الانطلاق محذوفة أو غير موجودة من طرف المدير. تم إيقاف وحظر إرسال الكولي.';
       showToast(msg, 'error');
@@ -5487,7 +6039,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       parcel_number: parcelNumber,
       workspace_id: wsId,
       team_id: wsId,
-      origin_station_id: data.origin_station_id,
+      origin_station_id: effectiveOriginStationId,
       destination_station_id: data.destination_station_id,
       origin_station_name: originSt?.name || 'محطة الانطلاق',
       destination_station_name: destStationName,
@@ -5511,7 +6063,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       condition,
       condition_notes: conditionNotes,
       partner_acceptance_status:
-        data.origin_station_id !== data.destination_station_id
+        effectiveOriginStationId !== data.destination_station_id
           ? ('pending_approval' as const)
           : ('accepted' as const),
       partner_rejection_reason: null,
@@ -5643,6 +6195,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
 
+    pushNotification({
+      workspace_id: newParcel.workspace_id,
+      target_station_id: newParcel.origin_station_id,
+      target_role: 'all',
+      title: `📦 كولي جديد [${newParcel.tracking_code}] — ${newParcel.origin_station_name}`,
+      message: `${currentUser.name} سجل كولي من "${newParcel.origin_station_name}" إلى "${newParcel.destination_station_name}" للمستلم: ${newParcel.receiver_name} (${newParcel.amount_due} ${newParcel.currency})`,
+      type: 'parcel',
+      parcel_id: newParcel.id,
+    });
+
     showToast(
       partnerDestMeta
         ? `🤝 تم تسجيل الإرسالية [${tracking_code}] وتوجيهها إلى محطة "${partnerDestMeta.stationName}" (${partnerDestMeta.partnerWorkspaceName})`
@@ -5760,29 +6322,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return { success: false, error: msg };
       }
 
-      // منع تأكيد الوصول (وصلات / للستوك) إذا لم يقم الأدمين المرسل بشحن الكولية بعد (لا تزال مسجلة في محطة الانطلاق)
-      if (status === 'arrived' && (parcel.status === 'registered' || parcel.status === 'pending')) {
-        const isIncomingPartner = Boolean(
-          parcel.is_collaborator_data ||
-            (parcel.partner_origin_workspace_id &&
-              parcel.partner_origin_workspace_id !== currentWorkspace?.id)
+      // منع تأكيد التفريغ (للستوك) إذا لم يقم المرسل بشحن الكولية بعد أو لم يتم تأكيد مرحلة "وصلات"
+      if (status === 'arrived') {
+        if (parcel.status === 'registered' || parcel.status === 'pending') {
+          const msg = `⛔ الترتيب الصارم للشراكة (طلب -> قبول -> رحلة -> وصلات -> تفريغ -> تسليم): لا يمكن تفريغ الكولية #${parcel.parcel_number} لأنها لا تزال في محطة الانطلاق "${parcel.origin_station_name}" ولم تنطلق في الرحلة بعد!`;
+          showToast(msg, 'error');
+          return { success: false, error: msg };
+        }
+        const isPartnerOrInterStation = Boolean(
+          parcel.is_partnership_parcel ||
+            parcel.partner_workspace_id ||
+            parcel.partner_origin_workspace_id ||
+            parcel.origin_station_id !== parcel.destination_station_id
         );
-        const msg = isIncomingPartner
-          ? `تنبيه: لا يمكن تأكيد وصول الكولية #${parcel.parcel_number} أو إدخالها للستوك الآن! يجب أولاً أن يقوم الأدمين المرسل (${parcel.partner_origin_workspace_name || 'المرسل'}) بالضغط على "🚚 شحن" لإطلاق الكولية من محطة "${parcel.origin_station_name}".`
-          : `تنبيه: لا يمكن تأكيد وصول الكولي #${parcel.parcel_number} لأنه لا يزال مسجلاً في محطة الانطلاق "${parcel.origin_station_name}" ولم يتم شحنه بعد! يجب الضغط على "🚚 شحن" أولاً.`;
-        showToast(msg, 'error');
-        return { success: false, error: msg };
+        const parentTrip = parcel.current_trip_id
+          ? allTripsRef.current.find(t => t.id === parcel.current_trip_id)
+          : undefined;
+        const hasReachedDestination = Boolean(
+          parcel.trip_arrived_at || (parentTrip && (parentTrip.status === 'arrived' || parentTrip.status === 'closed'))
+        );
+        if (isPartnerOrInterStation && parcel.status === 'in_transit' && !hasReachedDestination) {
+          const msg = `⛔ الترتيب الصارم (طلب -> قبول -> رحلة -> وصلات -> تفريغ -> تسليم): يجب أولاً الضغط على زر «🏁 وصلات» لتأكيد وصول الرحلة لمحطة "${parcel.destination_station_name}" قبل الضغط على «📥 تفريغ»!`;
+          showToast(msg, 'error');
+          return { success: false, error: msg };
+        }
       }
     }
 
     if (status === 'in_transit') {
       if (parcel.partner_acceptance_status === 'rejected') {
-        const msg = `لا يمكن شحن هذه الكولية لأن الشريك في محطة "${parcel.destination_station_name}" رفض استلامها.`;
+        const msg = `لا يمكن شحن هذه الكولية لأن المدير في محطة "${parcel.destination_station_name}" رفض استلامها.`;
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
       if (parcel.partner_acceptance_status === 'pending_approval') {
-        const msg = `⛔ لا يمكن شحن هذا الكولي: في انتظار قبول مدير أو عامل محطة الوصول ("${parcel.destination_station_name}").`;
+        const msg = `⛔ الترتيب الصارم للشراكة (طلب -> قبول -> رحلة -> وصلات -> تفريغ -> تسليم): لا يمكن بدء الرحلة أو شحن هذا الكولي قبل أن يقبله المدير في محطة الوصول ("${parcel.destination_station_name}").`;
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
@@ -5819,6 +6393,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       status,
       condition: finalCondition,
       condition_notes: finalConditionNotes,
+      last_scanned_by_name: currentUser?.name || 'المستخدم',
+      last_scanned_at_station:
+        status === 'in_transit' ? parcel.origin_station_name : parcel.destination_station_name,
       updated_at: nowIso,
       notes: noteText ? `${parcel.notes || ''} [${noteText}]` : parcel.notes,
       status_history: [...(parcel.status_history || []), newHistoryEntry],
@@ -5826,6 +6403,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (status === 'arrived' && !updated.arrived_at) {
       updated.arrived_at = nowIso;
+      if (!updated.trip_arrived_at) updated.trip_arrived_at = nowIso;
     }
 
     if (status === 'delivered') {
@@ -5952,6 +6530,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
     setAuditLogs(prev => [parcelStatusAudit, ...prev]);
 
+    pushNotification({
+      workspace_id: parcel.workspace_id,
+      target_station_id: status === 'in_transit' ? parcel.origin_station_id : parcel.destination_station_id,
+      target_role: 'all',
+      title: `📦 ${statusTextAr} [${parcel.tracking_code}]`,
+      message: `${currentUser?.name || 'المستخدم'}: ${opReason}`,
+      type: 'parcel',
+      parcel_id: parcel.id,
+    });
+
     showToast(`تم تحديث حالة الكولي [${parcel.tracking_code}] بنجاح مع توثيق العملية بالسبب في السجل`, 'success');
     return { success: true };
   };
@@ -6028,6 +6616,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const paymentStationId =
       userRole === 'worker' && userAssignedStationId
         ? userAssignedStationId
+        : selectedStationId && selectedStationId !== 'all'
+        ? selectedStationId
         : parcel.status === 'arrived' || parcel.status === 'delivered'
         ? parcel.destination_station_id
         : parcel.origin_station_id;
@@ -6472,16 +7062,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    if (isPlan2TwoStations) {
-      const msg = 'في الباك الأول (99 درهم) تخرج الملصقات والبونات باسم التطبيق الرسمي ولوغو التطبيق فقط ولا يمكن تغييرهم. لتخصيص اللوغو والاسم يرجى تفعيل الباك الثاني (199 درهم).';
+    if (userRole !== 'owner' && userRole !== 'admin') {
+      const msg = 'المدير فقط هو المخول بتعديل اسم وشعار الوكالة من الإعدادات';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
 
+    if (!isPack2CustomBrandingAllowed(currentWorkspace)) {
+      const msg = 'في الفترة التجريبية (30 يوم) والباك الأول (149 درهم) يخرج لوغو واسم التطبيق الرسمي الثابت في كل المطبوعات. لتغيير سمية وتصويرة شركتك يرجى تفعيل الباك الثاني (299 درهم).';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    const oldBrandName = currentWorkspace.custom_brand_name || currentWorkspace.name || '';
     const cleanName = (branding.custom_brand_name ?? branding.customBrandName)?.trim() || '';
     const cleanSub = (branding.custom_brand_subtitle ?? branding.customBrandSubtitle)?.trim() || '';
     const cleanPhone = (branding.custom_brand_phone ?? branding.customBrandPhone)?.trim() || '';
-    const cleanLogo = (branding.custom_brand_logo_url ?? branding.customBrandLogoUrl)?.trim() || '';
+    const cleanLogo = sanitizeOfficialBrandLogo(
+      branding.custom_brand_logo_url ?? branding.customBrandLogoUrl
+    );
 
     const supabase = getSupabaseClient();
     if (supabase && isSupabaseConfigured() && isValidUUID(currentWorkspace.id)) {
@@ -6520,9 +7119,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           custom_brand_logo_url: cleanLogo,
         })
       );
+      localStorage.setItem(
+        'alittihadia_sticker_branding_v1',
+        JSON.stringify({
+          agencyName: cleanName || currentWorkspace.name || OFFICIAL_APP_BRAND_NAME,
+          agencyPhone: cleanPhone || currentWorkspace.owner_phone || '',
+          logoUrl: cleanLogo,
+        })
+      );
+      window.dispatchEvent(new Event('sticker-branding-updated'));
     } catch {}
 
-    // Sync to Firebase Firestore
+    // Sync to Firebase Firestore + Log rename activity for Platform Owner
     if (firebaseSyncService.isAvailable()) {
       firebaseSyncService.syncWorkspace({
         ...currentWorkspace,
@@ -6534,9 +7142,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }).catch(err => {
         console.warn('Firebase workspace sync error:', err);
       });
+
+      if (cleanName && cleanName !== oldBrandName && currentUser) {
+        firebaseSyncService
+          .logPlatformActivity({
+            workspace_id: currentWorkspace.id,
+            workspace_name: cleanName || currentWorkspace.name,
+            workspace_short_id: currentWorkspace.short_id,
+            actor_id: currentUser.id,
+            actor_name: currentUser.name,
+            actor_phone: currentUser.phone,
+            actor_email: currentUser.email,
+            actor_role: userRole,
+            action_type: 'BRAND_RENAME',
+            action_title: `✏️ تبديل سمية الوكالة/الشركة: من «${oldBrandName}» إلى «${cleanName}»`,
+            details: `قام المدير بتغيير اسم الوكالة من الإعدادات`,
+          })
+          .catch(() => {});
+      }
     }
 
-    showToast('تم حفظ اسم وهوية وشعار المحطة بنجاح', 'success');
+    showToast('تم حفظ وتعميم اسم ولوغو الشركة في الملصقات والتقارير وجميع الـ PDF بنجاح', 'success');
     return { success: true };
   };
 
@@ -7543,6 +8169,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       finalCurrency = currency;
     }
 
+    if (userRole !== 'owner' && userRole !== 'admin') {
+      const msg = 'المدير فقط هو مول محطاتو وهو المخول بفتح محطة جديدة من الإعدادات';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
@@ -7555,7 +8187,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (activeStationsCount >= maxStations) {
       const msg = isPlan2TwoStations
-        ? 'باقتك الحالية (الباك الأول — 99 درهم) تسمح بفتح محطتين (2) فقط كحد أقصى! لفتح محطات غير محدودة وتخصيص اللوغو في الملصقات والبونات يرجى الترقية إلى الباك الثاني (199 درهم).'
+        ? 'باقتك الحالية (الباك الأول — 149 درهم) تسمح بفتح محطتين (2) فقط كحد أقصى! لفتح محطات غير محدودة وتخصيص اللوغو في الملصقات والبونات يرجى الترقية إلى الباك الثاني (299 درهم).'
         : `تم بلوغ الحد الأقصى للمحطات المسموح به في باقتك الحالية (${maxStations} محطات). يرجى ترقية الباقة لإضافة محطة جديدة.`;
       showToast(msg, 'error');
       return { success: false, error: msg };
@@ -7587,7 +8219,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch {}
 
     setStations(prev => [...prev, newSt]);
-    setSelectedStationId(prev => prev || newSt.id);
+    setSelectedStationId(newSt.id);
+
+    // Update partnerships with newly created station
+    setManagerPartnerships(prev => prev.map(p => {
+      const stInfo: PartnershipStationInfo = {
+        id: newSt.id,
+        name: newSt.name,
+        city: newSt.city,
+        country: newSt.country,
+        phone: newSt.phone,
+      };
+      if (p.workspace_a_id === wsId) {
+        return { ...p, workspace_a_stations: [...(p.workspace_a_stations || []).filter(s => s.id !== newSt.id), stInfo] };
+      }
+      if (p.workspace_b_id === wsId) {
+        return { ...p, workspace_b_stations: [...(p.workspace_b_stations || []).filter(s => s.id !== newSt.id), stInfo] };
+      }
+      return p;
+    }));
 
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(wsId)) {
@@ -7613,6 +8263,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       firebaseSyncService.syncStation(wsId, newSt).catch(err => {
         console.warn('Firebase station sync error:', err);
       });
+      firebaseSyncService.updateStationInPartnerships(wsId, newSt.id, {
+        id: newSt.id,
+        name: newSt.name,
+        city: newSt.city,
+        country: newSt.country,
+        phone: newSt.phone,
+      }).catch(() => {});
       if (currentUser) {
         firebaseSyncService
           .logPlatformActivity({
@@ -7647,6 +8304,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       currency?: string;
     }
   ): Promise<{ success: boolean; error?: string }> => {
+    if (userRole !== 'owner' && userRole !== 'admin') {
+      const msg = 'المدير فقط هو المخول بتعديل سمية أو بيانات المحطة من الإعدادات';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
@@ -7673,7 +8336,97 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       currency: nextCurrency,
     };
 
+    // 1. Update stations state
     setStations(prev => prev.map(s => (s.id === stationId ? updatedStation : s)));
+
+    // 2. Cascade new station name across allParcels, allTrips, allTransactions, registeredManagersNetwork, and managerPartnerships (Requirement 6)
+    const modifiedParcelsForSync: Parcel[] = [];
+    const nextParcels = allParcelsRef.current.map(p => {
+      let changed = false;
+      const nextP: Parcel = { ...p };
+      if (p.origin_station_id === stationId && p.origin_station_name !== updatedStation.name) {
+        nextP.origin_station_name = updatedStation.name;
+        changed = true;
+      }
+      if (p.destination_station_id === stationId && p.destination_station_name !== updatedStation.name) {
+        nextP.destination_station_name = updatedStation.name;
+        changed = true;
+      }
+      if (p.partner_destination_station_id === stationId && p.partner_destination_station_name !== updatedStation.name) {
+        nextP.partner_destination_station_name = updatedStation.name;
+        nextP.destination_station_name = updatedStation.name;
+        changed = true;
+      }
+      if (changed) modifiedParcelsForSync.push(nextP);
+      return changed ? nextP : p;
+    });
+    if (modifiedParcelsForSync.length > 0) {
+      allParcelsRef.current = nextParcels;
+      setAllParcels(nextParcels);
+    }
+
+    const nextTrips = allTripsRef.current.map(t => {
+      let changed = false;
+      const nextT: Trip = { ...t };
+      if (t.origin_station_id === stationId && t.origin_station_name !== updatedStation.name) {
+        nextT.origin_station_name = updatedStation.name;
+        changed = true;
+      }
+      if (
+        (t.destination_station_id === stationId || t.partner_destination_station_id === stationId) &&
+        t.destination_station_name !== updatedStation.name
+      ) {
+        nextT.destination_station_name = updatedStation.name;
+        if (t.partner_destination_station_id === stationId) {
+          nextT.partner_destination_station_name = updatedStation.name;
+        }
+        changed = true;
+      }
+      return changed ? nextT : t;
+    });
+    allTripsRef.current = nextTrips;
+    setAllTrips(nextTrips);
+
+    const modifiedTxsForSync: Transaction[] = [];
+    setAllTransactions(prev =>
+      prev.map(tx => {
+        let changed = false;
+        const nextTx: Transaction = { ...tx };
+        if (tx.station_id === stationId && tx.station_name !== updatedStation.name) {
+          nextTx.station_name = updatedStation.name;
+          changed = true;
+        }
+        if (tx.hawala_meta) {
+          const isOrig = tx.hawala_meta.origin_station_id === stationId;
+          const isDest = tx.hawala_meta.destination_station_id === stationId;
+          if (isOrig || isDest) {
+            nextTx.hawala_meta = {
+              ...tx.hawala_meta,
+              origin_station_name: isOrig ? updatedStation.name : tx.hawala_meta.origin_station_name,
+              destination_station_name: isDest ? updatedStation.name : tx.hawala_meta.destination_station_name,
+            };
+            changed = true;
+          }
+        }
+        if (changed) modifiedTxsForSync.push(nextTx);
+        return changed ? nextTx : tx;
+      })
+    );
+
+    setRegisteredManagersNetwork(prev =>
+      prev.map(net =>
+        net.workspaceId === wsId
+          ? {
+              ...net,
+              stations: (net.stations || []).map(st =>
+                st.id === stationId
+                  ? { ...st, name: updatedStation.name, city: updatedStation.city, phone: updatedStation.phone }
+                  : st
+              ),
+            }
+          : net
+      )
+    );
 
     const supabase = getSupabaseClient();
     if (supabase && isValidUUID(wsId) && isValidUUID(stationId)) {
@@ -7705,23 +8458,61 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         country: updatedStation.country,
         phone: updatedStation.phone,
       }).catch(() => {});
+      for (const mp of modifiedParcelsForSync) {
+        firebaseSyncService.syncParcel(wsId, mp).catch(() => {});
+        const cWs =
+          mp.partner_origin_workspace_id && mp.partner_origin_workspace_id !== wsId
+            ? mp.partner_origin_workspace_id
+            : mp.partner_workspace_id && mp.partner_workspace_id !== wsId
+            ? mp.partner_workspace_id
+            : null;
+        if (cWs) {
+          firebaseSyncService.syncPartnerParcelStatusBack(cWs, mp.id, mp).catch(() => {});
+        }
+      }
+      for (const mtx of modifiedTxsForSync) {
+        firebaseSyncService.syncTransaction(wsId, mtx).catch(() => {});
+      }
+      if (currentUser && (existing.name !== updatedStation.name || existing.city !== updatedStation.city)) {
+        firebaseSyncService
+          .logPlatformActivity({
+            workspace_id: wsId,
+            workspace_name: currentWorkspace?.name || 'الشركة',
+            workspace_short_id: currentWorkspace?.short_id,
+            actor_id: currentUser.id,
+            actor_name: currentUser.name,
+            actor_phone: currentUser.phone,
+            actor_email: currentUser.email,
+            actor_role: userRole,
+            action_type: 'STATION_RENAME',
+            action_title: `✏️ تبديل سمية محطة: من «${existing.name}» إلى «${updatedStation.name}» (${updatedStation.city})`,
+            details: `الاسم السابق: ${existing.name} (${existing.city}) ⬅ الاسم الجديد: ${updatedStation.name} (${updatedStation.city})`,
+          })
+          .catch(() => {});
+      }
     }
 
     // Update local partnerships cache
-    setManagerPartnerships(prev => prev.map(p => {
-      let isChanged = false;
-      let newA = p.workspace_a_stations || [];
-      let newB = p.workspace_b_stations || [];
-      if (p.workspace_a_id === wsId) {
-        newA = newA.map(s => s.id === stationId ? { ...s, name: updatedStation.name, city: updatedStation.city, phone: updatedStation.phone } : s);
-        isChanged = true;
-      }
-      if (p.workspace_b_id === wsId) {
-        newB = newB.map(s => s.id === stationId ? { ...s, name: updatedStation.name, city: updatedStation.city, phone: updatedStation.phone } : s);
-        isChanged = true;
-      }
-      return isChanged ? { ...p, workspace_a_stations: newA, workspace_b_stations: newB } : p;
-    }));
+    setManagerPartnerships(prev => {
+      const next = prev.map(p => {
+        let isChanged = false;
+        let newA = p.workspace_a_stations || [];
+        let newB = p.workspace_b_stations || [];
+        if (p.workspace_a_id === wsId) {
+          newA = newA.map(s => s.id === stationId ? { ...s, name: updatedStation.name, city: updatedStation.city, phone: updatedStation.phone } : s);
+          isChanged = true;
+        }
+        if (p.workspace_b_id === wsId) {
+          newB = newB.map(s => s.id === stationId ? { ...s, name: updatedStation.name, city: updatedStation.city, phone: updatedStation.phone } : s);
+          isChanged = true;
+        }
+        return isChanged ? { ...p, workspace_a_stations: newA, workspace_b_stations: newB } : p;
+      });
+      try {
+        localStorage.setItem('alittihadia_manager_partnerships_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
 
     // Record permanent operation audit log
     const stationAudit: AuditLogEntry = {
@@ -7740,11 +8531,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
     setAuditLogs(prev => [stationAudit, ...prev]);
 
-    showToast(`تم تحديث بيانات محطة "${updatedStation.name}" وتعميمها على الشركاء بنجاح`, 'success');
+    pushNotification({
+      workspace_id: wsId,
+      target_station_id: stationId,
+      target_role: 'all',
+      title: `✏️ تم تحديث اسم/بيانات محطة "${updatedStation.name}"`,
+      message: `تم تعميم الاسم الجديد "${updatedStation.name}" في جميع صفحات التطبيق وغرفة الشراكة`,
+      type: 'station',
+    });
+
+    showToast(`تم تحديث بيانات محطة "${updatedStation.name}" وتعميمها على جميع الصفحات والشركاء بنجاح`, 'success');
     return { success: true };
   };
 
   const deleteStation = async (stationId: string): Promise<{ success: boolean; error?: string }> => {
+    if (userRole !== 'owner' && userRole !== 'admin') {
+      const msg = 'المدير فقط هو مول محطاتو وهو المخول بمسح المحطة من الإعدادات';
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
@@ -7769,47 +8575,67 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return next;
     });
 
-    // 3. فك ارتباط وتجميد جميع العمال المعينين في هذه المحطة فوراً
+    // 3. فك ارتباط وإزالة جميع العمال المعينين في هذه المحطة فوراً وإخراجهم (والعامل ديالها يخرج)
     const workersAtThisStation = stationWorkers.filter(sw => sw.station_id === stationId);
+    const membersAtThisStation = workspaceMembers.filter(m => m.station_id === stationId && m.role === 'worker');
     setStationWorkers(prev => prev.filter(sw => sw.station_id !== stationId));
 
     setWorkspaceMembers(prev =>
-      prev.map(m => {
-        if (m.station_id === stationId) {
-          return {
-            ...m,
-            station_id: undefined,
-            status: m.role === 'worker' ? 'removed' : m.status,
-          };
-        }
-        return m;
-      })
+      prev.filter(m => !(m.station_id === stationId && m.role === 'worker'))
     );
 
-    // تسجيل العمال المحذوفين أو المعطلين محلياً لطردهم فوراً في جميع التبويبات المفتوحة
+    // تسجيل العمال المحذوفين أو المعطلين محلياً ومسح بيانات دخولهم لطردهم فوراً في جميع التبويبات والأجهزة
     try {
       const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
+      const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+      const tempMap = JSON.parse(localStorage.getItem('alittihadia_temp_passwords') || '{}');
+
       for (const sw of workersAtThisStation) {
         if (sw.user_id) revokedMap[sw.user_id] = true;
       }
+      for (const wm of membersAtThisStation) {
+        if (wm.user_id) revokedMap[wm.user_id] = true;
+        const p = cleanPhoneNumber(wm.profile?.phone || wm.phone || '');
+        if (p) {
+          revokedMap[p] = true;
+          delete localAccounts[p];
+          delete tempMap[p];
+        }
+      }
       localStorage.setItem('alittihadia_revoked_accounts_v1', JSON.stringify(revokedMap));
+      localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
+      localStorage.setItem('alittihadia_temp_passwords', JSON.stringify(tempMap));
     } catch {}
 
-    // Remove deleted station from local partnerships cache
-    setManagerPartnerships(prev => prev.map(p => {
-      let isChanged = false;
-      let newA = p.workspace_a_stations || [];
-      let newB = p.workspace_b_stations || [];
-      if (p.workspace_a_id === wsId) {
-        newA = newA.filter(s => s.id !== stationId);
-        isChanged = true;
-      }
-      if (p.workspace_b_id === wsId) {
-        newB = newB.filter(s => s.id !== stationId);
-        isChanged = true;
-      }
-      return isChanged ? { ...p, workspace_a_stations: newA, workspace_b_stations: newB } : p;
-    }));
+    // 4. Remove deleted station from local partnerships cache & registeredManagersNetwork so it vanishes from Collaboration Room everywhere
+    setManagerPartnerships(prev => {
+      const next = prev.map(p => {
+        let isChanged = false;
+        let newA = p.workspace_a_stations || [];
+        let newB = p.workspace_b_stations || [];
+        if (p.workspace_a_id === wsId) {
+          newA = newA.filter(s => s.id !== stationId);
+          isChanged = true;
+        }
+        if (p.workspace_b_id === wsId) {
+          newB = newB.filter(s => s.id !== stationId);
+          isChanged = true;
+        }
+        return isChanged ? { ...p, workspace_a_stations: newA, workspace_b_stations: newB } : p;
+      });
+      try {
+        localStorage.setItem('alittihadia_manager_partnerships_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    setRegisteredManagersNetwork(prev =>
+      prev.map(net =>
+        net.workspaceId === wsId
+          ? { ...net, stations: (net.stations || []).filter(st => st.id !== stationId) }
+          : net
+      )
+    );
 
     // Record permanent operation audit log
     const delStationAudit: AuditLogEntry = {
@@ -7821,7 +8647,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       action: 'DELETE',
       table_name: 'stations',
       record_id: stationId,
-      reason: `🗑️ قام المدير [${currentUser?.name || 'المدير'}] بحذف محطة [${targetStation?.name || stationId}] (${targetStation?.city || ''}) وإيقاف كافة عملياتها وتجميد عمالها نهائياً`,
+      reason: `🗑️ قام المدير [${currentUser?.name || 'المدير'}] بحذف محطة [${targetStation?.name || stationId}] (${targetStation?.city || ''}) وإيقاف كافة عملياتها وعمالها وإزالتها من غرفة الشراكة نهائياً`,
       old_data: { name: targetStation?.name, city: targetStation?.city, phone: targetStation?.phone },
       new_data: null,
       created_at: new Date().toISOString(),
@@ -7835,12 +8661,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } catch {}
     }
 
-    // Sync deletion to Firebase Firestore and remove from all partnerships in real-time
+    // Sync deletion to Firebase Firestore and remove from all partnerships & worker accounts in real-time
     if (firebaseSyncService.isAvailable()) {
       firebaseSyncService.deleteStation(wsId, stationId).catch(err => {
         console.warn('Firebase station delete error:', err);
       });
       firebaseSyncService.updateStationInPartnerships(wsId, stationId, null).catch(() => {});
+      for (const wm of membersAtThisStation) {
+        firebaseSyncService.deleteWorkspaceMember(wsId, wm.user_id).catch(() => {});
+        const p = cleanPhoneNumber(wm.profile?.phone || wm.phone || '');
+        if (p) firebaseSyncService.revokeUserAccount(p, wm.user_id).catch(() => {});
+      }
       firebaseSyncService.logPlatformActivity({
         workspace_id: wsId,
         workspace_name: currentWorkspace?.name || 'Sahara Express',
@@ -7853,7 +8684,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }).catch(() => {});
     }
 
-    showToast('تم حذف المحطة وتوقيف كافة العمليات والعمال المرتبطين بها نهائياً', 'info');
+    pushNotification({
+      workspace_id: wsId,
+      target_role: 'all',
+      title: `🗑️ تم حذف محطة "${targetStation?.name || ''}" نهائياً`,
+      message: `تم مسح المحطة من عند المدير، العمال، وجميع الشركاء في غرفة الشراكة`,
+      type: 'station',
+    });
+
+    showToast(`تم حذف محطة "${targetStation?.name || ''}" من جميع الصفحات والعمال وغرفة الشراكة نهائياً`, 'info');
     return { success: true };
   };
 
@@ -7861,8 +8700,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false, error: writeCheck.error };
 
-    if (userRole !== 'owner' && userRole !== 'platform_owner') {
-      const msg = 'صلاحية تعيين العمال للمدير فقط';
+    if (userRole !== 'owner' && userRole !== 'admin') {
+      const msg = 'المدير فقط هو المخول بتعيين العمال من الإعدادات';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
@@ -7876,19 +8715,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: msg };
     }
 
-    // Enforce 1 worker per station when on الباك الأول (99 درهم)
+    // Enforce max 2 workers in الباك الأول (149 درهم: 2 محطات + 2 عمال)
     if (isPlan2TwoStations) {
       const targetWorker = workspaceMembers.find(m => m.user_id === userId);
       const isTargetReal = !targetWorker?.is_demo;
-      const otherOccupant = visibleWorkspaceMembers.find(
+      const otherWorkers = visibleWorkspaceMembers.filter(
         m =>
           m.role === 'worker' &&
           m.user_id !== userId &&
-          m.station_id === stationId &&
           (isTargetReal ? !m.is_demo : true)
       );
-      if (otherOccupant) {
-        const msg = `لا يمكن وضع أكثر من عامل واحد في "${targetStation.name}" ضمن الباك الأول (99 درهم — عامل واحد لكل محطة)! يشغلها حالياً: ${otherOccupant.profile?.name || 'عامل آخر'}.`;
+      if (otherWorkers.length >= 2) {
+        const msg = 'تم بلوغ الحد الأقصى للعمال في الباك الأول (149 درهم = 2 محطات + 2 عمال).';
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
@@ -7952,7 +8790,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const writeCheck = checkWriteAllowed();
     if (!writeCheck.allowed) return { success: false };
 
-    if (userRole !== 'owner' && userRole !== 'platform_owner') {
+    if (userRole !== 'owner' && userRole !== 'admin' && userRole !== 'platform_owner') {
       showToast('صلاحية حذف العمال للمدير فقط', 'error');
       return { success: false };
     }
@@ -8272,7 +9110,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         p_max_workers: quotas.max_workers,
         p_max_stations: quotas.max_stations,
         p_max_collaborations: quotas.max_collaborations,
-        p_plan_name: quotas.plan_name || 'الباك الثاني (199 درهم — الباقة الشاملة)'
+        p_plan_name: quotas.plan_name || 'الباك الثاني (299 درهم — الباقة الشاملة)'
       });
     }
 
@@ -8280,8 +9118,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const nextPlanName =
       quotas.plan_name ||
       (nextTier === 'plan_2_two_stations'
-        ? 'الباك الأول (99 درهم — محطتين وعامل لكل محطة)'
-        : 'الباك الثاني (199 درهم — محطات وعمال غير محدودين)');
+        ? 'الباك الأول (149 درهم — محطتين وعامل لكل محطة)'
+        : 'الباك الثاني (299 درهم — محطات وعمال غير محدودين)');
 
     setAllWorkspacesState(prev => {
       const next = prev.map(ws => ws.id === workspaceId ? {
@@ -8323,7 +9161,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return { success: true };
   };
 
-  // Switch between الباك الأول (99 درهم: محطتين + عامل لكل محطة + لوغو التطبيق) and الباك الثاني (199 درهم: محطات وعمال غير محدودين + لوغو خاص)
+  // Switch between الباك الأول (149 درهم: محطتين + عامل لكل محطة + لوغو التطبيق) and الباك الثاني (299 درهم: محطات وعمال غير محدودين + لوغو خاص)
   const switchWorkspacePlan = async (
     planTier: 'plan_1_full' | 'plan_2_two_stations',
     targetWorkspaceId?: string
@@ -8335,23 +9173,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const wsId = targetWorkspaceId || currentWorkspace?.id;
     if (!wsId) return { success: false, error: 'لا توجد مساحة عمل نشطة' };
 
-    const isBasic99 = planTier === 'plan_2_two_stations';
+    const isBasic149 = planTier === 'plan_2_two_stations';
     const res = await updateWorkspaceQuotas(wsId, {
       plan_tier: planTier,
-      plan_name: isBasic99
-        ? 'الباك الأول (99 درهم): محطتين فقط + عامل لكل محطة'
-        : 'الباك الثاني (199 درهم): محطات وعمال غير محدودين + شعار خاص',
-      max_stations: isBasic99 ? 2 : 99,
-      max_workers: isBasic99 ? 2 : 99,
-      max_workers_per_station: isBasic99 ? 1 : 99,
-      max_collaborations: isBasic99 ? 5 : 99,
+      plan_name: isBasic149
+        ? 'الباك الأول (149 درهم): 2 محطات + 2 عمال + التيكيت بسمية التطبيق'
+        : 'الباك الثاني (299 درهم): بزاف ديال المحطات والعمال + التيكيت بسميتو',
+      max_stations: isBasic149 ? 2 : 99,
+      max_workers: isBasic149 ? 2 : 99,
+      max_workers_per_station: isBasic149 ? 2 : 99,
+      max_collaborations: isBasic149 ? 5 : 99,
     });
 
     if (res.success) {
       showToast(
-        isBasic99
-          ? 'تم تفعيل الباك الأول (99 درهم): جوج محطات فقط، عامل واحد في كل محطة، والملصقات والبونات باسم ولوغو التطبيق الرسمي'
-          : 'تم تفعيل الباك الثاني (199 درهم): فتح محطات وعمال بدون حدود + إمكانية وضع اللوغو الخاص بك في الملصقات والبونات',
+        isBasic149
+          ? 'تم تفعيل الباك الأول (149 درهم): 2 محطات + 2 عمال + التيكيت يخرج بسمية التطبيق الرسمي'
+          : 'تم تفعيل الباك الثاني (299 درهم): بزاف ديال المحطات والعمال + التيكيت يخرج بسميتك ولوغو وكالتك',
         'success'
       );
     }
@@ -9801,6 +10639,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         dispatchParcelToPartner,
         respondToPartnerParcel,
         acceptAllPendingPartnerParcels,
+        confirmParcelTripArrived,
+        confirmTripArrivedAtDestination,
+        notifications,
+        unreadNotificationsCount,
+        markAllNotificationsRead,
+        clearNotifications,
         accountTerminatedNotice,
         dismissAccountTerminatedNotice,
       }}

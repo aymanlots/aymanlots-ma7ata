@@ -145,8 +145,8 @@ html.theme-light .auth-glass-card {
 }
 
 /* أي خانة أو بلاصة داخلية أخرى في وضع النهار = أبيض صافي #FFFFFF مع حدود وكتابة سوداء #000000 */
-html:not(.theme-dark) [class*="bg-"]:not(button):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-inner):not(.desert-bg-overlay):not(.badge-pill),
-html:not(.theme-dark) [class*="from-"]:not(button):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.desert-bg-overlay) {
+html:not(.theme-dark) [class*="bg-"]:not(button):not(button *):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-inner):not(.desert-bg-overlay):not(.badge-pill),
+html:not(.theme-dark) [class*="from-"]:not(button):not(button *):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.desert-bg-overlay) {
   background: #FFFFFF !important;
   background-color: #FFFFFF !important;
   background-image: none !important;
@@ -241,8 +241,8 @@ html.theme-dark .auth-glass-card {
 }
 
 /* أي خانة أو بلاصة داخلية أخرى في وضع الليل = أسود صافي #111111 مع حدود وكتابة بيضاء #FFFFFF */
-html.theme-dark [class*="bg-"]:not(button):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-inner):not(.desert-bg-overlay):not(.badge-pill),
-html.theme-dark [class*="from-"]:not(button):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.desert-bg-overlay) {
+html.theme-dark [class*="bg-"]:not(button):not(button *):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.fixed.inset-0):not(.desert-bg-frame):not(.desert-bg-inner):not(.desert-bg-overlay):not(.badge-pill),
+html.theme-dark [class*="from-"]:not(button):not(button *):not(body):not(html):not(.luxury-card):not(.auth-glass-card):not(.app-viewport-shell):not(.auth-page-wrapper):not(.bg-transparent):not(.logo-circle):not(.desert-bg-overlay) {
   background: #111111 !important;
   background-color: #111111 !important;
   background-image: none !important;

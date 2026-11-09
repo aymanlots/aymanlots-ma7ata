@@ -412,8 +412,8 @@ export const firebaseSyncService = {
           custom_brand_subtitle: ws.custom_brand_subtitle || null,
           custom_brand_phone: ws.custom_brand_phone || null,
           custom_brand_logo_url: ws.custom_brand_logo_url || null,
-          plan_tier: ws.plan_tier || 'plan_1_full',
-          plan_name: ws.plan_name || 'الباقة الشاملة المفتوحة (30 يوم مجاناً)',
+          plan_tier: ws.plan_tier || 'plan_2_two_stations',
+          plan_name: ws.plan_name || 'الفترة التجريبية (30 يوم)',
           max_workers: ws.max_workers ?? 999,
           max_stations: ws.max_stations ?? 999,
           max_workers_per_station: ws.max_workers_per_station ?? 99,
@@ -519,7 +519,7 @@ export const firebaseSyncService = {
       const rawWorkspaces: Workspace[] = [];
       wsSnap.forEach((d) => {
         const ws = d.data() as Workspace;
-        if (!(ws as any).deleted && !(ws as any).is_demo) {
+        if (!(ws as any).deleted && !(ws as any).is_demo && !this.isMasterPlatformWorkspace(ws)) {
           rawWorkspaces.push({
             ...ws,
             id: ws.id || d.id,
@@ -527,30 +527,16 @@ export const firebaseSyncService = {
         }
       });
 
-      // Validate owner in /users and fetch live subcollection counts in parallel
+      // Validate owner in /users and fetch only station count (strictly no parcels, workers, or money data)
       const enrichedResults = await Promise.all(
         rawWorkspaces.map(async (ws) => {
           const isValidOwner = await this.isOwnerUserValidInCloud(ws);
           if (!isValidOwner) return null;
 
           let stationsCount = ws.stations_count ?? 0;
-          let parcelsCount = ws.parcels_count ?? 0;
-          let tripsCount = ws.trips_count ?? 0;
-          let txCount = ws.transactions_count ?? 0;
-          let workersCount = ws.workers_count ?? 0;
           try {
-            const [stSnap, pclSnap, trpSnap, txSnap, memSnap] = await Promise.all([
-              getDocs(collection(db, 'workspaces', ws.id, 'stations')),
-              getDocs(collection(db, 'workspaces', ws.id, 'parcels')),
-              getDocs(collection(db, 'workspaces', ws.id, 'trips')),
-              getDocs(collection(db, 'workspaces', ws.id, 'transactions')),
-              getDocs(collection(db, 'workspaces', ws.id, 'members')),
-            ]);
+            const stSnap = await getDocs(collection(db, 'workspaces', ws.id, 'stations'));
             stationsCount = stSnap.size;
-            parcelsCount = pclSnap.size;
-            tripsCount = trpSnap.size;
-            txCount = txSnap.size;
-            workersCount = memSnap.size;
           } catch {}
 
           return {
@@ -559,11 +545,7 @@ export const firebaseSyncService = {
             owner_email: ws.owner_email || '',
             owner_phone: ws.owner_phone || '',
             owner_whatsapp: ws.owner_whatsapp || ws.owner_phone || '',
-            workers_count: workersCount,
             stations_count: stationsCount,
-            parcels_count: parcelsCount,
-            trips_count: tripsCount,
-            transactions_count: txCount,
           } as Workspace;
         })
       );
@@ -586,7 +568,7 @@ export const firebaseSyncService = {
         const candidates: Workspace[] = [];
         snap.forEach((d) => {
           const ws = d.data() as Workspace;
-          if (!(ws as any).deleted && !(ws as any).is_demo) {
+          if (!(ws as any).deleted && !(ws as any).is_demo && !this.isMasterPlatformWorkspace(ws)) {
             candidates.push({
               ...ws,
               id: ws.id || d.id,
@@ -976,14 +958,36 @@ export const firebaseSyncService = {
   },
 
   // 7. PLATFORM OWNER LIVE ACTIVITY MONITORING & WORKSPACE DELETION
+  // STRICT PRIVACY POLICY: Only logs who logged in/registered, who opened a station, who deleted, and who renamed.
+  // NEVER logs parcel numbers, worker phone numbers, or cashbox/financial amounts.
+  isAllowedPlatformActivityType(actionType?: string): boolean {
+    const allowed = new Set([
+      'LOGIN',
+      'REGISTER',
+      'LOGOUT',
+      'STATION_CREATE',
+      'STATION_DELETE',
+      'STATION_RENAME',
+      'BRAND_RENAME',
+      'PLAN_CHANGE',
+      'SUBSCRIPTION_UPDATE',
+    ]);
+    return Boolean(actionType && allowed.has(actionType));
+  },
+
   async logPlatformActivity(
     entry: Omit<PlatformActivityLog, 'id' | 'created_at'>
   ): Promise<void> {
     if (!this.isAvailable() || !entry.workspace_id) return;
+    // Block any parcel, trip, worker, or cash activity from being logged to the Platform Owner feed
+    if (!this.isAllowedPlatformActivityType(entry.action_type)) return;
+
     const nowIso = new Date().toISOString();
     const logId = `act_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const fullEntry: PlatformActivityLog = sanitizeForFirestore({
       ...entry,
+      // Strip worker phone numbers if actor is a worker
+      actor_phone: entry.actor_role === 'worker' ? undefined : entry.actor_phone,
       id: logId,
       created_at: nowIso,
     });
@@ -1006,7 +1010,7 @@ export const firebaseSyncService = {
         last_action_summary: entry.action_title,
         updated_at: nowIso,
       };
-      if (entry.actor_role === 'owner' || entry.actor_role === 'admin' || entry.actor_role === 'platform_owner') {
+      if (entry.actor_role === 'owner' || entry.actor_role === 'admin') {
         if (entry.actor_name) wsUpdate.owner_name = entry.actor_name;
         if (entry.actor_email) wsUpdate.owner_email = entry.actor_email;
         if (entry.actor_phone) wsUpdate.owner_phone = entry.actor_phone;
@@ -1033,7 +1037,13 @@ export const firebaseSyncService = {
       const snap = await getDocs(colRef);
       const list: PlatformActivityLog[] = [];
       snap.forEach((d) => {
-        list.push(d.data() as PlatformActivityLog);
+        const item = d.data() as PlatformActivityLog;
+        if (this.isAllowedPlatformActivityType(item.action_type)) {
+          list.push({
+            ...item,
+            actor_phone: item.actor_role === 'worker' ? undefined : item.actor_phone,
+          });
+        }
       });
       return list
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
@@ -1053,7 +1063,13 @@ export const firebaseSyncService = {
       (snap) => {
         const list: PlatformActivityLog[] = [];
         snap.forEach((d) => {
-          list.push(d.data() as PlatformActivityLog);
+          const item = d.data() as PlatformActivityLog;
+          if (this.isAllowedPlatformActivityType(item.action_type)) {
+            list.push({
+              ...item,
+              actor_phone: item.actor_role === 'worker' ? undefined : item.actor_phone,
+            });
+          }
         });
         list.sort(
           (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
@@ -1078,78 +1094,34 @@ export const firebaseSyncService = {
       return { stations: [], parcels: [], transactions: [], trips: [], users: [], activityLogs: [] };
     }
     try {
-      const [stSnap, pclSnap, txSnap, trpSnap, actSnap, memSnap, wsDocSnap] = await Promise.all([
+      const [stSnap, actSnap] = await Promise.all([
         getDocs(collection(db, 'workspaces', wsId, 'stations')),
-        getDocs(collection(db, 'workspaces', wsId, 'parcels')),
-        getDocs(collection(db, 'workspaces', wsId, 'transactions')),
-        getDocs(collection(db, 'workspaces', wsId, 'trips')),
         getDocs(collection(db, 'workspaces', wsId, 'activity_logs')),
-        getDocs(collection(db, 'workspaces', wsId, 'members')),
-        getDoc(doc(db, 'workspaces', wsId)),
       ]);
 
       const stations: Station[] = [];
-      stSnap.forEach((d) => stations.push(d.data() as Station));
-
-      const parcels: Parcel[] = [];
-      pclSnap.forEach((d) => parcels.push(d.data() as Parcel));
-      parcels.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-
-      const transactions: Transaction[] = [];
-      txSnap.forEach((d) => transactions.push(d.data() as Transaction));
-      transactions.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-
-      const trips: Trip[] = [];
-      trpSnap.forEach((d) => trips.push(d.data() as Trip));
-      trips.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-
-      const activityLogs: PlatformActivityLog[] = [];
-      actSnap.forEach((d) => activityLogs.push(d.data() as PlatformActivityLog));
-      activityLogs.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-
-      const users: CloudUserAccount[] = [];
-      const wsData = wsDocSnap.exists() ? (wsDocSnap.data() as Workspace) : null;
-      if (wsData && (wsData.owner_phone || wsData.owner_name || wsData.owner_email)) {
-        users.push({
-          id: wsData.created_by || wsData.owner_phone || 'owner',
-          name: wsData.owner_name || wsData.name.replace('Sahara📦 Express - ', '') || 'المدير',
-          phone: wsData.owner_phone || '',
-          whatsapp_number: wsData.owner_whatsapp || wsData.owner_phone || '',
-          email: wsData.owner_email || '',
-          role: 'owner',
-          workspace_id: wsId,
-          status: 'active',
-          deleted: false,
-          created_at: wsData.created_at || new Date().toISOString(),
-          password: undefined, // SECURITY: Password is never exposed
+      stSnap.forEach((d) => {
+        const st = d.data() as Station;
+        // Strip cashbox balances so Platform Owner never sees money
+        stations.push({
+          ...st,
+          balances: undefined,
         });
-      }
-
-      memSnap.forEach((d) => {
-        const m = d.data();
-        if (m.status !== 'removed' && m.status !== 'rejected') {
-          // If not already in list as owner
-          if (!users.some(u => u.phone && u.phone === (m.profile?.phone || m.phone))) {
-            users.push({
-              id: m.user_id || d.id,
-              name: m.profile?.name || m.name || 'عضو المحطة',
-              phone: m.profile?.phone || m.phone || '',
-              whatsapp_number: m.profile?.whatsapp_number || m.whatsapp_number || m.profile?.phone || '',
-              email: m.profile?.email || m.email || '',
-              role: m.role || 'worker',
-              station_id: m.station_id || undefined,
-              worker_code: m.worker_code || m.profile?.worker_code || undefined,
-              workspace_id: wsId,
-              status: m.status || 'active',
-              deleted: false,
-              created_at: m.joined_at || m.profile?.created_at || new Date().toISOString(),
-              password: undefined, // SECURITY: Password is never exposed
-            });
-          }
-        }
       });
 
-      return { stations, parcels, transactions, trips, users, activityLogs };
+      const activityLogs: PlatformActivityLog[] = [];
+      actSnap.forEach((d) => {
+        const log = d.data() as PlatformActivityLog;
+        if (this.isAllowedPlatformActivityType(log.action_type)) {
+          activityLogs.push({
+            ...log,
+            actor_phone: log.actor_role === 'worker' ? undefined : log.actor_phone,
+          });
+        }
+      });
+      activityLogs.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      return { stations, parcels: [], transactions: [], trips: [], users: [], activityLogs };
     } catch (err) {
       console.warn('Firestore inspectWorkspaceDetailsFromCloud warning:', err);
       return { stations: [], parcels: [], transactions: [], trips: [], users: [], activityLogs: [] };
@@ -1814,9 +1786,12 @@ export const firebaseSyncService = {
         created_by: parcel.created_by,
         creator_name: parcel.creator_name,
         created_at: parcel.created_at,
+        trip_arrived_at: parcel.trip_arrived_at || null,
         arrived_at: parcel.arrived_at || null,
         delivered_at: parcel.delivered_at || null,
         delivered_to: parcel.delivered_to || null,
+        last_scanned_by_name: parcel.last_scanned_by_name || null,
+        last_scanned_at_station: parcel.last_scanned_at_station || null,
         updated_at: new Date().toISOString(),
         is_partnership_parcel: true,
         is_collaborator_data: true,
@@ -1859,9 +1834,16 @@ export const firebaseSyncService = {
         current_trip_id: updates.current_trip_id,
         driver_name: updates.driver_name,
         vehicle_plate: updates.vehicle_plate,
+        trip_arrived_at: updates.trip_arrived_at,
         arrived_at: updates.arrived_at,
         delivered_at: updates.delivered_at,
         delivered_to: updates.delivered_to,
+        last_scanned_by_name: updates.last_scanned_by_name,
+        last_scanned_at_station: updates.last_scanned_at_station,
+        origin_station_name: updates.origin_station_name,
+        destination_station_name: updates.destination_station_name,
+        partner_destination_station_name: updates.partner_destination_station_name,
+        route: updates.route,
         status_history: updates.status_history,
         payment_history: updates.payment_history,
         condition: updates.condition,

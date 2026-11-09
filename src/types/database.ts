@@ -36,7 +36,7 @@ export type PaymentStatus = 'paid' | 'unpaid' | 'partial' | 'cod';
 // من يدفع ثمن الشحن / الكولي
 export type ParcelPayer = 'sender' | 'receiver';
 
-export type Language = 'ar';
+export type Language = 'ar' | 'fr' | 'en' | 'es' | 'hassaniya';
 
 export interface Profile {
   id: string;
@@ -412,9 +412,12 @@ export interface Parcel {
   creator_name?: string;
   created_at: string;
   updated_at: string;
+  trip_arrived_at?: string | null;
   arrived_at?: string | null;
   delivered_at?: string | null;
   delivered_to?: string | null;
+  last_scanned_by_name?: string | null;
+  last_scanned_at_station?: string | null;
   notes?: string | null;
 
   origin_station_name?: string;
@@ -459,6 +462,7 @@ export interface Trip {
   received_parcel_ids: string[];       // الكوليات التي تم مسحها عند الوصول
   departure_time?: string | null;      // وقت انطلاق الرحلة الفعلي
   arrival_time?: string | null;        // وقت وصول الرحلة للمحطة
+  arrived_at?: string | null;          // وقت وصول الرحلة (توافقية)
   closed_at?: string | null;           // وقت إغلاق الرحلة
   closed_by?: string | null;
   closed_by_name?: string | null;
@@ -683,6 +687,8 @@ export type PlatformActivityType =
   | 'CASH_OUT'
   | 'STATION_CREATE'
   | 'STATION_DELETE'
+  | 'STATION_RENAME'
+  | 'BRAND_RENAME'
   | 'WORKER_ADD'
   | 'WORKER_REMOVE'
   | 'PLAN_CHANGE'
@@ -703,6 +709,23 @@ export interface PlatformActivityLog {
   details?: string;
   created_at: string;
 }
+
+export interface AppNotification {
+  id: string;
+  workspace_id?: string;
+  title: string;
+  message: string;
+  type: 'partnership' | 'parcel' | 'trip' | 'station' | 'subscription' | 'cashbox';
+  target_station_id?: string | null;
+  target_role?: 'owner' | 'worker' | 'all';
+  parcel_id?: string | null;
+  trip_id?: string | null;
+  partnership_id?: string | null;
+  read?: boolean;
+  is_read?: boolean;
+  created_at: string;
+}
+
 
 
 

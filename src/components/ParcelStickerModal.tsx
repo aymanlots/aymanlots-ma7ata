@@ -3,7 +3,13 @@ import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { Parcel } from '../types/database';
 import { useApp } from '../context/AppContext';
-import { formatTrackingCodeNumeric } from '../utils/logisticsFeatures';
+import {
+  formatTrackingCodeNumeric,
+  isPack2CustomBrandingAllowed,
+  sanitizeOfficialBrandLogo,
+  OFFICIAL_APP_LOGO_PATH,
+  OFFICIAL_APP_BRAND_NAME,
+} from '../utils/logisticsFeatures';
 import {
   Printer,
   ExternalLink,
@@ -688,34 +694,40 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { parcels: allWorkspaceParcels, currentWorkspace, currentUser } = useApp();
+  const { parcels: allWorkspaceParcels, currentWorkspace, currentUser, updateWorkspaceBranding } = useApp();
 
-  const isPack1Basic99 = Boolean(
-    currentWorkspace?.plan_tier === 'plan_2_two_stations' ||
-      currentWorkspace?.max_stations === 2 ||
-      currentWorkspace?.max_workers_per_station === 1
-  );
+  const isPack1Basic99 = !isPack2CustomBrandingAllowed(currentWorkspace);
 
   // خيارات الطباعة المحفوظة بين الجلسات
   const [options, setOptions] = useState<StickerPrintOptions>(() => loadSavedStickerOptions());
 
-  // هوية الملصق المخصصة (الاسم، الهاتف، الشعار)
+  // هوية الملصق المخصصة (الاسم، الهاتف، الشعار) مرتبطة مباشرة بمساحة العمل الحالية
   const [branding, setBranding] = useState<StickerBrandingConfig>(() => {
     try {
       const raw = JSON.parse(localStorage.getItem('alittihadia_sticker_branding_v1') || '{}');
-      const fallbackName =
-        !currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
-          ? 'Sahara📦 Express'
-          : currentWorkspace.name;
+      const wsName =
+        currentWorkspace?.custom_brand_name?.trim() ||
+        raw.agencyName ||
+        (!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
+          ? OFFICIAL_APP_BRAND_NAME
+          : currentWorkspace.name);
+      const wsLogo = sanitizeOfficialBrandLogo(
+        currentWorkspace?.custom_brand_logo_url || raw.logoUrl || ''
+      );
       return {
-        agencyName: raw.agencyName || fallbackName,
-        agencyPhone: raw.agencyPhone || currentUser?.phone || '',
-        logoUrl: raw.logoUrl || '',
+        agencyName: wsName,
+        agencyPhone:
+          currentWorkspace?.custom_brand_phone?.trim() ||
+          raw.agencyPhone ||
+          currentWorkspace?.owner_phone ||
+          currentUser?.phone ||
+          '',
+        logoUrl: wsLogo,
       };
     } catch {
       return {
-        agencyName: 'Sahara📦 Express',
-        agencyPhone: currentUser?.phone || '',
+        agencyName: OFFICIAL_APP_BRAND_NAME,
+        agencyPhone: currentWorkspace?.owner_phone || currentUser?.phone || '',
         logoUrl: '',
       };
     }
@@ -725,40 +737,58 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
     () =>
       isPack1Basic99
         ? {
-            agencyName: 'Sahara📦 Express',
-            agencyPhone: branding.agencyPhone || currentUser?.phone || '',
-            logoUrl: '/assets/aistudio/image_9c11f636.png',
+            agencyName: OFFICIAL_APP_BRAND_NAME,
+            agencyPhone: branding.agencyPhone || currentWorkspace?.owner_phone || currentUser?.phone || '',
+            logoUrl: OFFICIAL_APP_LOGO_PATH,
           }
         : {
             agencyName:
               !branding.agencyName || branding.agencyName === 'محطة الاتحادية'
-                ? 'Sahara📦 Express'
+                ? OFFICIAL_APP_BRAND_NAME
                 : branding.agencyName,
-            agencyPhone: branding.agencyPhone || currentUser?.phone || '',
-            logoUrl: branding.logoUrl || '/assets/aistudio/image_9c11f636.png',
+            agencyPhone: branding.agencyPhone || currentWorkspace?.owner_phone || currentUser?.phone || '',
+            logoUrl: sanitizeOfficialBrandLogo(branding.logoUrl) || OFFICIAL_APP_LOGO_PATH,
           },
-    [isPack1Basic99, branding, currentWorkspace?.name, currentUser?.phone]
+    [isPack1Basic99, branding, currentWorkspace?.name, currentWorkspace?.owner_phone, currentUser?.phone]
   );
 
   useEffect(() => {
     const syncBranding = () => {
       try {
         const raw = JSON.parse(localStorage.getItem('alittihadia_sticker_branding_v1') || '{}');
-        const fallbackName =
-          !currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
-            ? 'Sahara📦 Express'
-            : currentWorkspace.name;
+        const wsName =
+          currentWorkspace?.custom_brand_name?.trim() ||
+          raw.agencyName ||
+          (!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
+            ? OFFICIAL_APP_BRAND_NAME
+            : currentWorkspace.name);
+        const wsLogo = sanitizeOfficialBrandLogo(
+          currentWorkspace?.custom_brand_logo_url || raw.logoUrl || ''
+        );
         setBranding({
-          agencyName: raw.agencyName || fallbackName,
-          agencyPhone: raw.agencyPhone || currentUser?.phone || '',
-          logoUrl: raw.logoUrl || '',
+          agencyName: wsName,
+          agencyPhone:
+            currentWorkspace?.custom_brand_phone?.trim() ||
+            raw.agencyPhone ||
+            currentWorkspace?.owner_phone ||
+            currentUser?.phone ||
+            '',
+          logoUrl: wsLogo,
         });
       } catch {}
     };
     syncBranding();
     window.addEventListener('sticker-branding-updated', syncBranding);
     return () => window.removeEventListener('sticker-branding-updated', syncBranding);
-  }, [isOpen, currentWorkspace?.name, currentUser?.phone]);
+  }, [
+    isOpen,
+    currentWorkspace?.name,
+    currentWorkspace?.custom_brand_name,
+    currentWorkspace?.custom_brand_phone,
+    currentWorkspace?.custom_brand_logo_url,
+    currentWorkspace?.owner_phone,
+    currentUser?.phone,
+  ]);
 
   // حفظ الخيارات تلقائياً في localStorage عند أي تغيير
   useEffect(() => {
@@ -767,12 +797,13 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
     } catch {}
   }, [options]);
 
-  // حفظ هوية المحطة المخصصة تلقائياً عند التعديل من داخل نافذة الطابعة
+  // حفظ هوية المحطة المخصصة تلقائياً وتعميمها فوراً على جميع الملصقات والتقارير والـ PDF
   const updateBrandingField = (field: keyof StickerBrandingConfig, value: string) => {
     if (isPack1Basic99 && (field === 'agencyName' || field === 'logoUrl')) {
       return;
     }
-    const next = { ...branding, [field]: value };
+    const cleanVal = field === 'logoUrl' ? sanitizeOfficialBrandLogo(value) : value;
+    const next = { ...branding, [field]: cleanVal };
     setBranding(next);
     try {
       localStorage.setItem('alittihadia_sticker_branding_v1', JSON.stringify(next));
@@ -780,6 +811,11 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
         window.dispatchEvent(new Event('sticker-branding-updated'));
       }, 0);
     } catch {}
+    updateWorkspaceBranding({
+      customBrandName: next.agencyName,
+      customBrandPhone: next.agencyPhone,
+      customBrandLogoUrl: next.logoUrl,
+    }).catch(() => {});
   };
 
   const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1741,7 +1777,7 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
                 <div className="bg-black/60 border border-[#F5C84C]/35 rounded-xl p-3 space-y-2.5">
                   {isPack1Basic99 ? (
                     <div className="p-2.5 rounded-xl bg-amber-950/60 border border-[#F5C84C]/45 text-[11px] text-[#F5C84C] font-bold leading-relaxed">
-                      🔒 أنت حالياً على <strong>الباك الأول (99 درهم)</strong>: تخرج جميع الملصقات والبونات باسم التطبيق الرسمي (<strong>Sahara📦 Express</strong>) ولوغو التطبيق الرسمي. لتخصيص اللوغو والاسم الخاص بك، انتقل إلى <strong>الباك الثاني (199 درهم)</strong> من صفحة الإعدادات.
+                      🔒 أنت حالياً على <strong>الفترة التجريبية أو الباك الأول (149 درهم)</strong>: تخرج جميع الملصقات والتقارير وجميع الـ PDF باسم التطبيق الرسمي (<strong>Sahara📦 Express</strong>) ولوغو التطبيق الرسمي الثابت ولا يمكن تغييرهما. لتخصيص اللوغو والاسم الخاص بشركتك، انتقل إلى <strong>الباك الثاني (299 درهم)</strong> من صفحة الإعدادات.
                     </div>
                   ) : (
                     <>

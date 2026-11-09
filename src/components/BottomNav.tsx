@@ -28,7 +28,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onOpenQuickDeliver,
 }) => {
   const { parcels, currentWorkspace, t, language, themeMode } = useApp();
-  const dir = language === 'ar' || language === 'hass' ? 'rtl' : 'ltr';
+  const dir = language === 'ar' || language === 'hassaniya' ? 'rtl' : 'ltr';
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   const isParcelsEnabled = currentWorkspace?.parcels_module_enabled !== false;
@@ -50,14 +50,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             dir={dir}
           >
             <div className="flex items-center justify-between border-b border-white/15 pb-2">
-              <span className="text-sm font-black text-[#F5C84C]">➕ عملية جديدة</span>
+              <span className="text-sm font-black text-[#F5C84C]">{t('quickAddTitle', 'عملية جديدة')}</span>
               <button
                 type="button"
                 data-btn-role="remove"
                 data-btn-role-fixed="true"
                 onClick={() => setShowAddMenu(false)}
                 className="btn-delete p-1.5 rounded-xl"
-                aria-label="إغلاق"
+                aria-label={t('btnClose', 'إغلاق')}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -76,8 +76,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 className="btn-add w-full flex items-center justify-between p-3.5 rounded-2xl transition active:scale-95 text-right cursor-pointer"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-xl leading-none">📦</span>
-                  <h4 className="text-sm font-black">+ تسجيل كولي جديد</h4>
+                  <h4 className="text-sm font-black">{t('newParcel', 'تسجيل كولي جديد')}</h4>
                 </div>
                 <Plus className="w-5 h-5" />
               </button>
@@ -95,8 +94,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               className="btn-add w-full flex items-center justify-between p-3.5 rounded-2xl transition active:scale-95 text-right cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl leading-none">💰</span>
-                <h4 className="text-sm font-black">عملية فلاكيس (+ إيداع / - سحب)</h4>
+                <h4 className="text-sm font-black">{t('cashVoucherOption', 'عملية فلاكيس (إيداع / سحب)')}</h4>
               </div>
               <Coins className="w-5 h-5" />
             </button>
@@ -114,8 +112,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 className="btn-add w-full flex items-center justify-between p-3.5 rounded-2xl transition active:scale-95 text-right cursor-pointer"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-xl leading-none">✅</span>
-                  <h4 className="text-sm font-black">تم التسليم (تسليم كولي للزبون)</h4>
+                  <h4 className="text-sm font-black">{t('quickDeliverOption', 'تم التسليم (تسليم كولي للزبون)')}</h4>
                 </div>
                 <UserCheck className="w-5 h-5" />
               </button>
@@ -181,7 +178,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </button>
           )}
 
-          {/* Center Prominent Filled Green Button: + جديد */}
+          {/* Center Prominent Filled Green Button: جديد */}
           <button
             type="button"
             data-btn-role="add"
@@ -193,7 +190,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           >
             <Plus className="w-4 h-4 mb-0.5 stroke-[3]" />
             <span className="text-[10px] leading-tight font-black">
-              + {t('navNew', 'جديد')}
+              {t('navNew', 'جديد')}
             </span>
           </button>
 

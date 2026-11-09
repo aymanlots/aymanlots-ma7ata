@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+import { applyDomLocalization } from './lib/i18n';
 import { Header } from './components/Header';
 import { BottomNav, NavTab } from './components/BottomNav';
 import { OwnerDashboard } from './components/OwnerDashboard';
@@ -39,14 +40,17 @@ const MainApp: React.FC = () => {
     userRole, 
     currentWorkspace, 
     stations,
+    selectedStationId,
+    userAssignedStationId,
     daysUntilExpiry, 
     subscriptionRemainingLabel,
     isSubscriptionExpired,
     showToast,
     themeMode,
+    language,
   } = useApp();
 
-  const dir = 'rtl';
+  const dir = (language === 'ar' || language === 'hassaniya') ? 'rtl' : 'ltr';
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [openSettingsTeam, setOpenSettingsTeam] = useState(false);
@@ -76,9 +80,7 @@ const MainApp: React.FC = () => {
     }
   }, []);
 
-  // Universal Semantic Button & Active-State Classifier
-  // 1) Applies data-btn-role="add" | "remove" | "info" to every <button>
-  // 2) Applies data-btn-active="true" | "false" to all multi-choice / tab / filter / toggle groups
+  // Universal Semantic Button & Active-State Classifier + Full DOM Localization
   useEffect(() => {
     const isChoiceButtonActiveByClass = (btn: HTMLButtonElement): boolean => {
       const cls = btn.className || '';
@@ -101,6 +103,9 @@ const MainApp: React.FC = () => {
       if (btn.dataset.btnRoleFixed === 'true' && btn.dataset.btnRole) {
         return btn.dataset.btnRole as 'add' | 'remove' | 'info';
       }
+      if (btn.dataset.btnOrigRole) {
+        return btn.dataset.btnOrigRole as 'add' | 'remove' | 'info';
+      }
 
       const rawText = (btn.textContent || '').replace(/\s+/g, ' ').trim();
       const metaText = (
@@ -116,8 +121,8 @@ const MainApp: React.FC = () => {
       if (/عملية فلاكيس/.test(rawText)) return 'add';
       if (/حوالة خارجة/.test(fullText)) return 'remove';
       if (/حوالة داخلة/.test(fullText)) return 'add';
-      if (/الشراكة|شراكة/.test(fullText) && !/سلعة/.test(rawText)) return 'add';
-      if (/صرف عملة|صرف العملة/.test(fullText) && !/تأكيد|تاكيد|حفظ/.test(rawText)) {
+      if (/الشراكة|شراكة|Partenariat|Partnership|Asociación/i.test(fullText) && !/سلعة/.test(rawText)) return 'add';
+      if (/صرف عملة|صرف العملة|Change|Exchange|Cambio/i.test(fullText) && !/تأكيد|تاكيد|حفظ|Confirm/i.test(rawText)) {
         return 'info';
       }
       if (
@@ -132,7 +137,7 @@ const MainApp: React.FC = () => {
       // 2. Subtract / Exit / Delete / Cancel -> Red #C1272D
       if (
         btn.classList.contains('btn-delete') ||
-        /سحب|حذف|إلغاء|الغاء|حوالة خارجة|رفض|خروج|إغلاق|اغلاق|تراجع|توقيف|تعليق|إرجاع|ارجاع|📦\s*سلع|ثمن السلع|رصيد سالب/.test(
+        /سحب|حذف|إلغاء|الغاء|حوالة خارجة|رفض|خروج|إغلاق|اغلاق|تراجع|توقيف|تعليق|إرجاع|ارجاع|📦\s*سلع|ثمن السلع|رصيد سالب|Retrait|Withdraw|Retiro|Supprimer|Delete|Eliminar|Annuler|Cancel|Cancelar|Fermer|Close|Cerrar|Déconnexion|Log Out|Cerrar sesión/i.test(
           fullText
         ) ||
         (/^مسح/.test(rawText) && !/باركود|كود|متتالي|فردي/.test(fullText))
@@ -152,12 +157,11 @@ const MainApp: React.FC = () => {
       // 3. Add / Enter / Confirm -> Green #006233
       if (
         btn.classList.contains('btn-add') ||
-        /\+|➕|إضافة|اضافة|أضف|جديد|إيداع|ايداع|زيادة|قبض|حوالة|الشراكة|شراكة|تأكيد|تاكيد|حفظ|تسليم|تم التسليم|تم الاستلام|استلام|وصل|للستوك|قبول|شحن|إنشاء|انشاء|إرسال|ارسال|تفعيل|تسجيل الدخول|دخول مباشر|متابعة|إتمام|موافق/.test(
+        /\+|➕|إضافة|اضافة|أضف|جديد|إيداع|ايداع|زيادة|قبض|حوالة|الشراكة|شراكة|تأكيد|تاكيد|حفظ|تسليم|تم التسليم|تم الاستلام|استلام|وصل|للستوك|قبول|شحن|إنشاء|انشاء|إرسال|ارسال|تفعيل|تسجيل الدخول|دخول مباشر|متابعة|إتمام|موافق|Nouveau|New|Nuevo|Dépôt|Deposit|Depósito|Confirmer|Confirm|Confirmar|Livrer|Deliver|Entregar/i.test(
           rawText
         )
       ) {
-        // Exception: choice toggle buttons like "مستلم واحد / عدة مستلمين" or "المرسل / المستلم" are info toggles, not confirm actions
-        if (!/مستلم واحد|عدة مستلمين|عند الاستلام|خالص/.test(rawText)) {
+        if (!/مستلم واحد|عدة مستلمين|عند الاستلام|خالص|Single|Multiple|destinataire|destinatario/i.test(rawText)) {
           return 'add';
         }
       }
@@ -166,7 +170,6 @@ const MainApp: React.FC = () => {
         return 'add';
       }
 
-      // 4. Everything else (Info / Search / Browse / Navigation / Filters / Toggles) -> Blue #1565C0 in Day, Black #111111 + Gold #D4AF37 in Night
       return 'info';
     };
 
@@ -176,6 +179,9 @@ const MainApp: React.FC = () => {
 
       buttons.forEach((btn) => {
         const role = classifyButtonRole(btn);
+        if (!btn.dataset.btnOrigRole && /[\u0600-\u06FF]/.test(btn.textContent || '')) {
+          btn.dataset.btnOrigRole = role;
+        }
         if (btn.getAttribute('data-btn-role') !== role) {
           btn.setAttribute('data-btn-role', role);
         }
@@ -209,7 +215,7 @@ const MainApp: React.FC = () => {
               const txt = (b.textContent || '').replace(/\s+/g, ' ').trim();
               return (
                 b.getAttribute('type') === 'submit' ||
-                /إلغاء|الغاء|إغلاق|اغلاق|تراجع|رجوع|حذف|خروج|تصفير|إعادة ضبط|طباعة|واتساب|PDF/.test(
+                /إلغاء|الغاء|إغلاق|اغلاق|تراجع|رجوع|حذف|خروج|تصفير|إعادة ضبط|طباعة|واتساب|PDF|Annuler|Cancel|Cancelar|Fermer|Close|Cerrar/i.test(
                   txt
                 )
               );
@@ -230,7 +236,6 @@ const MainApp: React.FC = () => {
               }
             }
 
-            // Not a toggle/choice group with active/inactive split -> clear auto data-btn-active
             directButtons.forEach((b) => {
               if (b.hasAttribute('data-btn-active')) {
                 b.removeAttribute('data-btn-active');
@@ -241,10 +246,15 @@ const MainApp: React.FC = () => {
       });
     };
 
-    applyButtonRolesAndActiveState();
+    const syncAll = () => {
+      applyButtonRolesAndActiveState();
+      applyDomLocalization(document.body, language);
+    };
+
+    syncAll();
 
     const observer = new MutationObserver(() => {
-      applyButtonRolesAndActiveState();
+      syncAll();
     });
 
     observer.observe(document.body, {
@@ -256,36 +266,14 @@ const MainApp: React.FC = () => {
     });
 
     return () => observer.disconnect();
-  }, [themeMode]);
+  }, [themeMode, language]);
 
-  // Launch Guided Tour strictly ONCE for new manager accounts - never repeats automatically
+  // Mark guided tour as seen so station/worker creation happens strictly from the Manager's Settings
   useEffect(() => {
     if (!currentUser || !currentWorkspace) return;
-    const userId = currentUser.id;
-    const wsId = currentWorkspace.id;
-
-    // Check if user or workspace has already seen, dismissed, or completed the tour
-    const alreadySeenUser = localStorage.getItem(`alittihadia_guided_tour_seen_${userId}`) === 'true';
-    const alreadyDismissed = localStorage.getItem(`alittihadia_guided_tour_dismissed_${userId}`) === 'true';
-    const alreadyCompleted = localStorage.getItem(`alittihadia_guided_tour_completed_${wsId}`) === 'true';
-
-    if (alreadySeenUser || alreadyDismissed || alreadyCompleted) {
-      return;
-    }
-
-    // Workers never see the setup wizard
-    if (userRole === 'worker') {
-      localStorage.setItem(`alittihadia_guided_tour_seen_${userId}`, 'true');
-      return;
-    }
-
-    // Trigger only if 0 stations exist in fresh workspace
-    if (stations.length === 0) {
-      setShowGuidedTour(true);
-      // Immediately flag as seen so subsequent renders or refreshes never force it
-      localStorage.setItem(`alittihadia_guided_tour_seen_${userId}`, 'true');
-    }
-  }, [currentUser?.id, currentWorkspace?.id, userRole, stations.length]);
+    localStorage.setItem(`alittihadia_guided_tour_seen_${currentUser.id}`, 'true');
+    localStorage.setItem(`alittihadia_guided_tour_completed_${currentWorkspace.id}`, 'true');
+  }, [currentUser?.id, currentWorkspace?.id]);
 
   // Fixed Background Wrapper: framed strictly to phone width (max-w-[430px]) centered on screen
   const renderDesertFrameBackground = () => {
@@ -327,6 +315,43 @@ const MainApp: React.FC = () => {
             onClose={() => setShowPublicTracking(false)}
             initialTrackingCode={initialTrackingCode}
           />
+          <Toast />
+        </div>
+      </div>
+    );
+  }
+
+  // STRICT ACCOUNT SEPARATION: When Platform Owner (0618961387 / aissaaimanekhlifi@gmail.com) logs in,
+  // render ONLY the dedicated Platform Owner Screen (Subscriptions + Activity Log) and NEVER mix with Manager views!
+  if (userRole === 'platform_owner') {
+    return (
+      <div
+        className="app-viewport-shell min-h-screen w-full flex justify-center relative"
+        dir={dir}
+      >
+        {renderDesertFrameBackground()}
+        <div
+          className={`app-viewport-shell w-full max-w-[430px] min-h-screen flex flex-col border-x relative z-10 overflow-x-hidden ${
+            themeMode === 'dark'
+              ? 'text-[#FFF8EB] border-white/15 shadow-[0_0_60px_rgba(0,0,0,0.9)]'
+              : 'text-[#111111] border-slate-700/60 shadow-[0_0_60px_rgba(0,0,0,0.7)]'
+          }`}
+        >
+          <OfflineIndicator />
+          <Header
+            onOpenSettings={() => {}}
+            onOpenPaywall={() => {}}
+            onOpenPublicTracking={() => setShowPublicTracking(true)}
+            onOpenCollabRoom={() => {}}
+            onOpenCustomerAccounts={() => {}}
+          />
+          <main key={language} className="flex-1 w-full mx-auto px-1.5 py-2">
+            <PlatformOwnerDashboard
+              isOpen={true}
+              onClose={() => {}}
+              isEmbeddedPage={true}
+            />
+          </main>
           <Toast />
         </div>
       </div>
@@ -379,9 +404,6 @@ const MainApp: React.FC = () => {
           onOpenPublicTracking={() => setShowPublicTracking(true)}
           onOpenCollabRoom={() => setShowCollabRoom(true)}
           onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
-          onOpenPlatformOwner={
-            userRole === 'platform_owner' ? () => setShowPlatformOwnerDashboard(true) : undefined
-          }
         />
 
         {/* 3-Day Pre-Expiry Reminder Banner */}
@@ -402,18 +424,20 @@ const MainApp: React.FC = () => {
           </div>
         )}
 
-        {/* Expired or Suspended Paywall Warning Banner (Full Write Lock for Admin & Worker) */}
+        {/* Expired or Suspended Paywall Warning Banner (Post-Expiry Read-Only Mode for Admin & Worker) */}
         {isSubscriptionExpired && (
           <div 
-            onClick={() => setShowPaywall(true)}
+            onClick={() => {
+              if (userRole !== 'worker') setShowPaywall(true);
+            }}
             className="bg-rose-950/90 border-b border-rose-500/50 px-2.5 py-2 text-xs font-bold text-rose-200 flex items-center justify-between gap-2 cursor-pointer hover:bg-rose-950 transition text-right"
           >
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
               <span>
                 {currentWorkspace?.subscription_status === 'suspended'
-                  ? '⛔ تم توقيف الحساب مؤقتاً من طرف إدارة المنصة — لا يمكن إضافة أو إرسال أو استقبال أي كولي حتى إعادة التفعيل.'
-                  : 'انتهت مدة الاشتراك — تم إيقاف الإضافة والإرسال والاستقبال للأدمين والعامل حتى التجديد.'}
+                  ? '⛔ تم توقيف الحساب مؤقتاً — وضع المشاهدة فقط (بياناتك محفوظة، لا يمكن الإضافة أو التعديل حتى إعادة التفعيل).'
+                  : '🔒 وضع المشاهدة فقط — انتهت الفترة التجريبية (30 يوماً). جميع بياناتك القديمة محفوظة للمشاهدة، ولا يمكن الإضافة أو التعديل أو الحذف حتى التجديد.'}
               </span>
             </div>
             <span className="text-[10px] px-2 py-0.5 rounded-lg bg-rose-500/30 border border-rose-400/40 text-white font-black shrink-0">
@@ -422,17 +446,24 @@ const MainApp: React.FC = () => {
           </div>
         )}
 
-        {/* Main View Area */}
-        <main className="flex-1 w-full mx-auto px-1.5 py-2">
-          {/* Universal Station Switcher & Active Station Context Bar */}
-          {currentTab !== 'settings' && <StationScopeBar />}
+        {/* Main View Area — keyed by language and active station scope so switching stations re-renders cleanly without state bleed */}
+        <main key={`${language}-${userRole === 'worker' ? (userAssignedStationId || 'worker') : (selectedStationId || 'all')}`} className="flex-1 w-full mx-auto px-1.5 py-2">
+          {/* Universal Station Switcher & Active Station Context Bar (Manager Only) */}
+          {currentTab !== 'settings' && (
+            <StationScopeBar
+              onOpenSettings={() => {
+                setOpenSettingsTeam(true);
+                setCurrentTab('settings');
+              }}
+            />
+          )}
 
           {currentTab === 'dashboard' && (
-            userRole === 'owner' || userRole === 'platform_owner' || userRole === 'admin' ? (
+            userRole === 'owner' || userRole === 'admin' ? (
               <OwnerDashboard
                 onOpenNewVoucher={(type) => {
                   if (isSubscriptionExpired) {
-                    showToast('انتهت صلاحية الاشتراك (30 يوماً) — لا يمكن إضافة أو إرسال أو استقبال أي عملية حتى التجديد.', 'error');
+                    showToast('🔒 وضع المشاهدة فقط: انتهت فترة 30 يوماً — بياناتك محفوظة للمشاهدة فقط ولا يمكن الإضافة أو التعديل حتى تجديد الاشتراك.', 'error');
                     setShowPaywall(true);
                     return;
                   }
@@ -458,9 +489,6 @@ const MainApp: React.FC = () => {
                 onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
                 onOpenPublicTracking={() => setShowPublicTracking(true)}
                 onOpenGuidedTour={() => setShowGuidedTour(true)}
-                onOpenPlatformOwner={
-                  userRole === 'platform_owner' ? () => setShowPlatformOwnerDashboard(true) : undefined
-                }
               />
             ) : (
               <WorkerStationView
@@ -519,9 +547,6 @@ const MainApp: React.FC = () => {
             <SettingsView
               onOpenPaywall={() => setShowPaywall(true)}
               onOpenPrivacyModal={() => setShowPrivacyModal(true)}
-              onOpenPlatformOwner={
-                userRole === 'platform_owner' ? () => setShowPlatformOwnerDashboard(true) : undefined
-              }
               onOpenCollabRoom={() => setShowCollabRoom(true)}
               onOpenCustomerAccounts={() => setShowCustomerAccounts(true)}
               onOpenGuidedTour={() => setShowGuidedTour(true)}
@@ -632,14 +657,6 @@ const MainApp: React.FC = () => {
           isOpen={showPaywall}
           onClose={() => setShowPaywall(false)}
         />
-
-        {/* Platform Owner Dashboard Modal (Strictly Platform Owner Only) */}
-        {userRole === 'platform_owner' && (
-          <PlatformOwnerDashboard
-            isOpen={showPlatformOwnerDashboard}
-            onClose={() => setShowPlatformOwnerDashboard(false)}
-          />
-        )}
 
 
         {/* Onboarding Modal */}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { SUPPORTED_LANGUAGES, LanguageOption } from '../lib/i18n';
 import { 
   Settings, 
   Key, 
@@ -28,6 +29,12 @@ import {
   Mail
 } from 'lucide-react';
 import { exportService } from '../services/exportService';
+import {
+  isPack2CustomBrandingAllowed,
+  sanitizeOfficialBrandLogo,
+  OFFICIAL_APP_LOGO_PATH,
+  OFFICIAL_APP_BRAND_NAME,
+} from '../utils/logisticsFeatures';
 import { PWAInstallButton } from './PWAInstallButton';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
@@ -66,6 +73,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     transactions,
     parcels,
     stations,
+    selectedStationId,
+    setSelectedStationId,
     addStation,
     updateStation,
     deleteStation,
@@ -89,8 +98,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     showToast,
     themeMode,
     setThemeMode,
+    language,
+    setLanguage,
     t
   } = useApp();
+
+  const dir = (language === 'ar' || language === 'hassaniya') ? 'rtl' : 'ltr';
 
   const isInFree30Days = daysUntilExpiry > 0 && !isSubscriptionExpired;
   const isPlan2TwoStations =
@@ -98,6 +111,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     (currentWorkspace?.plan_tier === 'plan_2_two_stations' ||
       currentWorkspace?.max_stations === 2 ||
       currentWorkspace?.max_workers_per_station === 1);
+  const isBrandingLockedToApp = !isPack2CustomBrandingAllowed(currentWorkspace);
   const activeWorkersList = workspaceMembers.filter(m => m.role === 'worker');
 
   const isOnline = useOnlineStatus();
@@ -112,7 +126,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [openTeamSection, setOpenTeamSection] = useState<boolean>(Boolean(initialOpenTeam));
   const [openContactSection, setOpenContactSection] = useState(false);
 
-  // Station management state in Settings
+  // Unified Station + Workers creation state in Settings
   const [editingStationId, setEditingStationId] = useState<string | null>(null);
   const [editStName, setEditStName] = useState('');
   const [editStCity, setEditStCity] = useState('');
@@ -125,6 +139,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newStCountry, setNewStCountry] = useState<'MA' | 'MR'>('MA');
   const [newStCurrency, setNewStCurrency] = useState<'MAD' | 'MRU'>('MAD');
   const [newStPhone, setNewStPhone] = useState('');
+  const [newStWorker1Name, setNewStWorker1Name] = useState('');
+  const [newStWorker1Phone, setNewStWorker1Phone] = useState('');
+  const [newStWorker2Name, setNewStWorker2Name] = useState('');
+  const [newStWorker2Phone, setNewStWorker2Phone] = useState('');
+  const [stationForQuickWorkerId, setStationForQuickWorkerId] = useState<string | null>(null);
   const [stationToDeleteId, setStationToDeleteId] = useState<string | null>(null);
   const [isSavingStation, setIsSavingStation] = useState(false);
 
@@ -132,14 +151,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [brandNameInput, setBrandNameInput] = useState(
     currentWorkspace?.custom_brand_name ||
       (!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
-        ? 'Sahara📦 Express'
+        ? OFFICIAL_APP_BRAND_NAME
         : currentWorkspace.name)
   );
   const [brandPhoneInput, setBrandPhoneInput] = useState(
     currentWorkspace?.custom_brand_phone || currentUser?.phone || ''
   );
   const [brandLogoUrlInput, setBrandLogoUrlInput] = useState(
-    currentWorkspace?.custom_brand_logo_url || ''
+    sanitizeOfficialBrandLogo(currentWorkspace?.custom_brand_logo_url)
   );
   const [isSavingBranding, setIsSavingBranding] = useState(false);
 
@@ -147,11 +166,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (currentWorkspace) {
       const defaultName =
         !currentWorkspace.name || currentWorkspace.name === 'محطة الاتحادية'
-          ? 'Sahara📦 Express'
+          ? OFFICIAL_APP_BRAND_NAME
           : currentWorkspace.name;
       setBrandNameInput(currentWorkspace.custom_brand_name || defaultName);
       setBrandPhoneInput(currentWorkspace.custom_brand_phone || currentUser?.phone || '');
-      setBrandLogoUrlInput(currentWorkspace.custom_brand_logo_url || '');
+      setBrandLogoUrlInput(sanitizeOfficialBrandLogo(currentWorkspace.custom_brand_logo_url));
     }
   }, [
     currentWorkspace?.custom_brand_name,
@@ -184,7 +203,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   useEffect(() => {
     if (initialOpenTeam) {
-      setOpenTeamSection(true);
+      setOpenStationsSection(true);
       setTimeout(() => {
         teamSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
@@ -430,14 +449,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               disabled={isSavingWorkerProfile}
               className="w-full py-2.5 rounded-xl bg-[#F5C84C] hover:bg-[#F5C84C]/90 text-[#111111] font-black text-xs transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-md"
             >
-              {isSavingWorkerProfile ? '⏳ جاري الحفظ...' : '✅ حفظ بياناتي'}
+              {isSavingWorkerProfile ? '⏳ ...' : t('saveMyData', 'حفظ بياناتي')}
             </button>
           </form>
         </div>
 
-        {/* 4. Theme Mode (وضع النهار / وضع الليل) & Language */}
+        {/* 4. Theme Mode (وضع النهار / وضع الليل) — اللغة من أيقونة الكرة الأرضية 🌐 بالأعلى */}
         <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
-          <span className="text-xs font-black text-white block">☀️ مظهر التطبيق (النهار / الليل)</span>
+          <span className="text-xs font-black text-white block">{t('appAppearance', 'مظهر التطبيق')}</span>
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -450,7 +469,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 themeMode === 'light' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
-              ☀️ وضع النهار
+              {t('dayMode', 'وضع النهار')}
             </button>
             <button
               type="button"
@@ -463,7 +482,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 themeMode === 'dark' ? 'btn-gold' : 'btn-cancel'
               }`}
             >
-              🌙 وضع الليل
+              {t('nightMode', 'وضع الليل')}
             </button>
           </div>
         </div>
@@ -475,7 +494,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="btn-cancel w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
-            <span>تسجيل الخروج من الحساب</span>
+            <span>{t('logoutAccount', 'تسجيل الخروج من الحساب')}</span>
           </button>
         </div>
       </div>
@@ -483,7 +502,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }
 
   return (
-    <div className="space-y-3.5 pb-36 text-right animate-fadeIn" dir="rtl">
+    <div className={`space-y-3.5 pb-36 ${dir === 'rtl' ? 'text-right' : 'text-left'} animate-fadeIn`} dir={dir}>
       
       {/* 1. Header Card */}
       <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
@@ -493,7 +512,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Settings className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-white">⚙️ الإعدادات</h2>
+              <h2 className="text-base sm:text-lg font-black text-white">⚙️ {t('settingsTitle', 'الإعدادات')}</h2>
               <p className="text-[11px] text-white/80 font-bold">
                 {!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
                   ? 'Sahara📦 Express'
@@ -517,7 +536,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               themeMode === 'light' ? 'btn-gold' : 'btn-cancel'
             }`}
           >
-            ☀️ وضع النهار
+            ☀️ {t('dayMode', 'وضع النهار')}
           </button>
           <button
             type="button"
@@ -530,7 +549,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               themeMode === 'dark' ? 'btn-gold' : 'btn-cancel'
             }`}
           >
-            🌙 وضع الليل
+            🌙 {t('nightMode', 'وضع الليل')}
           </button>
         </div>
 
@@ -567,22 +586,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={onOpenPaywall}
-            className="px-3 py-1 rounded-xl bg-[#F5C84C] text-[#111111] text-[11px] font-black transition active:scale-95 cursor-pointer flex items-center gap-1"
-          >
-            <Crown className="w-3.5 h-3.5" />
-            <span>الباقات</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onOpenPaywall}
+              className="px-3 py-1.5 rounded-xl bg-[#F5C84C] text-[#111111] text-[11px] font-black transition active:scale-95 cursor-pointer flex items-center gap-1"
+            >
+              <Crown className="w-3.5 h-3.5" />
+              <span>الباقات</span>
+            </button>
+          </div>
         </div>
       </div>
 
-
-
-      {/* 1.5 إدارة المحطات وتعديل الأسماء (الوكالة والمحطات في مكان واحد منظم) */}
-      {(userRole === 'owner' || userRole === 'platform_owner') && (
-        <div className="luxury-card rounded-[22px] p-4 space-y-3 border border-[#D4AF37]/40">
+      {/* 1.5 قسم موحد ومنظم للـ Admin لإدارة المحطات والعمال في مكان واحد (بطونة واحدة واضحة: + إضافة محطة + عمالها) */}
+      <div ref={teamSectionRef} className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#D4AF37]/55 shadow-lg">
           <div
             role="button"
             tabIndex={0}
@@ -595,207 +613,366 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             }}
             className="w-full flex items-center justify-between gap-2 text-right cursor-pointer select-none"
           >
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0 shadow-md">
                 <Store className="w-5 h-5" />
               </div>
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-sm sm:text-base font-black text-white">🏪 المحطات ({stations.length})</h3>
-                <HelpPopover text="إضافة أو تعديل أسماء المحطات، العملات (MAD / MRU)، أو حذف محطة." />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-sm sm:text-base font-black text-white truncate">
+                    🏪👥 المحطات والعمال ({stations.length} محطات • {activeWorkersList.length} عمال)
+                  </h3>
+                  <HelpPopover text="قسم موحد ومنظم لإضافة المحطة مع عاملها أو عامليها، تعديل السمية، إعطاء الصلاحية وكود الدخول للعامل، أو مسح المحطة نهائياً من كل مكان." />
+                </div>
+                <p className="text-[10px] text-[#E6C37A] font-bold mt-0.5 truncate">
+                  زيد المحطة + العامل ديالها، مسح، وبدل السمية من بلاصة وحدة
+                </p>
               </div>
             </div>
+
             <ChevronDown
-              className={`w-4 h-4 text-[#F5C84C] transition-transform duration-200 shrink-0 ${
+              className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
                 openStationsSection ? 'rotate-180' : ''
               }`}
             />
           </div>
 
           {openStationsSection && (
-            <div className="space-y-3 pt-3 border-t border-white/15 animate-fadeIn">
-              {/* تعديل الاسم العام للوكالة / مساحة العمل */}
-              <div className="bg-black/40 border border-white/15 rounded-xl p-3 space-y-2">
-                <label className="block text-[11px] font-black text-[#F5C84C]">
-                  اسم الوكالة / المحطة الرئيسي (في الملصقات والبونات):
-                </label>
-                {isPlan2TwoStations ? (
-                  <div className="p-2.5 rounded-xl bg-amber-950/50 border border-[#F5C84C]/40 text-[11px] text-[#F5C84C] font-bold flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <img
-                        src="/assets/aistudio/image_9c11f636.png"
-                        alt="Sahara📦 Express"
-                        className="w-9 h-9 rounded-full object-cover border border-[#F5C84C] shrink-0"
-                      />
-                      <span>🔒 في الباك الأول (99 درهم) تخرج الملصقات والبونات باسم ولوغو التطبيق الرسمي (<strong dir="ltr">Sahara📦 Express</strong>).</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (userRole === 'platform_owner') {
-                          switchWorkspacePlan('plan_1_full');
-                        } else {
-                          onOpenPaywall();
-                        }
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-[#F5C84C] text-[#111111] text-[10px] font-black shrink-0 cursor-pointer"
-                    >
-                      {userRole === 'platform_owner' ? 'تفعيل الباك الثاني (199 درهم)' : 'طلب الباك الثاني (199 درهم)'}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={brandNameInput}
-                      onChange={e => setBrandNameInput(e.target.value)}
-                      placeholder="مثال: Sahara📦 Express"
-                      className="flex-1 px-3 py-2 rounded-xl text-xs font-bold bg-black/60 border border-white/20 text-white focus:border-[#F5C84C] focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      disabled={isSavingBranding || !brandNameInput.trim()}
-                      onClick={async () => {
-                        setIsSavingBranding(true);
-                        try {
-                          await updateWorkspaceBranding({
-                            custom_brand_name: brandNameInput.trim(),
-                            custom_brand_phone: brandPhoneInput.trim(),
-                            custom_brand_logo_url: brandLogoUrlInput.trim(),
-                          });
-                        } finally {
-                          setIsSavingBranding(false);
-                        }
-                      }}
-                      className="px-3.5 py-2 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-xs shrink-0 cursor-pointer"
-                    >
-                      {isSavingBranding ? 'حفظ...' : 'حفظ الاسم'}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* قائمة المحطات مع تعديل الاسم أو الحذف */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-black text-white">المحطات المسجلة ({stations.length}):</span>
+            <div className="space-y-3.5 pt-3 border-t border-white/15 animate-fadeIn">
+              {/* شريط الحصة الحالية وطلبات استعادة كلمة المرور */}
+              <div className="p-3 rounded-2xl bg-black/55 border border-[#F5C84C]/35 space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="font-black text-white text-[11px]">
+                    📊 حصة المحطات والعمال الحالية:
+                  </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowAddStationForm(!showAddStationForm);
-                      setEditingStationId(null);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-[#F5C84C] text-[#111111] text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                    onClick={() => setShowPasswordResetAdmin(true)}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center gap-1 cursor-pointer bg-white/10 text-white"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ إضافة محطة</span>
+                    <Key className="w-3 h-3 text-[#F5C84C]" />
+                    <span>طلبات الاستعادة</span>
+                    {(passwordResetRequests || []).filter(r => r.status === 'pending').length > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[9px] font-black">
+                        {(passwordResetRequests || []).filter(r => r.status === 'pending').length}
+                      </span>
+                    )}
                   </button>
                 </div>
 
-                {showAddStationForm && (
-                  <form
-                    onSubmit={async e => {
-                      e.preventDefault();
-                      if (!newStName.trim() || !newStCity.trim()) return;
-                      setIsSavingStation(true);
-                      try {
-                        const res = await addStation({
-                          name: newStName.trim(),
-                          city: newStCity.trim(),
-                          country: newStCountry,
-                          default_currency: newStCurrency,
-                          phone: newStPhone.trim(),
-                        });
-                        if (res.success) {
-                          setShowAddStationForm(false);
-                          setNewStName('');
-                          setNewStCity('');
-                          setNewStPhone('');
-                        }
-                      } finally {
-                        setIsSavingStation(false);
-                      }
-                    }}
-                    className="bg-black/60 border border-[#F5C84C]/50 rounded-xl p-3 space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-[#F5C84C]">إضافة محطة جديدة</span>
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <div className="bg-black/60 p-2 rounded-xl border border-white/15 flex items-center justify-between">
+                    <span className="text-white/75">المحطات المفتوحة:</span>
+                    <span className="font-mono font-black text-[#F5C84C]">
+                      {stations.length} / {isPlan2TwoStations ? '2 محطات' : 'غير محدود'}
+                    </span>
+                  </div>
+                  <div className="bg-black/60 p-2 rounded-xl border border-white/15 flex items-center justify-between">
+                    <span className="text-white/75">
+                      {selectedStationId && selectedStationId !== 'all' ? 'عمال هاد المحطة:' : 'العمال بالمحطات:'}
+                    </span>
+                    <span className="font-mono font-black text-emerald-400">
+                      {selectedStationId && selectedStationId !== 'all'
+                        ? activeWorkersList.filter(w => w.station_id === selectedStationId).length
+                        : `${activeWorkersList.length} / ${isPlan2TwoStations ? '2 عمال' : 'غير محدود'}`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* كود الدخول المباشر للعامل المضاف حديثاً */}
+              {oneTimeCredential && (
+                <div className="p-3.5 rounded-2xl bg-emerald-950/60 border-2 border-emerald-500/60 space-y-2 text-xs animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-emerald-300">
+                      🔑 كود الدخول المباشر للعامل ({oneTimeCredential.name}):
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setOneTimeCredential(null)}
+                      className="btn-cancel px-2.5 py-1 text-[10px]"
+                    >
+                      إخفاء
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between bg-black/70 p-2.5 rounded-xl border border-emerald-500/40">
+                    <span className="font-mono text-base font-black text-[#F5C84C] tracking-wider" dir="ltr">
+                      {oneTimeCredential.temporaryPassword}
+                    </span>
+                    <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => setShowAddStationForm(false)}
-                        className="btn-cancel p-1 rounded-lg"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        required
-                        value={newStName}
-                        onChange={e => setNewStName(e.target.value)}
-                        placeholder="اسم المحطة *"
-                        className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-white"
-                      />
-                      <input
-                        type="text"
-                        required
-                        value={newStCity}
-                        onChange={e => setNewStCity(e.target.value)}
-                        placeholder="المدينة *"
-                        className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-white"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <select
-                        value={newStCountry}
-                        onChange={e => {
-                          const c = e.target.value as 'MA' | 'MR';
-                          setNewStCountry(c);
-                          setNewStCurrency(c === 'MR' ? 'MRU' : 'MAD');
+                        onClick={() => {
+                          navigator.clipboard.writeText(oneTimeCredential.temporaryPassword);
+                          setCopiedTempPass(true);
+                          showToast('تم نسخ كود دخول العامل', 'success');
+                          setTimeout(() => setCopiedTempPass(false), 2000);
                         }}
-                        className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-white"
+                        className="px-2.5 py-1 rounded-lg font-black text-[11px] flex items-center gap-1"
                       >
-                        <option value="MA">🇲🇦 المغرب (MA)</option>
-                        <option value="MR">🇲🇷 موريتانيا (MR)</option>
-                      </select>
-                      <select
-                        value={newStCurrency}
-                        onChange={e => setNewStCurrency(e.target.value as 'MAD' | 'MRU')}
-                        className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-[#F5C84C]"
+                        {copiedTempPass ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedTempPass ? 'تم النسخ' : 'نسخ الكود'}</span>
+                      </button>
+                      <a
+                        href={`https://wa.me/${oneTimeCredential.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                          `مرحباً ${oneTimeCredential.name}، هذا هو كود الدخول المباشر الخاص بك كعامل في Sahara📦 Express:\n\n🔑 كود الدخول: ${oneTimeCredential.temporaryPassword}\n\nطريقة الدخول: افتح التطبيق ← اختر "💼 عامل (موظف محطة)" ← الصق هذا الكود فقط واضغط دخول مباشر.`
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1 rounded-lg bg-[#F5C84C] text-[#111111] font-extrabold text-[11px] flex items-center gap-1"
                       >
-                        <option value="MAD">درهم (MAD)</option>
-                        <option value="MRU">أوقية (MRU)</option>
-                      </select>
+                        <MessageCircle className="w-3 h-3" />
+                        <span>واتساب</span>
+                      </a>
                     </div>
-                    <button
-                      type="submit"
-                      disabled={isSavingStation}
-                      className="w-full py-2 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-xs cursor-pointer"
-                    >
-                      {isSavingStation ? 'جاري الإضافة...' : 'تأكيد إضافة المحطة'}
-                    </button>
-                  </form>
-                )}
+                  </div>
+                </div>
+              )}
 
-                {stations.map(st => {
+              {/* البطونة الوحيدة والواضحة فالإعدادات لإضافة محطة جديدة + عمالها */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black text-[#F5C84C]">
+                  قائمة المحطات وعمالها ({stations.length}):
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddStationForm(!showAddStationForm);
+                    setEditingStationId(null);
+                  }}
+                  className="btn-add px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{showAddStationForm ? 'إغلاق النموذج' : '+ إضافة محطة + عمالها'}</span>
+                </button>
+              </div>
+
+              {/* استمارة موحدة: إضافة محطة + العامل الأول + العامل الثاني في خطوة واحدة */}
+              {showAddStationForm && (
+                <form
+                  onSubmit={async e => {
+                    e.preventDefault();
+                    if (!newStName.trim() || !newStCity.trim()) return;
+                    setIsSavingStation(true);
+                    try {
+                      const res = await addStation({
+                        name: newStName.trim(),
+                        city: newStCity.trim(),
+                        country: newStCountry,
+                        default_currency: newStCurrency,
+                        phone: newStPhone.trim(),
+                      });
+                      if (res.success && res.station) {
+                        const createdStationId = res.station.id;
+                        if (newStWorker1Name.trim() && newStWorker1Phone.trim()) {
+                          const w1 = await addWorkerByOwner(
+                            newStWorker1Name.trim(),
+                            newStWorker1Phone.trim(),
+                            createdStationId
+                          );
+                          if (w1.success && w1.temporaryPassword) {
+                            setOneTimeCredential({
+                              name: newStWorker1Name.trim(),
+                              phone: newStWorker1Phone.trim(),
+                              temporaryPassword: w1.temporaryPassword,
+                            });
+                          }
+                        }
+                        if (newStWorker2Name.trim() && newStWorker2Phone.trim()) {
+                          const w2 = await addWorkerByOwner(
+                            newStWorker2Name.trim(),
+                            newStWorker2Phone.trim(),
+                            createdStationId
+                          );
+                          if (w2.success && w2.temporaryPassword) {
+                            setOneTimeCredential({
+                              name: newStWorker2Name.trim(),
+                              phone: newStWorker2Phone.trim(),
+                              temporaryPassword: w2.temporaryPassword,
+                            });
+                          }
+                        }
+                        setShowAddStationForm(false);
+                        setNewStName('');
+                        setNewStCity('');
+                        setNewStPhone('');
+                        setNewStWorker1Name('');
+                        setNewStWorker1Phone('');
+                        setNewStWorker2Name('');
+                        setNewStWorker2Phone('');
+                      }
+                    } finally {
+                      setIsSavingStation(false);
+                    }
+                  }}
+                  className="bg-black/70 border-2 border-[#F5C84C]/60 rounded-2xl p-3.5 space-y-3 animate-fadeIn"
+                >
+                  <div className="flex items-center justify-between border-b border-white/15 pb-2">
+                    <span className="text-xs font-black text-[#F5C84C]">
+                      🏪 إضافة محطة جديدة + تعيين عمالها (اختياري: عامل أو عاملين)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddStationForm(false)}
+                      className="btn-cancel p-1 rounded-lg"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      required
+                      value={newStName}
+                      onChange={e => setNewStName(e.target.value)}
+                      placeholder="اسم المحطة (مثال: محطة الداخلة) *"
+                      className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-white"
+                    />
+                    <input
+                      type="text"
+                      required
+                      value={newStCity}
+                      onChange={e => setNewStCity(e.target.value)}
+                      placeholder="المدينة (الداخلة / نواذيبو) *"
+                      className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-white"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={newStCountry}
+                      onChange={e => {
+                        const c = e.target.value as 'MA' | 'MR';
+                        setNewStCountry(c);
+                        setNewStCurrency(c === 'MR' ? 'MRU' : 'MAD');
+                      }}
+                      className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-white"
+                    >
+                      <option value="MA">🇲🇦 المغرب (MA)</option>
+                      <option value="MR">🇲🇷 موريتانيا (MR)</option>
+                    </select>
+                    <select
+                      value={newStCurrency}
+                      onChange={e => setNewStCurrency(e.target.value as 'MAD' | 'MRU')}
+                      className="px-3 py-2 rounded-xl text-xs font-bold bg-black/70 border border-white/20 text-[#F5C84C]"
+                    >
+                      <option value="MAD">درهم (MAD)</option>
+                      <option value="MRU">أوقية (MRU)</option>
+                    </select>
+                  </div>
+
+                  {/* العامل الأول للمحطة (اختياري) */}
+                  <div className="p-2.5 rounded-xl bg-black/50 border border-white/15 space-y-2">
+                    <span className="text-[11px] font-black text-emerald-300 block">
+                      👤 العامل الأول في هذه المحطة (اختياري):
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={newStWorker1Name}
+                        onChange={e => setNewStWorker1Name(e.target.value)}
+                        placeholder="اسم العامل 1"
+                        className="px-2.5 py-1.5 rounded-lg text-xs bg-black/70 border border-white/20 text-white"
+                      />
+                      <input
+                        type="tel"
+                        dir="ltr"
+                        value={newStWorker1Phone}
+                        onChange={e => setNewStWorker1Phone(e.target.value)}
+                        placeholder="هاتف العامل 1"
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-black/70 border border-white/20 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* العامل الثاني للمحطة (اختياري) */}
+                  {!isPlan2TwoStations && (
+                    <div className="p-2.5 rounded-xl bg-black/50 border border-white/15 space-y-2">
+                      <span className="text-[11px] font-black text-[#F5C84C] block">
+                        👤 العامل الثاني في هذه المحطة (اختياري):
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={newStWorker2Name}
+                          onChange={e => setNewStWorker2Name(e.target.value)}
+                          placeholder="اسم العامل 2"
+                          className="px-2.5 py-1.5 rounded-lg text-xs bg-black/70 border border-white/20 text-white"
+                        />
+                        <input
+                          type="tel"
+                          dir="ltr"
+                          value={newStWorker2Phone}
+                          onChange={e => setNewStWorker2Phone(e.target.value)}
+                          placeholder="هاتف العامل 2"
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-black/70 border border-white/20 text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isSavingStation}
+                    className="btn-add w-full py-2.5 rounded-xl font-black text-xs cursor-pointer shadow-md"
+                  >
+                    {isSavingStation ? 'جاري الحفظ والإنشاء...' : '✅ حفظ المحطة والعمال الآن'}
+                  </button>
+                </form>
+              )}
+
+              {/* بطاقات المحطات وعمال كل محطة مدمجة في مكان واحد (مفلترة حسب المحطة المختارة فالفوق أو الكل) */}
+              <div className="space-y-2.5">
+                {(selectedStationId && selectedStationId !== 'all'
+                  ? stations.filter(s => s.id === selectedStationId)
+                  : stations
+                ).map(st => {
                   const isEditingThis = editingStationId === st.id;
                   const isConfirmingDelete = stationToDeleteId === st.id;
+                  const stationWorkersList = activeWorkersList.filter(w => w.station_id === st.id);
+                  const isAddingWorkerHere = stationForQuickWorkerId === st.id;
+                  const isCurrentlySelected = selectedStationId === st.id;
+
                   return (
                     <div
                       key={st.id}
-                      className="bg-black/45 border border-white/15 rounded-xl p-3 space-y-2"
+                      className={`bg-black/55 border rounded-2xl p-3 space-y-2.5 ${
+                        isCurrentlySelected ? 'border-emerald-500/70' : 'border-[#D4AF37]/35'
+                      }`}
                     >
                       {!isEditingThis ? (
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="min-w-0">
-                            <p className="text-xs font-black text-white truncate">
-                              {st.country === 'MA' ? '🇲🇦' : '🇲🇷'} {st.name}
-                            </p>
-                            <p className="text-[10px] text-white/70">
-                              المدينة: {st.city} • العملة: {st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD')}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-xs sm:text-sm font-black text-white truncate">
+                                {st.country === 'MA' ? '🇲🇦' : '🇲🇷'} {st.name}
+                              </p>
+                              {isCurrentlySelected && (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-black">
+                                  📍 مفتوحة دابا
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-white/75 font-bold">
+                              المدينة: {st.city} • العملة: {st.default_currency || (st.country === 'MR' ? 'MRU' : 'MAD')} • العمال: {stationWorkersList.length}
                             </p>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStationForQuickWorkerId(isAddingWorkerHere ? null : st.id);
+                                setNewWorkerStationId(st.id);
+                                setNewWorkerName('');
+                                setNewWorkerPhone('');
+                              }}
+                              className="btn-add px-2.5 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1 cursor-pointer"
+                              title="إضافة عامل لهذه المحطة"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>+ عامل</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => {
@@ -807,17 +984,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 setEditStPhone(st.phone || '');
                                 setStationToDeleteId(null);
                               }}
-                              className="px-2.5 py-1.5 rounded-lg bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#F5C84C] text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1.5 rounded-lg bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#F5C84C] text-[10px] font-black flex items-center gap-1 cursor-pointer"
                             >
                               <Pencil className="w-3 h-3" />
-                              <span>تعديل الاسم</span>
+                              <span>تبديل السمية</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => setStationToDeleteId(isConfirmingDelete ? null : st.id)}
-                              className="btn-danger px-2.5 py-1.5 rounded-lg text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                              className="btn-delete px-2 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1 cursor-pointer"
+                              title="حذف المحطة نهائياً من كل مكان"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>مسح</span>
                             </button>
                           </div>
                         </div>
@@ -842,7 +1021,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               setIsSavingStation(false);
                             }
                           }}
-                          className="space-y-2"
+                          className="space-y-2 bg-black/60 p-2.5 rounded-xl border border-[#F5C84C]/40"
                         >
                           <div className="grid grid-cols-2 gap-2">
                             <div>
@@ -894,7 +1073,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               disabled={isSavingStation}
                               className="flex-1 py-1.5 rounded-lg bg-[#F5C84C] text-[#111111] font-black text-xs cursor-pointer"
                             >
-                              حفظ التعديلات
+                              حفظ التعديلات (ومزامنتها في الشراكة)
                             </button>
                             <button
                               type="button"
@@ -907,32 +1086,195 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         </form>
                       )}
 
+                      {/* تأكيد حذف المحطة من كل مكان وإخراج العامل ديالها */}
                       {isConfirmingDelete && (
-                        <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-500/40 flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-bold text-rose-200">
-                            تأكيد حذف محطة &quot;{st.name}&quot;؟
-                          </span>
-                          <div className="flex items-center gap-1.5">
+                        <div className="p-2.5 rounded-xl bg-rose-950/75 border border-rose-500/50 space-y-2">
+                          <p className="text-[11px] font-bold text-rose-200 leading-snug">
+                            ⚠️ تأكيد مسح محطة &quot;{st.name}&quot; نهائياً؟ غادي تمسح من كلشي (عندك، عند الشركاء، ومن غرفة الشراكة) والعامل ديالها غادي يخرج فوراً.
+                          </p>
+                          <div className="flex items-center justify-end gap-1.5">
                             <button
                               type="button"
                               onClick={async () => {
                                 await deleteStation(st.id);
                                 setStationToDeleteId(null);
                               }}
-                              className="btn-danger px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer"
+                              className="btn-delete px-3 py-1.5 rounded-lg text-[11px] font-black cursor-pointer"
                             >
-                              نعم، احذف
+                              نعم، امسح المحطة وأخرج العامل
                             </button>
                             <button
                               type="button"
                               onClick={() => setStationToDeleteId(null)}
-                              className="btn-cancel px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer"
+                              className="btn-cancel px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer"
                             >
                               تراجع
                             </button>
                           </div>
                         </div>
                       )}
+
+                      {/* نموذج سريع لإضافة عامل داخل هذه المحطة */}
+                      {isAddingWorkerHere && (
+                        <form
+                          onSubmit={async e => {
+                            e.preventDefault();
+                            if (!newWorkerName.trim() || !newWorkerPhone.trim()) {
+                              showToast('يرجى إدخال اسم العامل ورقم هاتفه', 'error');
+                              return;
+                            }
+                            setIsAddingWorker(true);
+                            try {
+                              const res = await addWorkerByOwner(newWorkerName.trim(), newWorkerPhone.trim(), st.id);
+                              if (res.success && res.temporaryPassword) {
+                                setOneTimeCredential({
+                                  name: newWorkerName.trim(),
+                                  phone: newWorkerPhone.trim(),
+                                  temporaryPassword: res.temporaryPassword,
+                                });
+                                setNewWorkerName('');
+                                setNewWorkerPhone('');
+                                setStationForQuickWorkerId(null);
+                              } else if (res.error) {
+                                showToast(res.error, 'error');
+                              }
+                            } finally {
+                              setIsAddingWorker(false);
+                            }
+                          }}
+                          className="p-2.5 rounded-xl bg-black/65 border border-emerald-500/40 space-y-2 text-xs animate-fadeIn"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-emerald-300 text-[11px]">
+                              + إضافة عامل جديد في ({st.name}):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setStationForQuickWorkerId(null)}
+                              className="btn-cancel px-2 py-0.5 rounded text-[10px]"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              required
+                              placeholder="اسم العامل الكامل *"
+                              value={newWorkerName}
+                              onChange={e => setNewWorkerName(e.target.value)}
+                              className="bg-black/70 border border-white/20 rounded-lg px-2.5 py-1.5 text-white text-xs"
+                            />
+                            <input
+                              type="tel"
+                              required
+                              dir="ltr"
+                              placeholder="رقم هاتف العامل *"
+                              value={newWorkerPhone}
+                              onChange={e => setNewWorkerPhone(e.target.value)}
+                              className="bg-black/70 border border-white/20 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={isAddingWorker}
+                            className="btn-add w-full py-1.5 rounded-lg font-black text-[11px] cursor-pointer"
+                          >
+                            {isAddingWorker ? 'جاري الإنشاء...' : 'تأكيد إضافة العامل وتوليد الكود'}
+                          </button>
+                        </form>
+                      )}
+
+                      {/* قائمة العمال المعينين في هذه المحطة */}
+                      <div className="pt-1.5 border-t border-white/10 space-y-1.5">
+                        {stationWorkersList.length === 0 ? (
+                          <div className="text-[10px] text-white/60 flex items-center justify-between">
+                            <span>لا يوجد عامل معين في هذه المحطة بعد</span>
+                          </div>
+                        ) : (
+                          stationWorkersList.map(member => {
+                            const activeWorkerCode = member.worker_code || member.profile?.worker_code || '';
+                            return (
+                              <div
+                                key={member.user_id}
+                                className="bg-black/45 p-2 rounded-xl border border-white/10 flex items-center justify-between gap-2 text-xs"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <User className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                    <span className="font-bold text-white text-[11px]">{member.profile?.name || 'عامل المحطة'}</span>
+                                    <span className="text-[10px] font-mono text-white/75" dir="ltr">
+                                      {member.profile?.phone}
+                                    </span>
+                                  </div>
+                                  {activeWorkerCode && (
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(activeWorkerCode);
+                                          showToast(`تم نسخ كود العامل: ${activeWorkerCode}`, 'success');
+                                        }}
+                                        className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-[#F5C84C] font-mono text-[10px] font-black flex items-center gap-1 cursor-pointer"
+                                        dir="ltr"
+                                      >
+                                        <Key className="w-2.5 h-2.5 text-emerald-400" />
+                                        <span>{activeWorkerCode}</span>
+                                        <Copy className="w-2.5 h-2.5 text-white/70" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {stations.length > 1 && (
+                                    <select
+                                      value={member.station_id || st.id}
+                                      onChange={async (e) => {
+                                        await assignWorkerToStation(e.target.value, member.user_id);
+                                      }}
+                                      className="px-1.5 py-1 rounded-lg bg-black/70 border border-[#F5C84C]/40 text-[#F5C84C] text-[10px] font-bold"
+                                      title="تعيين المحطة / صلاحية العامل"
+                                    >
+                                      {stations.map(optSt => (
+                                        <option key={optSt.id} value={optSt.id}>
+                                          📍 {optSt.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const res = await resetMemberPassword(member.user_id);
+                                      if (res.success && res.temporaryPassword) {
+                                        setOneTimeCredential({
+                                          name: member.profile?.name || 'العامل',
+                                          phone: member.profile?.phone || '',
+                                          temporaryPassword: res.temporaryPassword,
+                                        });
+                                        showToast('تم توليد كود دخول جديد للعامل', 'success');
+                                      }
+                                    }}
+                                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer"
+                                    title="توليد كود دخول جديد"
+                                  >
+                                    <Key className="w-3.5 h-3.5 text-[#F5C84C]" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setWorkerToDelete({ id: member.user_id, name: member.profile?.name || 'العامل' })}
+                                    className="btn-delete p-1.5 rounded-lg transition cursor-pointer"
+                                    title="حذف العامل"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -940,7 +1282,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           )}
         </div>
-      )}
 
       {/* 2. Platform Owner Panel Launcher */}
       {userRole === 'platform_owner' && onOpenPlatformOwner && (
@@ -1221,468 +1562,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         )}
       </div>
 
-      {/* 4. Collapsible: فـريق العمل المعتمد */}
-      <div ref={teamSectionRef} className="luxury-card rounded-[22px] p-4">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setOpenTeamSection(prev => !prev)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setOpenTeamSection(prev => !prev);
-            }
-          }}
-          className="flex items-center justify-between gap-2 cursor-pointer select-none"
-        >
-          <div className="flex items-center gap-1.5">
-            <User className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h3 className="text-sm sm:text-base font-black text-white">👥 العمال ({workspaceMembers.length})</h3>
-            <HelpPopover text="إضافة عمال جدد، توليد كود الدخول المباشر لكل عامل، وتعيين المحطة الخاصة به." />
-          </div>
-          <ChevronDown
-            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
-              openTeamSection ? 'rotate-180' : ''
-            }`}
-          />
-        </div>
-
-        {openTeamSection && (
-          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-3">
-            {/* Package Quota & Station/Worker Limit Banner */}
-            <div className="p-3 rounded-2xl bg-black/55 border border-[#F5C84C]/35 space-y-2.5 text-xs">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5">
-                  <Crown className="w-4 h-4 text-[#F5C84C] shrink-0" />
-                  <span className="font-black text-white text-[11px]">
-                    {isPlan2TwoStations
-                      ? 'الباك الأول (99 درهم): جوج محطات فقط + عامل في كل محطة'
-                      : 'الباك الثاني (199 درهم) / التجريبي: محطات وعمال غير محدودين'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={onOpenPaywall}
-                  className="px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
-                >
-                  عرض الباقات
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[10px]">
-                <div className="bg-black/60 p-2 rounded-xl border border-white/15 flex items-center justify-between">
-                  <span className="text-white/75">المحطات المفتوحة:</span>
-                  <span className="font-mono font-black text-[#F5C84C]">
-                    {stations.length} / {isPlan2TwoStations ? '2 محطات' : 'غير محدود'}
-                  </span>
-                </div>
-                <div className="bg-black/60 p-2 rounded-xl border border-white/15 flex items-center justify-between">
-                  <span className="text-white/75">العمال بالمحطات:</span>
-                  <span className="font-mono font-black text-emerald-400">
-                    {activeWorkersList.length} / {isPlan2TwoStations ? '2 (عامل/محطة)' : 'غير محدود'}
-                  </span>
-                </div>
-              </div>
-
-              {userRole === 'platform_owner' && (
-                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => switchWorkspacePlan('plan_2_two_stations')}
-                    className={`py-1.5 px-2 rounded-xl text-[10px] font-black transition cursor-pointer ${
-                      isPlan2TwoStations ? 'btn-gold' : 'btn-cancel'
-                    }`}
-                  >
-                    🏪 الباك الأول (99 DH — محطتين)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => switchWorkspacePlan('plan_1_full')}
-                    className={`py-1.5 px-2 rounded-xl text-[10px] font-black transition cursor-pointer ${
-                      !isPlan2TwoStations ? 'btn-gold' : 'btn-cancel'
-                    }`}
-                  >
-                    👑 الباك الثاني (199 DH — مفتوح)
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {(userRole === 'owner' || userRole === 'platform_owner') && (
-              <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setShowPasswordResetAdmin(true)}
-                  className="px-3 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 cursor-pointer"
-                >
-                  <Key className="w-3.5 h-3.5" />
-                  <span>طلبات الاستعادة</span>
-                  {(passwordResetRequests || []).filter(r => r.status === 'pending').length > 0 && (
-                    <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[9px] font-black">
-                      {(passwordResetRequests || []).filter(r => r.status === 'pending').length}
-                    </span>
-                  )}
-                </button>
-                {(userRole === 'owner' || userRole === 'platform_owner') && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!showAddWorkerForm && isPlan2TwoStations) {
-                        const freeStation = stations.find(
-                          st => !activeWorkersList.some(w => !w.is_demo && w.station_id === st.id)
-                        );
-                        if (freeStation) setNewWorkerStationId(freeStation.id);
-                      }
-                      setShowAddWorkerForm(!showAddWorkerForm);
-                    }}
-                    className={`${showAddWorkerForm ? 'btn-cancel ' : ''}px-3 py-1.5 rounded-xl text-[11px] font-black cursor-pointer`}
-                  >
-                    {showAddWorkerForm ? 'إغلاق' : '+ إضافة عامل'}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Worker Direct Login Code Display Box */}
-            {oneTimeCredential && (
-              <div className="p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-500/50 space-y-2 text-xs animate-fadeIn">
-                <div className="flex items-center justify-between">
-                  <span className="font-black text-emerald-300">
-                    🔑 كود الدخول المباشر للعامل {oneTimeCredential.name}:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setOneTimeCredential(null)}
-                    className="btn-cancel px-2.5 py-1 text-[10px]"
-                  >
-                    إخفاء
-                  </button>
-                </div>
-                <div className="flex items-center justify-between bg-black/60 p-2.5 rounded-xl border border-emerald-500/40">
-                  <span className="font-mono text-base font-black text-[#F5C84C] tracking-wider" dir="ltr">
-                    {oneTimeCredential.temporaryPassword}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(oneTimeCredential.temporaryPassword);
-                        setCopiedTempPass(true);
-                        showToast('تم نسخ كود دخول العامل', 'success');
-                        setTimeout(() => setCopiedTempPass(false), 2000);
-                      }}
-                      className="px-2.5 py-1 rounded-lg font-black text-[11px] flex items-center gap-1"
-                    >
-                      {copiedTempPass ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedTempPass ? 'تم النسخ' : 'نسخ الكود'}</span>
-                    </button>
-                    <a
-                      href={`https://wa.me/${oneTimeCredential.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                        `مرحباً ${oneTimeCredential.name}، هذا هو كود الدخول المباشر الخاص بك كعامل في Sahara📦 Express:\n\n🔑 كود الدخول: ${oneTimeCredential.temporaryPassword}\n\nطريقة الدخول: افتح التطبيق ← اختر "💼 عامل (موظف محطة)" ← الصق هذا الكود فقط واضغط دخول مباشر (بدون Gmail).`
-                      )}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-2.5 py-1 rounded-lg bg-[#F5C84C] text-[#111111] font-extrabold text-[11px] flex items-center gap-1"
-                    >
-                      <MessageCircle className="w-3 h-3" />
-                      <span>واتساب</span>
-                    </a>
-                  </div>
-                </div>
-                <p className="text-[10px] text-emerald-200">
-                  * أرسل هذا الكود للعامل. يكفيه اختيار "💼 عامل (موظف محطة)" وإدخال هذا الكود فقط للدخول مباشرة لمحطته بدون Gmail.
-                </p>
-              </div>
-            )}
-
-            {/* Add Worker Form */}
-            {showAddWorkerForm && (userRole === 'owner' || userRole === 'platform_owner') && (
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  if (!newWorkerName.trim() || !newWorkerPhone.trim()) {
-                    showToast('يرجى إدخال اسم العامل ورقم هاتفه', 'error');
-                    return;
-                  }
-                  setIsAddingWorker(true);
-                  try {
-                    const res = await addWorkerByOwner(newWorkerName.trim(), newWorkerPhone.trim(), newWorkerStationId);
-                    if (res.success && res.temporaryPassword) {
-                      setOneTimeCredential({
-                        name: newWorkerName.trim(),
-                        phone: newWorkerPhone.trim(),
-                        temporaryPassword: res.temporaryPassword,
-                      });
-                      setNewWorkerName('');
-                      setNewWorkerPhone('');
-                      setShowAddWorkerForm(false);
-                    } else if (res.error) {
-                      showToast(res.error, 'error');
-                    }
-                  } finally {
-                    setIsAddingWorker(false);
-                  }
-                }}
-                className="p-3 rounded-xl bg-black/50 border border-white/15 space-y-2.5 text-xs"
-              >
-                <span className="font-bold text-white block">
-                  إضافة حساب عامل جديد وتوليد كود دخول مباشر له:
-                </span>
-                {isPlan2TwoStations && (
-                  <p className="text-[10px] text-[#E6C37A] bg-black/50 p-2 rounded-lg border border-[#F5C84C]/30">
-                    تنبيه الباك الثاني: يُسمح بعامل واحد (1) فقط في كل محطة من المحطتين المفتوحتين.
-                  </p>
-                )}
-                <input
-                  type="text"
-                  required
-                  placeholder="الاسم الكامل للعامل"
-                  value={newWorkerName}
-                  onChange={e => setNewWorkerName(e.target.value)}
-                  className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white text-xs"
-                />
-                <input
-                  type="tel"
-                  required
-                  placeholder="رقم هاتف العامل (مثال: 0612345678 أو 222...)"
-                  value={newWorkerPhone}
-                  onChange={e => setNewWorkerPhone(e.target.value)}
-                  className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs"
-                  dir="ltr"
-                />
-                <select
-                  value={newWorkerStationId}
-                  onChange={e => setNewWorkerStationId(e.target.value)}
-                  className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white text-xs"
-                >
-                  {stations.map(st => {
-                    const occupant = activeWorkersList.find(w => !w.is_demo && w.station_id === st.id);
-                    return (
-                      <option key={st.id} value={st.id}>
-                        {st.name}
-                        {isPlan2TwoStations
-                          ? occupant
-                            ? ` (مشغولة: ${occupant.profile?.name || 'عامل'})`
-                            : ' (متاحة — 0/1 عامل)'
-                          : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-                <button
-                  type="submit"
-                  disabled={isAddingWorker}
-                  className="w-full py-2 rounded-xl font-black text-xs disabled:opacity-50 shadow-md"
-                >
-                  {isAddingWorker ? 'جاري الإنشاء...' : 'إنشاء الحساب وتوليد كود دخول العامل'}
-                </button>
-              </form>
-            )}
-
-            {workspaceMembers.length === 0 ? (
-              <div className="text-center py-5 text-white/75 text-xs bg-black/50 rounded-xl border border-white/15">
-                لا يوجد أعضاء آخرين في مساحة العمل حالياً.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {workspaceMembers.map(member => {
-                  const assignedSt = stations.find(s => s.id === member.station_id) || stations[0];
-                  const activeWorkerCode = member.worker_code || member.profile?.worker_code || '';
-                  return (
-                    <div 
-                      key={member.user_id}
-                      className="bg-black/50 p-3 rounded-xl border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-black/60 border border-white/15 flex items-center justify-center font-bold text-white shrink-0">
-                          {member.role === 'admin' || member.role === 'owner' ? <Crown className="w-4 h-4 text-[#F5C84C]" /> : <User className="w-4 h-4 text-[#2ECC71]" />}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-white break-words">{member.profile?.name || 'عضو الفريق'}</span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-black/60 text-[#F5C84C] border border-white/15">
-                              {member.role === 'admin' || member.role === 'owner' ? 'مدير' : 'عامل'}
-                            </span>
-                            {member.role === 'worker' && assignedSt && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-950/70 text-emerald-300 border border-emerald-500/35">
-                                📍 {assignedSt.city || assignedSt.name}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 text-[11px] text-white/80 font-mono mt-0.5 flex-wrap">
-                            <span dir="ltr">{member.profile?.phone}</span>
-                            {(userRole === 'owner' || userRole === 'platform_owner') && member.role === 'worker' && activeWorkerCode && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(activeWorkerCode);
-                                  showToast(`تم نسخ كود العامل: ${activeWorkerCode}`, 'success');
-                                }}
-                                className="px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-[#F5C84C] font-mono text-[10px] font-black flex items-center gap-1 hover:bg-emerald-900/70 transition cursor-pointer"
-                                title="اضغط لنسخ كود الدخول المباشر للعامل"
-                                dir="ltr"
-                              >
-                                <Key className="w-2.5 h-2.5 text-emerald-400" />
-                                <span>{activeWorkerCode}</span>
-                                <Copy className="w-2.5 h-2.5 text-white/70" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                        {(userRole === 'owner' || userRole === 'platform_owner') && member.role === 'worker' && (
-                          <select
-                            value={member.station_id || stations[0]?.id || ''}
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                assignWorkerToStation(e.target.value, member.user_id);
-                              }
-                            }}
-                            className="bg-black/60 border border-white/15 text-white text-[11px] font-bold rounded-xl px-2.5 py-1.5 focus:outline-none"
-                          >
-                            {stations.map((st) => {
-                              const otherWorker = activeWorkersList.find(
-                                w => w.user_id !== member.user_id && w.station_id === st.id && (!member.is_demo ? !w.is_demo : true)
-                              );
-                              return (
-                                <option key={st.id} value={st.id}>
-                                  {st.name}
-                                  {isPlan2TwoStations && otherWorker ? ' (مشغولة بعامل آخر)' : ''}
-                                </option>
-                              );
-                            })}
-                          </select>
-                        )}
-
-                        {(userRole === 'owner' || userRole === 'platform_owner') && member.user_id !== currentUser?.id && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const res = await resetMemberPassword(member.user_id);
-                                if (res.success && res.temporaryPassword) {
-                                  setOneTimeCredential({
-                                    name: member.profile?.name || 'العامل',
-                                  phone: member.profile?.phone || '',
-                                    temporaryPassword: res.temporaryPassword,
-                                  });
-                                  showToast('تم توليد وحفظ كود دخول جديد للعامل في السحابة', 'success');
-                                } else if (res.error) {
-                                  showToast(res.error, 'error');
-                                }
-                              }}
-                              className="p-1.5 rounded-lg transition cursor-pointer"
-                              title="توليد كود دخول جديد للعامل"
-                            >
-                              <Key className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setWorkerToDelete({ id: member.user_id, name: member.profile?.name || 'الموظف' })}
-                              className="btn-delete p-1.5 rounded-lg transition cursor-pointer"
-                              title="حذف من مساحة العمل"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 5. Collapsible: معلومات وهوية مساحة العمل */}
-      <div className="luxury-card rounded-[22px] p-4">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setOpenWorkspaceInfo(prev => !prev)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setOpenWorkspaceInfo(prev => !prev);
-            }
-          }}
-          className="flex items-center justify-between gap-2 cursor-pointer select-none"
-        >
-          <div className="flex items-center gap-1.5">
-            <Store className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h3 className="text-xs sm:text-sm font-black text-white">معلومات وهوية مساحة العمل (2)</h3>
-          </div>
-          <ChevronDown
-            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
-              openWorkspaceInfo ? 'rotate-180' : ''
-            }`}
-          />
-        </div>
-
-        {openWorkspaceInfo && (
-          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-2.5">
-            {/* Unique 6-character Short ID */}
-            <div className="bg-black/50 p-3 rounded-xl border border-white/15 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-white">المعرف القصير لمساحة العمل:</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/60 text-white font-bold border border-white/15">
-                  للربط مع المدراء
-                </span>
-              </div>
-              <div className="flex items-center justify-between bg-black/60 p-2.5 rounded-xl border border-white/15">
-                <span className="font-mono text-sm font-black text-white tracking-wider" dir="ltr">
-                  {currentWorkspace?.short_id || '------'}
-                </span>
-                <button
-                  onClick={handleCopyShortId}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black transition active:scale-95"
-                >
-                  {copiedWsId ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedWsId ? 'تم النسخ' : 'نسخ'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Renewable Invite Code for Workers */}
-            <div className="bg-black/50 p-3 rounded-xl border border-white/15 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-white">رمز دعوة العمال:</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/60 text-white font-bold border border-white/15">
-                  يتطلب موافقتك
-                </span>
-              </div>
-              <div className="flex items-center justify-between bg-black/60 p-2.5 rounded-xl border border-white/15">
-                <span className="font-mono text-sm font-black text-white tracking-wider" dir="ltr">
-                  {currentWorkspace?.invite_code || '--------'}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handleCopyInviteCode}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition active:scale-95"
-                  >
-                    {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedCode ? 'تم' : 'نسخ'}</span>
-                  </button>
-                  {(userRole === 'owner' || userRole === 'platform_owner') && (
-                    <button
-                      onClick={handleRegenerateCode}
-                      disabled={isRegenerating}
-                      title="تجديد الرمز عشوائياً"
-                      className="p-1.5 rounded-lg transition active:scale-95 disabled:opacity-50"
-                    >
-                      <RotateCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* 4 & 5. تم دمج إدارة المحطات والعمال في القسم (1.5) ومعلومات وهوية مساحة العمل في قسم الخصوصية والأمان (3) لمنع التكرار */}
 
       {/* 5.b Collapsible: تخصيص اسم وشعار المحطة في الملصق الحراري وبونات الـ PDF (Custom Branding) */}
       <div className="luxury-card rounded-[22px] p-4">
@@ -1716,13 +1596,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              if (isPlan2TwoStations) return;
+              if (isBrandingLockedToApp) return;
               setIsSavingBranding(true);
               try {
                 await updateWorkspaceBranding({
                   customBrandName: brandNameInput.trim(),
                   customBrandPhone: brandPhoneInput.trim(),
-                  customBrandLogoUrl: brandLogoUrlInput.trim(),
+                  customBrandLogoUrl: sanitizeOfficialBrandLogo(brandLogoUrlInput),
                 });
               } finally {
                 setIsSavingBranding(false);
@@ -1730,21 +1610,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             }}
             className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs"
           >
-            {isPlan2TwoStations ? (
+            {isBrandingLockedToApp ? (
               <div className="p-3.5 rounded-2xl bg-amber-950/60 border border-[#F5C84C]/50 space-y-2.5 text-xs">
                 <div className="flex items-center gap-2.5 text-[#F5C84C] font-black">
                   <img
-                    src="/assets/aistudio/image_9c11f636.png"
-                    alt="Sahara📦 Express"
+                    src={OFFICIAL_APP_LOGO_PATH}
+                    alt={OFFICIAL_APP_BRAND_NAME}
                     className="w-12 h-12 rounded-full object-cover border-2 border-[#F5C84C] shrink-0"
                   />
                   <div>
-                    <div className="text-xs font-black text-white" dir="ltr">Sahara📦 Express</div>
-                    <div className="text-[11px] text-[#F5C84C]">الباك الأول (99 درهم): الملصقات والبونات تخرج باسم ولوغو التطبيق الرسمي</div>
+                    <div className="text-xs font-black text-white" dir="ltr">{OFFICIAL_APP_BRAND_NAME}</div>
+                    <div className="text-[11px] text-[#F5C84C]">الفترة التجريبية والباك الأول (149 درهم): لوغو واسم التطبيق الرسمي ثابت في كل المطبوعات</div>
                   </div>
                 </div>
                 <p className="text-[11px] text-white/85 leading-relaxed">
-                  في <strong>الباك الأول (99 درهم)</strong> تخرج جميع الملصقات الحرارية وبونات الـ PDF باسم التطبيق الرسمي <strong dir="ltr">Sahara📦 Express</strong> ولوغو التطبيق الرسمي المعتمد أعلاه ولا يمكن تغييرهما. لوضع اللوغو والاسم الخاص بك في الملصقات والبونات، قم بتفعيل <strong>الباك الثاني (199 درهم)</strong>.
+                  في <strong>الفترة التجريبية (30 يوم)</strong> وفي <strong>الباك الأول (149 درهم)</strong> تخرج جميع الملصقات الحرارية والتقارير وجميع الـ PDF باسم التطبيق الرسمي <strong dir="ltr">{OFFICIAL_APP_BRAND_NAME}</strong> ولوغو التطبيق الرسمي المعتمد أعلاه ولا يمكن تغييرهما. لتغيير السمية والتصويرة ديال الشركة ديالك وتعميمها فالبلاصة على كلشي، قم بتفعيل <strong>الباك الثاني (299 درهم)</strong>.
                 </p>
                 <button
                   type="button"
@@ -1758,28 +1638,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="btn-gold w-full py-2.5 rounded-xl font-black text-xs cursor-pointer"
                 >
                   {userRole === 'platform_owner'
-                    ? '👑 تفعيل الباك الثاني (199 درهم) لفتح تخصيص اللوغو والاسم'
-                    : '👑 طلب تفعيل الباك الثاني (199 درهم) لفتح تخصيص اللوغو والاسم'}
+                    ? '👑 تفعيل الباك الثاني (299 درهم) لفتح تخصيص اللوغو والاسم'
+                    : '👑 طلب تفعيل الباك الثاني (299 درهم) لفتح تخصيص اللوغو والاسم'}
                 </button>
               </div>
             ) : (
               <>
                 <p className="text-[11px] text-white/80 leading-relaxed">
-                  تظهر هذه البيانات (الاسم، الهاتف، وصورة الشعار المخصص) مباشرة على <strong>الملصقات الحرارية (10×10)</strong> وفي <strong>جميع بونات الـ PDF</strong> (بون الكولي، بون الصندوق، المانيفست، والحوالة).
+                  أنت على <strong>الباك الثاني (299 درهم)</strong>: أي تغيير في اسم شركتك أو صورتها يتعمم فوراً في البلاصة على <strong>الملصقات الحرارية، التقارير، وجميع ملفات الـ PDF</strong>.
                 </p>
-                {onOpenGuidedTour && (
-                  <button
-                    type="button"
-                    onClick={onOpenGuidedTour}
-                    className="btn-cancel w-full py-2 rounded-xl text-[11px] font-black text-[#F5C84C] border border-[#F5C84C]/40"
-                  >
-                    🧭 فتح جولة الإعداد التلقائي (المحطات ➔ الفلوس ➔ الكوليات ➔ الشعار)
-                  </button>
-                )}
 
                 <div>
                   <label className="block text-white/90 font-bold mb-1">
-                    اسم الوكالة / المحطة على الملصق الحراري والبونات:
+                    اسم الشركة / الوكالة على الملصقات والتقارير والـ PDF:
                   </label>
                   <input
                     type="text"
@@ -1792,7 +1663,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 <div>
                   <label className="block text-white/90 font-bold mb-1">
-                    رقم هاتف المحطة على الملصق (للتواصل والاستعلام):
+                    رقم هاتف الشركة على الملصقات والتقارير:
                   </label>
                   <input
                     type="tel"
@@ -1806,29 +1677,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 <div className="space-y-2">
                   <label className="block text-white/90 font-bold">
-                    شعار خاص لملصقات QR Code وبونات الـ PDF والمانيفست فقط (ميزة الباك الثاني 199 درهم):
+                    شعار (لوغو) الشركة للملصقات والتقارير وجميع الـ PDF:
                   </label>
 
-                  {/* معاينة الشعار المخصص للمطبوعات فقط بدون المساس بصورة التطبيق الرسمية */}
                   <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/60 border border-white/15">
-                    {brandLogoUrlInput ? (
-                      <div className="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 overflow-hidden border border-[#F5C84C]/50">
-                        <img
-                          src={brandLogoUrlInput}
-                          alt="شعار الملصق والبونات"
-                          className="max-w-full max-h-full object-contain"
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-14 h-14 rounded-xl bg-black/70 border border-dashed border-[#F5C84C]/50 flex items-center justify-center shrink-0 text-[#F5C84C]">
-                        <ImagePlus className="w-6 h-6" />
-                      </div>
-                    )}
+                    <div className="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 overflow-hidden border border-[#F5C84C]/50">
+                      <img
+                        src={brandLogoUrlInput || OFFICIAL_APP_LOGO_PATH}
+                        alt="شعار الشركة"
+                        className="max-w-full max-h-full object-contain rounded-lg"
+                      />
+                    </div>
 
                     <div className="flex-1 space-y-1.5">
                       <label className="w-full py-2 px-3 rounded-xl bg-[#F5C84C] text-[#111111] font-black text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition">
                         <ImagePlus className="w-4 h-4 shrink-0" />
-                        <span>اختر شعاراً خاصاً للملصقات والبونات</span>
+                        <span>اختر تصويرة / شعار الشركة</span>
                         <input
                           type="file"
                           accept="image/*"
@@ -1860,7 +1724,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                   ctx.drawImage(img, 0, 0, w, h);
                                   const compressedDataUrl = canvas.toDataURL('image/png', 0.9);
                                   setBrandLogoUrlInput(compressedDataUrl);
-                                  showToast('تم تحميل شعار الملصقات والبونات بنجاح — اضغط حفظ لتثبيته', 'success');
+                                  updateWorkspaceBranding({
+                                    customBrandName: brandNameInput.trim(),
+                                    customBrandPhone: brandPhoneInput.trim(),
+                                    customBrandLogoUrl: compressedDataUrl,
+                                  }).catch(() => {});
                                 }
                               };
                               img.src = dataUrl;
@@ -1874,15 +1742,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       {brandLogoUrlInput ? (
                         <button
                           type="button"
-                          onClick={() => setBrandLogoUrlInput('')}
+                          onClick={() => {
+                            setBrandLogoUrlInput('');
+                            updateWorkspaceBranding({
+                              customBrandName: brandNameInput.trim(),
+                              customBrandPhone: brandPhoneInput.trim(),
+                              customBrandLogoUrl: '',
+                            }).catch(() => {});
+                          }}
                           className="btn-delete w-full py-1.5 px-2.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition"
                         >
                           <Trash2 className="w-3 h-3" />
-                          <span>حذف الشعار المخصص للمطبوعات</span>
+                          <span>إرجاع لوغو التطبيق الافتراضي</span>
                         </button>
                       ) : (
                         <span className="block text-[10px] text-white/70 text-center">
-                          يظهر في ملصقات QR Code والبونات والمانيفست (صورة التطبيق الرسمية ثابتة)
+                          اللغو الافتراضي المعتمد هو لوغو التطبيق الرسمي حتى ترفع شعار شركتك
                         </span>
                       )}
                     </div>
@@ -1894,7 +1769,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   disabled={isSavingBranding}
                   className="btn-gold w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50"
                 >
-                  {isSavingBranding ? 'جاري حفظ الهوية...' : 'حفظ هوية وشعار الملصق الحراري والبونات'}
+                  {isSavingBranding ? 'جاري التعميم والحفظ...' : 'حفظ وتعميم الاسم واللوغو في كل الملصقات والتقارير والـ PDF'}
                 </button>
               </>
             )}
@@ -1987,45 +1862,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         )}
       </div>
 
-      {/* 7. Collapsible: لغة واجهة التطبيق */}
-      <div className="luxury-card rounded-[22px] p-4">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setOpenLangSection(prev => !prev)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setOpenLangSection(prev => !prev);
-            }
-          }}
-          className="flex items-center justify-between gap-2 cursor-pointer select-none"
-        >
-          <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
-            <Languages className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <span>لغة واجهة التطبيق</span>
-          </h3>
-          <ChevronDown
-            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
-              openLangSection ? 'rotate-180' : ''
-            }`}
-          />
-        </div>
-
-        {openLangSection && (
-          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-2.5">
-            <div className="bg-black/50 p-3 rounded-xl border border-white/15 space-y-1.5">
-              <span className="text-[11px] font-bold text-white/75 block">
-                لغة واجهة التطبيق:
-              </span>
-              <div className="flex items-center gap-2 p-2 rounded-xl bg-black/60 border border-white/15 text-xs font-bold text-white">
-                <span className="w-2 h-2 rounded-full bg-[#2ECC71] shrink-0"></span>
-                <span>العربية الفصحى (اللغة الرسمية المعتمدة)</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* 7. تغيير اللغة متاح مباشرة عبر أيقونة الكرة الأرضية 🌐 في الشريط العلوي */}
 
       {/* Password Reset Requests Admin Modal */}
       <ForgotPasswordModal
@@ -2036,79 +1873,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* 9. مسح البيانات وإرجاع التطبيق جديد (Admin Only) */}
       {(userRole === 'owner' || userRole === 'platform_owner') && (
-        <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0">
-                <Trash2 className="w-4 h-4" />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-sm font-black text-white">🗑️ مسح البيانات</h3>
-                <HelpPopover text="مسح كافة البيانات والتجارب وإرجاع التطبيق فارغاً من الصفر (مع خيار تحميل نسخة احتياطية PDF أولاً)." />
-              </div>
+        <div className="luxury-card rounded-[22px] p-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0">
+              <Trash2 className="w-4 h-4" />
+            </div>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h3 className="text-sm font-black text-white truncate">🗑️ مسح البيانات</h3>
+              <HelpPopover text="مسح كافة البيانات والتجارب وإرجاع التطبيق فارغاً من الصفر (مع خيار تحميل نسخة احتياطية PDF أولاً)." />
             </div>
           </div>
 
           <button
             type="button"
             onClick={() => setShowDeleteDemoConfirm(true)}
-            className="btn-delete w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition"
+            className="btn-delete px-4 py-2 rounded-xl font-black text-xs shadow-md active:scale-95 transition shrink-0 cursor-pointer"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>🗑️ مسح البيانات</span>
+            مسح الكل
           </button>
-        </div>
-      )}
-
-      {/* 9.5 باقة الاشتراك الموحدة (في أسفل الإعدادات خانة واحدة واضحة) */}
-      {(userRole === 'owner' || userRole === 'platform_owner') && (
-        <div className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#F5C84C]/50 shadow-md">
-          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
-            <div className="flex items-center gap-2">
-              <Crown className="w-5 h-5 text-[#F5C84C]" />
-              <h3 className="text-xs sm:text-sm font-black text-white">
-                👑 باقة الاشتراك
-              </h3>
-            </div>
-            <span className="px-2.5 py-1 rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/50 text-[#F5C84C] text-[10px] font-black">
-              {isPlan2TwoStations ? 'الباك الأول (99 درهم)' : 'الباك الثاني (199 درهم)'}
-            </span>
-          </div>
-
-          <div className="bg-black/50 p-3 rounded-xl border border-white/15 space-y-2 text-xs text-white/90">
-            <div className="space-y-1">
-              <p className="font-black text-[#F5D799]">
-                {isPlan2TwoStations
-                  ? '• الباك الأول (99 درهم/شهر): جوج محطات فقط + عامل واحد في كل محطة.'
-                  : '• الباك الثاني (199 درهم/شهر): محطات وعمال غير محدودين + شعار خاص بك وبونات مخصصة.'}
-              </p>
-              <p className="text-[11px] text-white/80">
-                حالة الاشتراك: <strong className="text-[#F5C84C]">{isSubscriptionExpired ? 'منتهي (يتطلب التجديد)' : subscriptionRemainingLabel}</strong>
-              </p>
-            </div>
-
-            <div className="pt-1 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={onOpenPaywall}
-                className="btn-gold w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow cursor-pointer"
-              >
-                <Crown className="w-4 h-4" />
-                <span>طلب تجديد أو ترقية باقة الاشتراك ➔</span>
-              </button>
-
-              {userRole === 'platform_owner' && onOpenPlatformOwner && (
-                <button
-                  type="button"
-                  onClick={onOpenPlatformOwner}
-                  className="w-full py-2 px-3 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 font-black text-[11px] flex items-center justify-center gap-2 transition"
-                >
-                  <Crown className="w-3.5 h-3.5 text-amber-400" />
-                  <span>🔒 إدارة اشتراكات الشركات والمدراء</span>
-                </button>
-              )}
-            </div>
-          </div>
         </div>
       )}
 

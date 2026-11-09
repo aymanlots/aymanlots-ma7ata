@@ -12,7 +12,8 @@ import {
   matchesTrackingCode,
   getParcelSourceOwnershipInfo,
   canControlParcelDestination,
-  canAcceptOrRejectPartnerParcel,
+  getPartnershipSixStepInfo,
+  validateParcelScanOwnership,
 } from '../utils/logisticsFeatures';
 import {
   Plus,
@@ -63,11 +64,12 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
     exchangeRate,
     moneyTransfers,
     payoutMoneyTransfer,
+    confirmParcelTripArrived,
     updateParcelStatus,
-    respondToPartnerParcel,
     userRole,
     hideAmounts,
     showToast,
+    t,
   } = useApp();
 
   const [selectedCurrency, setSelectedCurrency] = useState<string>('MAD');
@@ -211,35 +213,10 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         tx: t,
       }));
 
-    const parcelItems = stationParcels.map((p) => ({
-      id: `p-${p.id}`,
-      kind: 'parcel' as const,
-      created_at: p.created_at,
-      title: `كولي ${formatTrackingCodeNumeric(p.tracking_code, p.parcel_number)} — ${p.receiver_name}`,
-      subtitle:
-        p.status === 'pending' || p.status === 'registered'
-          ? 'في المحطة'
-          : p.status === 'in_transit'
-          ? 'في الطريق'
-          : p.status === 'arrived'
-          ? 'وصلت المحطة'
-          : p.status === 'delivered'
-          ? 'تم التسليم'
-          : p.status === 'return_in_transit'
-          ? 'في طريق الإرجاع'
-          : p.status === 'returned'
-          ? 'تم الإرجاع للمرسل'
-          : 'ملغاة',
-      amount: p.amount_due ?? p.shipping_fee ?? 0,
-      currency: p.currency,
-      isPositive: true,
-      parcel: p,
-    }));
-
-    return [...txItems, ...parcelItems].sort(
+    return [...txItems].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }, [transactions, stationParcels, currentStation?.id]);
+  }, [transactions, currentStation?.id]);
 
   const handleScanCode = (code: string) => {
     const found =
@@ -247,6 +224,16 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
       parcels.find((p) => matchesTrackingCode(p, code));
     setShowScanner(false);
     if (found) {
+      const scanAuth = validateParcelScanOwnership(
+        found,
+        currentWorkspace?.id,
+        userRole,
+        currentStation?.id
+      );
+      if (!scanAuth.allowed) {
+        showToast(scanAuth.reason || '⛔ غير مسموح بمسح هذا الكولي في هذه المحطة', 'error');
+        return;
+      }
       const ownershipInfo = getParcelSourceOwnershipInfo(
         found,
         currentWorkspace?.id,
@@ -369,44 +356,42 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
               type="button"
               onClick={() => onOpenNewVoucher('cash_in')}
               className="btn-hero-action btn-add py-3.5 px-4 rounded-[12px] flex items-center justify-center gap-2 cursor-pointer text-sm sm:text-base font-black"
-              title="زيادة فلوس فلاكيس (+ إيداع)"
+              title={t('deposit', 'إيداع')}
             >
               <Plus className="w-5 h-5" />
-              <span>➕ إيداع</span>
+              <span>{t('deposit', 'إيداع')}</span>
             </button>
 
             <button
               type="button"
               onClick={() => onOpenNewVoucher('cash_out')}
               className="btn-hero-action btn-delete py-3.5 px-4 rounded-[12px] flex items-center justify-center gap-2 cursor-pointer text-sm sm:text-base font-black"
-              title="سحب فلوس من لاكيس (- صرف)"
+              title={t('withdraw', 'سحب')}
             >
               <Minus className="w-5 h-5" />
-              <span>➖ سحب</span>
+              <span>{t('withdraw', 'سحب')}</span>
             </button>
           </div>
         </div>
 
-        {/* Remittance (إرسال/استقبال حوالة) & Currency Exchange (صرف العملة) Buttons */}
+        {/* Remittance & Currency Exchange Buttons */}
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button
             type="button"
             onClick={() => setShowMoneyTransferModal(true)}
-            className="btn-gold py-2.5 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95"
+            className="btn-gold py-2.5 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
           >
-            <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
-            <span>💸 حوالة</span>
+            <span>{t('remittance', 'حوالة')}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setShowWorkerExchange(prev => !prev)}
-            className={`py-2.5 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95 ${
+            className={`py-2.5 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer ${
               showWorkerExchange ? 'btn-gold' : 'btn-cancel'
             }`}
           >
-            <ArrowRightLeft className="w-3.5 h-3.5 text-[#2ECC71] shrink-0" />
-            <span>💱 صرف عملة</span>
+            <span>{t('currencyExchange', 'صرف عملة')}</span>
           </button>
         </div>
 
@@ -429,7 +414,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           return (
             <div className="pt-2 border-t border-white/15 space-y-2">
               <div className="flex items-center justify-between text-[11px] font-black text-[#F5C84C]">
-                <span>💸 حوالات المحطة الجارية ({pendingHawalas.length}):</span>
+                <span>حوالات المحطة الجارية ({pendingHawalas.length}):</span>
                 <button
                   type="button"
                   onClick={() => setShowMoneyTransferModal(true)}
@@ -501,7 +486,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         </div>
       </div>
 
-      {/* 4. CARD "الطلبات" WITH THREE BIG BUTTONS: إدخال / إرسال / إرجاع */}
+      {/* 4. CARD "الطلبات" WITH THREE BIG BUTTONS */}
       <div className="luxury-card rounded-[24px] p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-black gold-text">⚡ العمليات</h3>
@@ -515,7 +500,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             className="min-h-[78px] rounded-[20px] p-3 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/35 hover:bg-emerald-500/25 active:scale-95"
           >
             <ArrowDownLeft className="w-5 h-5" />
-            <span className="text-xs font-black">📥 استلام</span>
+            <span className="text-xs font-black">استلام</span>
           </button>
 
           {/* زر إرسال */}
@@ -525,7 +510,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             className="min-h-[78px] rounded-[20px] p-3 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg bg-amber-500/15 text-amber-300 border border-amber-500/35 hover:bg-amber-500/25 active:scale-95"
           >
             <ArrowUpRight className="w-5 h-5" />
-            <span className="text-xs font-black">📤 إرسال</span>
+            <span className="text-xs font-black">إرسال</span>
           </button>
 
           {/* زر إرجاع */}
@@ -535,18 +520,18 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             className="min-h-[78px] rounded-[20px] p-3 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md relative bg-blue-500/15 text-blue-300 border border-blue-500/35 hover:bg-blue-500/25 active:scale-95"
           >
             <RotateCcw className="w-5 h-5" />
-            <span className="text-xs font-black">↩️ إرجاع ({overdueUnclaimedParcels.length})</span>
+            <span className="text-xs font-black">إرجاع ({overdueUnclaimedParcels.length})</span>
           </button>
         </div>
 
-        {/* Direct Barcode/QR Scanner Button for Worker to Check Parcel Ownership */}
+        {/* Direct Barcode/QR Scanner Button */}
         <button
           type="button"
           onClick={() => setShowScanner(true)}
           className="w-full py-2.5 px-3 rounded-2xl btn-gold text-xs sm:text-sm font-black flex items-center justify-center gap-2 shadow-md transition active:scale-95 cursor-pointer"
         >
           <QrCode className="w-4 h-4 shrink-0" />
-          <span>📷 سكانر QR</span>
+          <span>{t('scannerTitle', 'سكانر QR')}</span>
         </button>
       </div>
 
@@ -557,7 +542,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             <Package className="w-5 h-5 text-[#F5C84C] shrink-0" />
             <div className="flex items-center gap-1.5">
               <h3 className="text-sm sm:text-base font-black text-white">
-                📦 كوليات {currentStation.name} ({stationParcels.length})
+                كوليات {currentStation.name} ({stationParcels.length})
               </h3>
               <HelpPopover text="تظهر هنا فقط الكوليات الواردة لمحطتك أو المرسلة منها (الداخلية + غرفة الشراكة)." />
             </div>
@@ -610,7 +595,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
           <span className="flex items-center gap-2">
             <Package className="w-4 h-4 shrink-0" />
             <span>
-              📋 سجل عمليات وكوليات {currentStation.name} ({
+              📦 قائمة كوليات {currentStation.name} ({
                 workerParcelsTab === 'incoming'
                   ? stationIncomingParcels.length
                   : stationOutgoingParcels.length
@@ -656,12 +641,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                   userRole,
                   currentStation.id
                 );
-                const canApprovePartner = canAcceptOrRejectPartnerParcel(
-                  p,
-                  currentWorkspace?.id,
-                  userRole,
-                  currentStation.id
-                );
+                const sixStep = getPartnershipSixStepInfo(p);
 
                 return (
                   <div
@@ -692,6 +672,12 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                           >
                             {pOwn.shortBadgeLabel}
                           </span>
+
+                          {pOwn.isPartnership && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-[#D4AF37]/20 text-[#F5C84C] border border-[#F5C84C]/40">
+                              {sixStep.currentLabel}
+                            </span>
+                          )}
                         </div>
 
                         <p className="text-xs font-extrabold text-white break-words">
@@ -734,41 +720,22 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                         الحالة:{' '}
                         <strong className="text-[#F5C84C]">
                           {p.partner_acceptance_status === 'pending_approval'
-                            ? '⏳ بانتظار القبول في غرفة الشراكة'
+                            ? '⏳ المرحلة 1 (طلب): بانتظار قبول المدير في غرفة الشراكة'
                             : p.partner_acceptance_status === 'rejected'
                             ? '❌ مرفوضة'
                             : p.status === 'delivered'
-                            ? '✓ تم التسليم للمستلم'
+                            ? '✓ 6. تم التسليم للمستلم'
                             : p.status === 'arrived'
-                            ? '📦 فـ ستوك المحطة (جاهز للتسليم)'
+                            ? '📦 5. تفريغ (فـ ستوك المحطة — جاهز للتسليم)'
+                            : p.status === 'in_transit' && p.trip_arrived_at
+                            ? '🏁 4. وصلات للمحطة (جاهز للتفريغ)'
                             : p.status === 'in_transit'
-                            ? '🚚 في الطريق'
+                            ? '🚚 3. رحلة (في الطريق)'
                             : '📝 مسجل في المحطة'}
                         </strong>
                       </span>
 
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        {canApprovePartner && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => respondToPartnerParcel(p.id, 'accepted')}
-                              className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] cursor-pointer"
-                            >
-                              ✅ قبول الكولية
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                respondToPartnerParcel(p.id, 'rejected', 'رفض استلام الكولية من طرف محطة الاستلام')
-                              }
-                              className="px-2 py-1 rounded-xl bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 border border-rose-500/50 font-black text-[11px] cursor-pointer"
-                            >
-                              ❌ رفض
-                            </button>
-                          </>
-                        )}
-
                         {p.origin_station_id === currentStation.id &&
                           p.status === 'registered' &&
                           p.partner_acceptance_status !== 'rejected' &&
@@ -779,28 +746,40 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                               await updateParcelStatus(
                                 p.id,
                                 'in_transit',
-                                `تم شحن الكولي وانطلاقه من محطة ${currentStation.name}`
+                                `تم شحن الكولي وانطلاقه في رحلة من محطة ${currentStation.name}`
                               );
                             }}
                             className="px-2.5 py-1 rounded-xl bg-[#F5C84C] hover:bg-[#ffe074] text-slate-950 font-black text-[11px] cursor-pointer"
                           >
-                            🚚 شحن الكولي
+                            🚚 3. رحلة (شحن)
                           </button>
                         )}
 
-                        {isDestForMe && p.status === 'in_transit' && (
+                        {isDestForMe && p.status === 'in_transit' && !p.trip_arrived_at && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await confirmParcelTripArrived(p.id);
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-[11px] cursor-pointer"
+                          >
+                            🏁 4. وصلات
+                          </button>
+                        )}
+
+                        {isDestForMe && p.status === 'in_transit' && Boolean(p.trip_arrived_at) && (
                           <button
                             type="button"
                             onClick={async () => {
                               await updateParcelStatus(
                                 p.id,
                                 'arrived',
-                                `تم استلام الكولي في ستوك محطة ${currentStation.name}`
+                                `تم تفريغ الكولي وإدخاله لستوك محطة ${currentStation.name}`
                               );
                             }}
-                            className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] cursor-pointer"
+                            className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] cursor-pointer"
                           >
-                            📥 تأكيد الوصول للستوك
+                            📥 5. تفريغ للستوك
                           </button>
                         )}
 
@@ -810,7 +789,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                             onClick={() => setSelectedParcelDetail(p)}
                             className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] cursor-pointer"
                           >
-                            ✓ تسليم للمستلم
+                            ✓ 6. تسليم للمستلم
                           </button>
                         )}
 
@@ -856,9 +835,6 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         {isRecentOpsOpen && (
           <div className="luxury-card rounded-[24px] p-4 sm:p-5 space-y-3 animate-fadeIn">
             <div className="flex items-center justify-end gap-2 text-xs font-extrabold">
-              <button type="button" onClick={onGoToParcels} className="px-3 py-1.5 rounded-xl">
-                كل الكوليات
-              </button>
               <button type="button" onClick={onGoToCash} className="px-3 py-1.5 rounded-xl">
                 سجل الصندوق
               </button>
@@ -875,9 +851,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                     <div
                       key={item.id}
                       onClick={() => {
-                        if (item.kind === 'parcel' && item.parcel) {
-                          setSelectedParcelDetail(item.parcel);
-                        } else if (item.kind === 'tx' && item.tx) {
+                        if (item.tx) {
                           setSelectedTxDetail(item.tx);
                         }
                       }}
@@ -886,16 +860,12 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                       <div className="flex items-start gap-3 min-w-0 flex-1">
                         <div
                           className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                            item.kind === 'parcel'
-                              ? 'bg-[#F5C84C]/20 text-[#F5C84C] border border-[#F5C84C]/40'
-                              : item.isPositive
+                            item.isPositive
                               ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                               : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                           }`}
                         >
-                          {item.kind === 'parcel' ? (
-                            <Package className="w-5 h-5" />
-                          ) : item.isPositive ? (
+                          {item.isPositive ? (
                             <ArrowDownLeft className="w-5 h-5" />
                           ) : (
                             <ArrowUpRight className="w-5 h-5" />
@@ -906,24 +876,6 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                             <p className="text-xs font-extrabold text-white line-clamp-2 break-words leading-snug">
                               {item.title}
                             </p>
-                            {item.kind === 'parcel' && item.parcel && (() => {
-                              const pOwn = getParcelSourceOwnershipInfo(
-                                item.parcel,
-                                currentWorkspace?.id,
-                                currentWorkspace?.name
-                              );
-                              return (
-                                <span
-                                  className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border ${
-                                    pOwn.isPartnership
-                                      ? 'bg-purple-950/90 text-purple-200 border-purple-400/60'
-                                      : 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
-                                  }`}
-                                >
-                                  {pOwn.shortBadgeLabel}
-                                </span>
-                              );
-                            })()}
                           </div>
                           <p className="text-[11px] text-white/75 mt-0.5 flex items-center gap-1 flex-wrap">
                             <span>{item.subtitle}</span>

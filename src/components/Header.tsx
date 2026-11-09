@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { SUPPORTED_LANGUAGES, LanguageOption } from '../lib/i18n';
 import { 
-  Store, 
   User, 
   Crown, 
   Menu,
@@ -12,9 +12,14 @@ import {
   EyeOff,
   Search,
   Users,
-  Radio,
   Handshake,
-  Languages
+  Globe,
+  Bell,
+  CheckCheck,
+  Trash2,
+  MapPin,
+  ChevronDown,
+  Plus
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -38,10 +43,11 @@ export const Header: React.FC<HeaderProps> = ({
     currentUser, 
     currentWorkspace,
     userRole, 
-    stations, 
-    selectedStationId, 
+    stations,
+    selectedStationId,
     setSelectedStationId,
     userAssignedStationId,
+    workspaceMembers,
     subscriptionRemainingLabel,
     isSubscriptionExpired,
     logout,
@@ -50,13 +56,43 @@ export const Header: React.FC<HeaderProps> = ({
     setLanguage,
     language,
     managerPartnerships,
+    notifications,
+    unreadNotificationsCount,
+    markAllNotificationsRead,
+    clearNotifications,
     themeMode,
     toggleThemeMode,
     t
   } = useApp();
 
-  const dir = (language === 'ar' || language === 'hass') ? 'rtl' : 'ltr';
+  const dir = (language === 'ar' || language === 'hassaniya') ? 'rtl' : 'ltr';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const [notifMenuOpen, setNotifMenuOpen] = useState(false);
+  const [stationMenuOpen, setStationMenuOpen] = useState(false);
+  const langMenuRef = useRef<HTMLDivElement | null>(null);
+  const notifMenuRef = useRef<HTMLDivElement | null>(null);
+  const stationMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const isAllStations = selectedStationId === 'all' || !selectedStationId;
+  const activeStation = stations.find(s => s.id === selectedStationId);
+  const workerAssignedStation = stations.find(s => s.id === (userAssignedStationId || selectedStationId || ''));
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (langMenuRef.current && !langMenuRef.current.contains(event.target as Node)) {
+        setLangMenuOpen(false);
+      }
+      if (notifMenuRef.current && !notifMenuRef.current.contains(event.target as Node)) {
+        setNotifMenuOpen(false);
+      }
+      if (stationMenuRef.current && !stationMenuRef.current.contains(event.target as Node)) {
+        setStationMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const pendingPartnershipRequestsCount = useMemo(() => {
     if (!currentWorkspace?.id || !managerPartnerships) return 0;
@@ -67,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
     ).length;
   }, [currentWorkspace?.id, managerPartnerships]);
 
-  const currentStation = stations.find(s => s.id === selectedStationId);
+  const totalBadgeCount = unreadNotificationsCount + (userRole !== 'worker' ? pendingPartnershipRequestsCount : 0);
 
   return (
     <>
@@ -99,12 +135,149 @@ export const Header: React.FC<HeaderProps> = ({
                 data-btn-role="info"
                 data-btn-role-fixed="true"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
-                title="القائمة والأدوات"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
+                title={t('headerMenu', 'القائمة')}
               >
                 <Menu className="w-3.5 h-3.5" />
-                <span>القائمة</span>
+                <span>{t('headerMenu', 'القائمة')}</span>
               </button>
+
+              {/* بطونة صغيرة فـ البارة اللي الفوق ديال التبديل بين المحطات (للـ Admin فقط) — والعامل كيبان ليه غير المحطة ديالو ما كيبدلش */}
+              {userRole === 'worker' ? (
+                <div
+                  key={`worker-st-${workerAssignedStation?.id || 'none'}-${language}`}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 select-none"
+                  title="المحطة المعين بها العامل"
+                >
+                  <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span className="truncate max-w-[130px]">
+                    📍 {workerAssignedStation ? workerAssignedStation.name : 'محطتي'}
+                  </span>
+                </div>
+              ) : (
+                <div className="relative inline-flex items-center" ref={stationMenuRef}>
+                  <button
+                    type="button"
+                    data-btn-role={!isAllStations && activeStation ? 'add' : 'info'}
+                    data-btn-role-fixed="true"
+                    onClick={() => {
+                      setStationMenuOpen(!stationMenuOpen);
+                      setNotifMenuOpen(false);
+                      setLangMenuOpen(false);
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black transition active:scale-95 cursor-pointer ${
+                      !isAllStations && activeStation ? 'btn-add' : ''
+                    }`}
+                    title="التبديل بين المحطات"
+                  >
+                    <MapPin className="w-3 h-3 shrink-0" />
+                    <span
+                      key={`${selectedStationId || 'all'}-${language}`}
+                      className="truncate max-w-[135px]"
+                    >
+                      {!isAllStations && activeStation
+                        ? `📍 ${activeStation.name}`
+                        : stations.length > 0
+                        ? `🌐 كل المحطات (${stations.length})`
+                        : '🏪 المحطات (0)'}
+                    </span>
+                    <ChevronDown className="w-3 h-3 shrink-0" />
+                  </button>
+
+                  {stationMenuOpen && (
+                    <div
+                      className={`fixed left-1/2 -translate-x-1/2 top-16 z-50 w-[calc(100vw-24px)] max-w-[290px] rounded-2xl border-2 border-[#D4AF37]/65 shadow-2xl p-2.5 space-y-1.5 animate-fadeIn ${
+                        themeMode === 'dark' ? 'bg-[#140b00] text-white' : 'bg-slate-900 text-white'
+                      }`}
+                      dir={dir}
+                    >
+                      <div className="flex items-center justify-between border-b border-white/15 pb-1.5 px-1">
+                        <span className="text-[11px] font-black text-[#F5C84C] flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5" />
+                          <span>التبديل بين المحطات ({stations.length})</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setStationMenuOpen(false)}
+                          className="p-0.5 rounded-lg bg-white/10 hover:bg-white/20 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {stations.length > 0 ? (
+                        <>
+                          <button
+                            type="button"
+                            data-btn-role={isAllStations ? 'add' : 'info'}
+                            data-btn-role-fixed="true"
+                            onClick={() => {
+                              setSelectedStationId('all');
+                              setStationMenuOpen(false);
+                            }}
+                            className={`w-full px-2.5 py-2 rounded-xl text-xs font-black flex items-center justify-between transition cursor-pointer ${
+                              isAllStations ? 'btn-add' : ''
+                            }`}
+                          >
+                            <span>🌐 كل المحطات</span>
+                            <span className="text-[11px] font-mono font-black shrink-0">
+                              {stations.length} محطات
+                            </span>
+                          </button>
+
+                          <div className="max-h-56 overflow-y-auto space-y-1">
+                            {stations.map(st => {
+                              const isSelected = selectedStationId === st.id;
+                              const stWorkersCount = workspaceMembers.filter(
+                                m => m.role === 'worker' && m.station_id === st.id
+                              ).length;
+                              return (
+                                <button
+                                  key={`${st.id}-${language}`}
+                                  type="button"
+                                  data-btn-role={isSelected ? 'add' : 'info'}
+                                  data-btn-role-fixed="true"
+                                  onClick={() => {
+                                    setSelectedStationId(st.id);
+                                    setStationMenuOpen(false);
+                                  }}
+                                  className={`w-full px-2.5 py-2 rounded-xl text-xs font-black flex items-center justify-between transition cursor-pointer ${
+                                    isSelected ? 'btn-add' : ''
+                                  }`}
+                                >
+                                  <span className="truncate">
+                                    📍 {st.name} {st.city && st.city !== st.name ? `(${st.city})` : ''}
+                                  </span>
+                                  <span className="text-[11px] font-mono font-black shrink-0">
+                                    👤 {stWorkersCount} عمال
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="p-2.5 text-center space-y-2">
+                          <p className="text-[11px] font-bold text-white/80">
+                            لا توجد محطات مفتوحة حالياً. أضف محطاتك وعمالها من الإعدادات.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStationMenuOpen(false);
+                              onOpenSettings();
+                            }}
+                            className="btn-add w-full py-2 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Settings className="w-3.5 h-3.5" />
+                            <span>فتح الإعدادات</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {onOpenCollabRoom && userRole !== 'worker' && (
                 <button
@@ -112,11 +285,11 @@ export const Header: React.FC<HeaderProps> = ({
                   data-btn-role="add"
                   data-btn-role-fixed="true"
                   onClick={onOpenCollabRoom}
-                  className="btn-add relative flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
-                  title="غرفة الشراكة بين المدراء والمحاسبة المشتركة"
+                  className="btn-add relative flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
+                  title={t('headerPartnership', 'الشراكة')}
                 >
                   <Handshake className="w-3.5 h-3.5" />
-                  <span>🤝 الشراكة</span>
+                  <span>🤝 {t('headerPartnership', 'الشراكة')}</span>
                   {pendingPartnershipRequestsCount > 0 && (
                     <span className="badge-pill w-4 h-4 rounded-full bg-[#C1272D] text-white text-[9px] font-black flex items-center justify-center animate-bounce shadow border border-white">
                       {pendingPartnershipRequestsCount}
@@ -125,16 +298,192 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
+              {/* Notifications Bell Button (For Both Manager & Worker) */}
+              <div className="relative inline-flex items-center" ref={notifMenuRef}>
+                <button
+                  type="button"
+                  data-btn-role="info"
+                  data-btn-role-fixed="true"
+                  onClick={() => {
+                    const nextOpen = !notifMenuOpen;
+                    setNotifMenuOpen(nextOpen);
+                    setLangMenuOpen(false);
+                    setStationMenuOpen(false);
+                    if (nextOpen && unreadNotificationsCount > 0) {
+                      markAllNotificationsRead();
+                    }
+                  }}
+                  className="relative flex items-center justify-center w-7 h-7 rounded-full transition active:scale-95 cursor-pointer"
+                  title={t('notificationsTitle', 'الإشعارات')}
+                  aria-label="الإشعارات"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  {totalBadgeCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-black flex items-center justify-center border border-white shadow">
+                      {totalBadgeCount > 9 ? '9+' : totalBadgeCount}
+                    </span>
+                  )}
+                </button>
+
+                {notifMenuOpen && (
+                  <div
+                    className={`fixed left-1/2 -translate-x-1/2 top-16 z-50 w-[calc(100vw-20px)] max-w-[360px] rounded-2xl border-2 border-[#D4AF37]/60 shadow-2xl p-3 space-y-2.5 animate-fadeIn ${
+                      themeMode === 'dark' ? 'bg-[#140b00] text-white' : 'bg-slate-900 text-white'
+                    }`}
+                    dir={dir}
+                  >
+                    <div className="flex items-center justify-between border-b border-white/15 pb-2">
+                      <span className="text-xs font-black text-[#F5C84C] flex items-center gap-1.5">
+                        <Bell className="w-3.5 h-3.5" />
+                        <span>🔔 الإشعارات الفورية ({notifications.length})</span>
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {notifications.length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={markAllNotificationsRead}
+                              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                              title="تحديد الكل كمقروء"
+                            >
+                              <CheckCheck className="w-3 h-3 text-emerald-400" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={clearNotifications}
+                              className="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                              title="مسح الإشعارات"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setNotifMenuOpen(false)}
+                          className="p-1 rounded-lg bg-white/10 hover:bg-white/20 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {pendingPartnershipRequestsCount > 0 && userRole !== 'worker' && onOpenCollabRoom && (
+                      <div
+                        onClick={() => {
+                          setNotifMenuOpen(false);
+                          onOpenCollabRoom();
+                        }}
+                        className="p-2.5 rounded-xl bg-amber-950/80 border border-[#F5C84C] text-xs cursor-pointer flex items-center justify-between gap-2"
+                      >
+                        <span className="font-black text-[#F5C84C]">
+                          🤝 لديك ({pendingPartnershipRequestsCount}) طلب شراكة بانتظار موافقتك
+                        </span>
+                        <span className="px-2 py-0.5 rounded-lg bg-[#F5C84C] text-black text-[10px] font-black">
+                          فتح
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="max-h-64 overflow-y-auto space-y-1.5 pr-0.5">
+                      {notifications.length === 0 ? (
+                        <div className="text-center py-5 text-[11px] text-white/70">
+                          لا توجد إشعارات جديدة حالياً
+                        </div>
+                      ) : (
+                        notifications.slice(0, 30).map(n => {
+                          const dt = new Date(n.created_at);
+                          const dateTimeStr = isNaN(dt.getTime())
+                            ? ''
+                            : `${dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} • ${dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                          return (
+                            <div
+                              key={n.id}
+                              className={`p-2.5 rounded-xl border text-[11px] space-y-1 ${
+                                !n.is_read
+                                  ? 'bg-[#D4AF37]/15 border-[#F5C84C]/50'
+                                  : 'bg-black/50 border-white/10'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                <span className="font-black text-[#F5C84C]">{n.title}</span>
+                                <span className="text-[9px] font-mono text-white/70 shrink-0" dir="ltr">
+                                  {dateTimeStr}
+                                </span>
+                              </div>
+                              <p className="text-white/90 font-semibold leading-snug">{n.message}</p>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
                 data-btn-role="info"
                 data-btn-role-fixed="true"
                 onClick={toggleThemeMode}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black transition active:scale-95 cursor-pointer"
-                title={themeMode === 'light' ? 'التبديل إلى وضع الليل (Dark Mode)' : 'التبديل إلى وضع النهار (Light Mode)'}
+                className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-black transition active:scale-95 cursor-pointer"
+                title={themeMode === 'light' ? t('nightMode', 'وضع الليل') : t('dayMode', 'وضع النهار')}
               >
-                <span>{themeMode === 'light' ? '🌙 ليل' : '☀️ نهار'}</span>
+                <span>{themeMode === 'light' ? `🌙 ${t('headerNight', 'ليل')}` : `☀️ ${t('headerDay', 'نهار')}`}</span>
               </button>
+
+              {/* Compact Globe Language Button (5 Languages with Flags) */}
+              <div className="relative inline-flex items-center" ref={langMenuRef} data-no-translate="true">
+                <button
+                  type="button"
+                  data-btn-role="info"
+                  data-btn-role-fixed="true"
+                  onClick={() => {
+                    setLangMenuOpen(!langMenuOpen);
+                    setNotifMenuOpen(false);
+                  }}
+                  className="flex items-center justify-center w-7 h-7 rounded-full transition active:scale-95 cursor-pointer border border-[#D4AF37]/50"
+                  title="🌐 تغيير اللغة (5 لغات)"
+                  aria-label="Language"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                </button>
+
+                {langMenuOpen && (
+                  <div
+                    className={`absolute top-full mt-1.5 z-50 w-36 rounded-2xl border-2 border-[#D4AF37]/65 shadow-2xl p-1.5 space-y-1 animate-fadeIn ${
+                      dir === 'rtl' ? 'left-0' : 'right-0'
+                    } ${
+                      themeMode === 'dark' ? 'bg-[#140b00] text-white' : 'bg-slate-900 text-white'
+                    }`}
+                    data-no-translate="true"
+                  >
+                    {SUPPORTED_LANGUAGES.map((langOpt: LanguageOption) => {
+                      const isActive = language === langOpt.code;
+                      return (
+                        <button
+                          key={langOpt.code}
+                          type="button"
+                          data-btn-role="info"
+                          data-btn-role-fixed="true"
+                          data-btn-active={isActive ? 'true' : 'false'}
+                          data-btn-active-fixed="true"
+                          onClick={() => {
+                            setLanguage(langOpt.code);
+                            setLangMenuOpen(false);
+                          }}
+                          className={`w-full py-1.5 px-2.5 rounded-xl text-[11px] font-black flex items-center justify-between gap-1.5 transition cursor-pointer ${
+                            isActive ? 'btn-gold' : 'btn-cancel'
+                          }`}
+                        >
+                          <span>{langOpt.flag} {langOpt.nativeName}</span>
+                          {isActive && <span className="text-[10px]">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               <button
                 type="button"
@@ -142,7 +491,7 @@ export const Header: React.FC<HeaderProps> = ({
                 data-btn-role-fixed="true"
                 onClick={toggleHideAmounts}
                 className="flex items-center justify-center w-7 h-7 rounded-full transition active:scale-95 cursor-pointer"
-                title={hideAmounts ? 'إظهار المبالغ المالية (العين)' : 'إخفاء المبالغ المالية (العين)'}
+                title={hideAmounts ? t('headerShowAmounts', 'إظهار المبالغ المالية (العين)') : t('headerHideAmounts', 'إخفاء المبالغ المالية (العين)')}
                 aria-label="العين"
               >
                 {hideAmounts ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -155,7 +504,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="shrink-0 overflow-hidden rounded-full p-0 flex items-center justify-center cursor-pointer shadow-[0_0_20px_rgba(212,175,55,0.25)] active:scale-95 transition"
             style={{ background: 'transparent', borderRadius: '50%', padding: 0, overflow: 'hidden', width: '68px', height: '68px', border: '2px solid #D4AF37' }}
-            title="القائمة الرئيسية"
+            title={t('headerMenu', 'القائمة الرئيسية')}
           >
             <img 
               src="/assets/aistudio/image_9c11f636.png" 
@@ -174,11 +523,13 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => setMobileMenuOpen(false)}
         >
           <div 
-            className={`w-full max-w-[390px] luxury-card border-t-2 rounded-t-3xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto space-y-3.5 text-right ${
+            className={`w-full max-w-[390px] luxury-card border-t-2 rounded-t-3xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto space-y-3.5 ${
+              dir === 'rtl' ? 'text-right' : 'text-left'
+            } ${
               themeMode === 'dark' ? 'bg-[#140b00] border-[#D4AF37]/60' : 'bg-white border-slate-300'
             }`}
             onClick={e => e.stopPropagation()}
-            dir="rtl"
+            dir={dir}
           >
             {/* Header of Drawer */}
             <div className="flex items-center justify-between border-b border-[#D4AF37]/25 pb-3">
@@ -195,13 +546,13 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-[#E6C37A]" dir="ltr">Sahara📦 Express</h3>
-                  <p className="text-[10px] text-[#D9B36C] font-semibold">للسفر ونقل البضائع والكوليات</p>
+                  <p className="text-[10px] text-[#D9B36C] font-semibold">{t('appTagline', 'للسفر ونقل البضائع والكوليات')}</p>
                 </div>
               </div>
               <button 
                 onClick={() => setMobileMenuOpen(false)}
                 className="btn-cancel p-2 rounded-xl"
-                aria-label="إغلاق"
+                aria-label={t('close', 'إغلاق')}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -210,14 +561,14 @@ export const Header: React.FC<HeaderProps> = ({
             {/* User Profile Card */}
             <div className="bg-[#1a0f00]/80 p-3.5 rounded-2xl border border-[#D4AF37]/40 flex items-center justify-between">
               <div className="min-w-0">
-                <p className="text-xs font-black text-white truncate">{currentUser?.name || 'مستخدم مسجل'}</p>
+                <p className="text-xs font-black text-white truncate">{currentUser?.name || t('registeredUser', 'مستخدم مسجل')}</p>
                 <p className="text-[11px] text-[#C8B08A] font-medium mt-0.5 truncate">
                   {!currentWorkspace?.name || currentWorkspace.name === 'محطة الاتحادية'
                     ? 'Sahara📦 Express'
                     : currentWorkspace.name}
                 </p>
                 <p className="text-[10px] text-[#E6C37A] font-bold mt-1">
-                  {userRole === 'owner' || userRole === 'platform_owner' ? '👑 مالك المحطة (المشرف العام)' : '💼 عامل مكتب المحطة'}
+                  {userRole === 'owner' || userRole === 'platform_owner' ? `👑 ${t('roleOwnerTitle', 'مالك المحطة (المشرف العام)')}` : `💼 ${t('roleWorkerTitle', 'عامل مكتب المحطة')}`}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center shrink-0">
@@ -225,10 +576,9 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
 
-            {/* Core Commercial Launch Features in Menu Drawer */}
-            <div className="space-y-2">
-
-              {onOpenPlatformOwner && userRole === 'platform_owner' && (
+            {/* Master Account Platform Control Panel (Strictly Hidden from Everyone Else) */}
+            {onOpenPlatformOwner && userRole === 'platform_owner' && (
+              <div className="space-y-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -240,8 +590,8 @@ export const Header: React.FC<HeaderProps> = ({
                   <Crown className="w-4 h-4 text-amber-400" />
                   <span>إدارة الاشتراكات (تفعيل / توقيف حسابات الشركات)</span>
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Quick Feature Launchers (Collaboration Room, Customer Accounts, Public Tracking, Hide Amounts) */}
             <div className="grid grid-cols-2 gap-2">
@@ -255,7 +605,7 @@ export const Header: React.FC<HeaderProps> = ({
                   className="btn-cancel relative p-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
                 >
                   <Handshake className="w-4 h-4 text-[#F5C84C]" />
-                  <span>غرفة الشراكة</span>
+                  <span>{t('headerPartnership', 'الشراكة')}</span>
                   {pendingPartnershipRequestsCount > 0 && (
                     <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow">
                       {pendingPartnershipRequestsCount}
@@ -274,7 +624,7 @@ export const Header: React.FC<HeaderProps> = ({
                   className="btn-cancel p-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
                 >
                   <Users className="w-4 h-4 text-[#F5C84C]" />
-                  <span>حسابات الزبناء</span>
+                  <span>{t('customerAccounts', 'حسابات الزبناء')}</span>
                 </button>
               )}
 
@@ -288,7 +638,7 @@ export const Header: React.FC<HeaderProps> = ({
                   className="btn-cancel p-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
                 >
                   <Search className="w-4 h-4 text-[#F5C84C]" />
-                  <span>تتبع شحنة للزبون</span>
+                  <span>{t('publicTracking', 'تتبع شحنة للزبون')}</span>
                 </button>
               )}
 
@@ -298,79 +648,15 @@ export const Header: React.FC<HeaderProps> = ({
                 className="btn-cancel p-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5"
               >
                 {hideAmounts ? <Eye className="w-4 h-4 text-[#F5C84C]" /> : <EyeOff className="w-4 h-4 text-[#F5C84C]" />}
-                <span>{hideAmounts ? 'إظهار المبالغ' : 'إخفاء المبالغ'}</span>
+                <span>{hideAmounts ? t('headerShowAmounts', 'إظهار المبالغ') : t('headerHideAmounts', 'إخفاء المبالغ')}</span>
               </button>
-            </div>
-
-            {/* Station Selection */}
-            <div>
-              <span className="text-[11px] font-bold text-[#E6C37A] block mb-2">
-                {userRole === 'worker' ? 'محطتك المخصصة للعمل:' : 'المحطة الحالية النشطة:'}
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                {((userRole === 'worker' || userRole === 'admin')
-                  ? stations.filter(s => !userAssignedStationId || s.id === userAssignedStationId)
-                  : stations
-                ).map(station => (
-                  <button
-                    key={station.id}
-                    onClick={() => {
-                      if (userRole === 'owner' || userRole === 'platform_owner') {
-                        setSelectedStationId(station.id);
-                      }
-                      setMobileMenuOpen(false);
-                    }}
-                    className={`p-2.5 rounded-xl border text-right transition ${
-                      station.id === selectedStationId
-                        ? 'btn-gold'
-                        : 'btn-cancel'
-                    }`}
-                  >
-                    <div className="text-xs font-black truncate">{station.name || station.city}</div>
-                    <div className="text-[10px] mt-0.5 opacity-85">
-                      {station.country === 'MA' ? '🇲🇦 المغرب' : '🇲🇷 موريتانيا'}
-                    </div>
-                  </button>
-                ))}
-                {(userRole === 'owner' || userRole === 'platform_owner') && stations.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setSelectedStationId('all');
-                      setMobileMenuOpen(false);
-                    }}
-                    className={`p-2.5 rounded-xl border text-right transition ${
-                      selectedStationId === 'all' ? 'btn-gold' : 'btn-cancel'
-                    }`}
-                  >
-                    <div className="text-xs font-black truncate">🌐 كافة المحطات</div>
-                    <div className="text-[10px] mt-0.5 opacity-85">عرض شامل ({stations.length})</div>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Quick Language Switcher */}
-            <div className="bg-[#1a0f00]/80 p-3 rounded-2xl border border-[#D4AF37]/40 space-y-2">
-              <span className="text-[10px] font-bold text-[#C8B08A] flex items-center gap-1">
-                <Languages className="w-3.5 h-3.5 text-[#F5C84C]" />
-                <span>لغة الواجهة:</span>
-              </span>
-              <div className="grid grid-cols-1 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setLanguage('ar')}
-                  className="py-1.5 rounded-lg text-[11px] font-black btn-gold"
-                >
-                  العربية (اللغة الرسمية المعتمدة)
-                </button>
-              </div>
             </div>
 
             {/* Subscription & System Actions */}
             <div className="pt-2 border-t border-[#D4AF37]/25 space-y-2">
               <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#1a0f00]/80 border border-[#D4AF37]/35 text-xs">
                 <span className="text-[#C8B08A]">
-                  {userRole === 'worker' ? 'اشتراك المحطة (المدير):' : 'حالة الاشتراك:'}
+                  {userRole === 'worker' ? t('stationSubscription', 'اشتراك المحطة (المدير):') : t('subscriptionStatus', 'حالة الاشتراك:')}
                 </span>
                 <button
                   onClick={() => {
@@ -381,7 +667,7 @@ export const Header: React.FC<HeaderProps> = ({
                   }}
                   className="px-2.5 py-1 rounded-lg font-bold text-[11px]"
                 >
-                  {isSubscriptionExpired ? 'منتهٍ (يتطلب تجديد المدير)' : subscriptionRemainingLabel}
+                  {isSubscriptionExpired ? 'وضع المشاهدة فقط (يتطلب التجديد)' : subscriptionRemainingLabel}
                 </button>
               </div>
 
@@ -394,7 +680,7 @@ export const Header: React.FC<HeaderProps> = ({
                   className="flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl text-xs font-bold transition"
                 >
                   <Settings className="w-4 h-4" />
-                  <span>الإعدادات</span>
+                  <span>{t('navSettings', 'الإعدادات')}</span>
                 </button>
               </div>
 
@@ -406,7 +692,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="btn-delete w-full flex items-center justify-center gap-2 p-2.5 rounded-xl text-xs font-bold transition mt-2"
               >
                 <LogOut className="w-4 h-4" />
-                <span>تسجيل الخروج من الحساب</span>
+                <span>{t('logoutAccount', 'تسجيل الخروج')}</span>
               </button>
             </div>
 

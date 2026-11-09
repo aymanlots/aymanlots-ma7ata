@@ -26,6 +26,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { HelpPopover } from './HelpPopover';
+import { getPartnershipSixStepInfo } from '../utils/logisticsFeatures';
 
 interface AdminCollaborationRoomModalProps {
   isOpen: boolean;
@@ -41,6 +42,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
   const {
     currentUser,
     currentWorkspace,
+    userRole,
     parcels,
     managerPartnerships,
     registeredManagersNetwork,
@@ -51,9 +53,14 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
     dispatchParcelToPartner,
     respondToPartnerParcel,
     acceptAllPendingPartnerParcels,
+    confirmParcelTripArrived,
     updateParcelStatus,
     showToast,
+    t,
+    language,
   } = useApp();
+
+  const dir = (language === 'ar' || language === 'hassaniya') ? 'rtl' : 'ltr';
 
   const [activeTab, setActiveTab] = useState<RoomTab>('directory');
   const [searchQuery, setSearchQuery] = useState('');
@@ -131,16 +138,17 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
   const myCleanPhone = (currentUser?.phone || currentWorkspace?.owner_phone || '').replace(/[^0-9]/g, '');
   const myCleanEmail = (currentUser?.email || currentWorkspace?.owner_email || '').trim().toLowerCase();
 
-  // Helper to determine partner info from partnership (merging live stations from network directory)
+  // Helper to determine partner info from partnership (using live stations from network directory as authoritative source so deleted stations never reappear)
   const getPartnerInfo = (p: ManagerPartnership) => {
     const isA = p.workspace_a_id === myWsId;
     const partnerWsId = isA ? p.workspace_b_id : p.workspace_a_id;
     const liveEntry = registeredManagersNetwork.find((m) => m.workspaceId === partnerWsId);
     const storedStations = (isA ? p.workspace_b_stations : p.workspace_a_stations) || [];
-    const mergedStationsMap = new Map<string, any>();
-    for (const st of [...(liveEntry?.stations || []), ...storedStations]) {
-      if (st?.id && !mergedStationsMap.has(st.id)) {
-        mergedStationsMap.set(st.id, st);
+    const authoritativeStations = liveEntry ? (liveEntry.stations || []) : storedStations;
+    const uniqueStationsMap = new Map<string, any>();
+    for (const st of authoritativeStations) {
+      if (st?.id && !uniqueStationsMap.has(st.id)) {
+        uniqueStationsMap.set(st.id, st);
       }
     }
     return {
@@ -150,7 +158,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
       phone: liveEntry?.phone || (isA ? p.workspace_b_phone : p.workspace_a_phone),
       whatsapp: liveEntry?.whatsapp || (isA ? p.workspace_b_whatsapp : p.workspace_a_whatsapp),
       email: liveEntry?.email || (isA ? p.workspace_b_email : p.workspace_a_email),
-      stations: Array.from(mergedStationsMap.values()),
+      stations: Array.from(uniqueStationsMap.values()),
     };
   };
 
@@ -417,11 +425,11 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-1.5 bg-black/80 backdrop-blur-md overflow-y-auto animate-fadeIn"
-      dir="rtl"
+      dir={dir}
       onClick={onClose}
     >
       <div
-        className="w-[calc(100%-8px)] max-w-[420px] luxury-card rounded-[22px] p-3 sm:p-4 shadow-2xl text-right overflow-hidden relative my-auto max-h-[93vh] flex flex-col border-2 border-[#D4AF37]/65"
+        className={`w-[calc(100%-8px)] max-w-[420px] luxury-card rounded-[22px] p-3 sm:p-4 shadow-2xl ${dir === 'rtl' ? 'text-right' : 'text-left'} overflow-hidden relative my-auto max-h-[93vh] flex flex-col border-2 border-[#D4AF37]/65`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Luxury Header */}
@@ -432,10 +440,10 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
             </div>
             <div className="flex items-center gap-1.5 min-w-0">
               <h2 className="text-base sm:text-lg font-black text-[#F5D799] truncate">
-                🤝 غرفة الشراكة
+                🤝 {t('collabRoomTitle', 'غرفة الشراكة')}
               </h2>
               <HelpPopover
-                title="غرفة الشراكة وتعاون المدراء"
+                title={t('collabRoomHelpTitle', 'غرفة الشراكة وتعاون المدراء')}
                 text="ربط الشراكة مع مدراء المحطات في المدن الأخرى لتبادل الكوليات وتصفية الحسابات (COD) بدقة."
               />
             </div>
@@ -459,15 +467,15 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
               type="button"
               onClick={onClose}
               className="btn-cancel p-2 rounded-xl transition"
-              title="إغلاق"
+              title={t('close', 'إغلاق')}
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Incoming Partnership Requests Notification Banner */}
-        {pendingIncomingRequests.length > 0 && (
+        {/* Incoming Partnership Requests Notification Banner (Manager Only) */}
+        {userRole !== 'worker' && pendingIncomingRequests.length > 0 && (
           <div className="mt-3 bg-[#1a0f00] border-2 border-[#F5C84C] rounded-2xl p-3 space-y-2 shrink-0 shadow-lg">
             <div className="flex items-center gap-2 text-xs text-[#F5D799] font-black">
               <AlertTriangle className="w-4 h-4 text-[#F5C84C] shrink-0" />
@@ -495,14 +503,14 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                       onClick={() => respondToPartnershipRequest(req.id, true)}
                       className="px-2.5 py-1 rounded-lg bg-emerald-500 text-black font-black text-[10px] hover:bg-emerald-400 transition"
                     >
-                      قبول 🤝
+                      {t('acceptBtn', 'قبول')} 🤝
                     </button>
                     <button
                       type="button"
                       onClick={() => respondToPartnershipRequest(req.id, false)}
                       className="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold text-[10px] hover:bg-rose-500/30 transition"
                     >
-                      رفض
+                      {t('rejectBtn', 'رفض')}
                     </button>
                   </div>
                 </div>
@@ -525,7 +533,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
             }`}
           >
             <Building2 className="w-3.5 h-3.5 shrink-0" />
-            <span>المدراء والمحطات ({filteredManagers.length})</span>
+            <span>{t('collabDirectoryTab', 'المدراء والمحطات')} ({filteredManagers.length})</span>
           </button>
 
           <button
@@ -543,7 +551,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-            <span>شركائي والحساب ({activePartnershipsList.length})</span>
+            <span>{t('collabPartnersTab', 'شركائي والحساب')} ({activePartnershipsList.length})</span>
           </button>
         </div>
 
@@ -556,7 +564,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
             <div className="relative">
               <input
                 type="text"
-                placeholder="ابحث بالمدينة (نواذيبو، الداخلة، كازا، العيون...) أو اسم المدير..."
+                placeholder={t('collabSearchPlaceholder', 'ابحث بالمدينة (نواذيبو، الداخلة، كازا، العيون...) أو اسم المدير...')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-[#120a00] border border-[#D4AF37]/45 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-[#C8B08A]/60 focus:outline-none focus:border-[#F5C84C] pl-9"
@@ -568,7 +576,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
             <div className="flex items-center justify-between gap-2 bg-[#120a00]/90 p-2 rounded-xl border border-[#D4AF37]/30">
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-black text-[#E6C37A]">
-                  ⭐ النشاط:
+                  ⭐ {t('collabActivityLabel', 'النشاط')}:
                 </span>
                 <HelpPopover
                   title="تقييم نجوم النشاط والخدمة"
@@ -585,7 +593,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                       : 'bg-black/40 text-[#C8B08A] border border-white/10'
                   }`}
                 >
-                  الكل ({eligibleManagers.length})
+                  {t('scopeAll', 'الكل')} ({eligibleManagers.length})
                 </button>
                 <button
                   type="button"
@@ -597,7 +605,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                   }`}
                 >
                   <Star className="w-3 h-3 fill-current" />
-                  <span>الخدامين ({activeWorkingManagersCount})</span>
+                  <span>{t('collabActiveManagersBtn', 'الخدامين')} ({activeWorkingManagersCount})</span>
                 </button>
               </div>
             </div>
@@ -1009,7 +1017,8 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                         </button>
                       </div>
 
-                      {parcelFilterDirection === 'received' &&
+                      {userRole !== 'worker' &&
+                        parcelFilterDirection === 'received' &&
                         receivedParcels.some((p) => p.partner_acceptance_status === 'pending_approval') && (
                           <div className="bg-amber-950/80 border border-[#F5C84C] rounded-xl p-2.5 flex items-center justify-between gap-2">
                             <span className="text-[11px] font-black text-[#F5C84C]">
@@ -1036,6 +1045,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                             (p) => {
                               const isPendingApproval = p.partner_acceptance_status === 'pending_approval';
                               const isRejected = p.partner_acceptance_status === 'rejected';
+                              const sixStep = getPartnershipSixStepInfo(p);
                               return (
                                 <div
                                   key={p.id}
@@ -1053,25 +1063,9 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                                         <span className="font-mono text-[#F5C84C] font-black text-xs">
                                           [{p.tracking_code}]
                                         </span>
-                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#F5D799] font-bold">
-                                          {p.status === 'delivered'
-                                            ? '✓ تم التسليم للزبون'
-                                            : p.status === 'arrived'
-                                            ? '📦 وصلت للمحطة'
-                                            : p.status === 'in_transit'
-                                            ? '🚚 في الطريق'
-                                            : 'مسجلة'}
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#D4AF37]/20 text-[#F5D799] font-black">
+                                          {sixStep.currentLabel}
                                         </span>
-                                        {isPendingApproval && (
-                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-[#F5C84C] border border-[#F5C84C]/40 font-black">
-                                            ⏳ بانتظار القبول
-                                          </span>
-                                        )}
-                                        {p.partner_acceptance_status === 'accepted' && (
-                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-black">
-                                            ✓ مقبولة
-                                          </span>
-                                        )}
                                         {isRejected && (
                                           <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-black">
                                             ❌ مرفوضة
@@ -1082,7 +1076,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                                         المرسل: {p.sender_name} ⬅ المستلم: {p.receiver_name} ({p.receiver_phone})
                                       </p>
                                       <p className="text-[10px] text-white/80 font-bold mt-0.5">
-                                        من محطة: <span className="text-[#F5D799]">{p.origin_station_name || 'الانطلاق'}</span> ⬅ إلى محطة: <span className="text-emerald-300">{p.destination_station_name || 'الوجهة'}</span>
+                                        من محطة: <span className="text-[#F5D799]">{p.origin_station_name || 'الانطلاق'}</span> ⬅ إلى محطة: <span className="text-emerald-300">{p.partner_destination_station_name || p.destination_station_name || 'الوجهة'}</span>
                                       </p>
                                     </div>
                                     <div className="text-left font-mono shrink-0">
@@ -1095,15 +1089,33 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                                     </div>
                                   </div>
 
-                                  {/* If incoming parcel from partner is pending approval, show Accept / Reject */}
-                                  {parcelFilterDirection === 'received' && isPendingApproval && (
+                                  {/* 6-Step Partnership Progress Strip: طلب -> قبول -> رحلة -> وصلات -> تفريغ -> تسليم */}
+                                  <div className="grid grid-cols-6 gap-1 pt-1">
+                                    {sixStep.allSteps.map((st) => (
+                                      <div
+                                        key={st.step}
+                                        className={`text-center py-0.5 px-1 rounded text-[9px] font-black border ${
+                                          st.current
+                                            ? 'bg-[#F5C84C] text-[#1a0f00] border-[#F5C84C]'
+                                            : st.done
+                                            ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/40'
+                                            : 'bg-black/40 text-white/45 border-white/10'
+                                        }`}
+                                      >
+                                        {st.step}. {st.label}
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {/* Step 1 -> 2: If incoming parcel from partner is pending approval, Manager Only shows Accept / Reject */}
+                                  {userRole !== 'worker' && parcelFilterDirection === 'received' && isPendingApproval && (
                                     <div className="flex items-center gap-2 pt-1.5 border-t border-white/10">
                                       <button
                                         type="button"
                                         onClick={() => respondToPartnerParcel(p.id, 'accepted')}
                                         className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] transition cursor-pointer"
                                       >
-                                        ✅ قبول الكولية في محطتنا
+                                        ✅ 2. قبول الكولية في محطتنا
                                       </button>
                                       <button
                                         type="button"
@@ -1115,30 +1127,38 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                                     </div>
                                   )}
 
-                                  {/* Receiver actions AFTER accepting the parcel */}
+                                  {/* Receiver actions AFTER accepting the parcel (Steps 3 -> 4 وصلات -> 5 تفريغ -> 6 تسليم) */}
                                   {parcelFilterDirection === 'received' && p.partner_acceptance_status === 'accepted' && (
                                     <div className="pt-1.5 border-t border-white/10">
                                       {p.status === 'registered' || p.status === 'pending' ? (
                                         <div className="text-[10px] font-black text-amber-300 bg-amber-950/60 border border-amber-500/40 rounded-lg px-2.5 py-1.5">
-                                          ⏳ تم قبول الكولية — لا يمكن تأكيد الوصول أو التسليم حتى يقوم الأدمين المرسل بشحنها (🚚 شحن)
+                                          ⏳ المرحلة 2 (قبول): تم قبول الكولية — بانتظار قيام الشريك المرسل بإطلاق الرحلة (3. رحلة 🚚)
                                         </div>
-                                      ) : p.status === 'in_transit' ? (
+                                      ) : p.status === 'in_transit' && !p.trip_arrived_at ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => confirmParcelTripArrived(p.id)}
+                                          className="w-full py-1.5 px-2.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-black text-[11px] transition cursor-pointer"
+                                        >
+                                          🏁 4. وصلات (تأكيد وصول الرحلة لمحطتنا قبل التفريغ)
+                                        </button>
+                                      ) : p.status === 'in_transit' && p.trip_arrived_at ? (
                                         <button
                                           type="button"
                                           onClick={() =>
                                             updateParcelStatus(
                                               p.id,
                                               'arrived',
-                                              'تم تأكيد وصول كولية الشراكة وإدخالها لستوك المحطة'
+                                              'تم تفريغ كولية الشراكة وإدخالها لستوك المحطة بعد وصول الرحلة'
                                             )
                                           }
-                                          className="w-full py-1.5 px-2.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-black text-[11px] transition cursor-pointer"
+                                          className="w-full py-1.5 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] transition cursor-pointer"
                                         >
-                                          📥 وصلات (إدخال الكولية لستوك محطتنا الآن)
+                                          📥 5. تفريغ (إدخال الكولية لستوك محطتنا الآن)
                                         </button>
                                       ) : p.status === 'arrived' ? (
                                         <div className="text-[10px] font-black text-emerald-300 bg-emerald-950/60 border border-emerald-500/40 rounded-lg px-2.5 py-1.5">
-                                          📦 وصلت لستوك محطتنا — جاهزة للتسليم للزبون من قسم الكوليات
+                                          📦 المرحلة 5 (تفريغ): فـ ستوك محطتنا — جاهزة للمرحلة 6 (تسليم للزبون) من قسم الكوليات
                                         </div>
                                       ) : null}
                                     </div>
@@ -1149,7 +1169,7 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                                     <div className="pt-1.5 border-t border-white/10 space-y-1.5">
                                       {p.status === 'registered' && p.partner_acceptance_status === 'pending_approval' && (
                                         <div className="text-[10px] font-bold text-amber-300">
-                                          ⏳ في ستوك محطتنا — بانتظار قبول المدير الشريك ليتم تفعيل زر الشحن (🚚)
+                                          ⏳ المرحلة 1 (طلب): بانتظار قبول المدير الشريك (المرحلة 2: قبول) ليتم تفعيل زر الرحلة (🚚)
                                         </div>
                                       )}
                                       {p.status === 'registered' && p.partner_acceptance_status === 'accepted' && (
@@ -1159,16 +1179,16 @@ export const AdminCollaborationRoomModal: React.FC<AdminCollaborationRoomModalPr
                                             updateParcelStatus(
                                               p.id,
                                               'in_transit',
-                                              'تم شحن الكولية من طرف الأدمين المرسل وانطلاقها نحو محطة الشريك'
+                                              'تم شحن الكولية من طرف الأدمين المرسل وانطلاقها في رحلة نحو محطة الشريك'
                                             )
                                           }
                                           className="w-full py-1.5 px-2.5 rounded-lg btn-gold font-black text-[11px] transition cursor-pointer"
                                         >
-                                          🚚 شحن الكولية الآن (إرسال في الطريق للشريك)
+                                          🚚 3. رحلة (شحن الكولية الآن في الطريق للشريك)
                                         </button>
                                       )}
                                       <div className="text-[9px] text-[#C8B08A]">
-                                        🔒 تأكيد الوصول والتسليم للزبون يتحكم فيه الشريك المستقبل وعامل محطته بعد أن تقوم بشحن الكولية.
+                                        🔒 الترتيب الرسمي للشراكة: طلب ⬅ قبول ⬅ رحلة ⬅ وصلات ⬅ تفريغ ⬅ تسليم.
                                       </div>
                                     </div>
                                   )}

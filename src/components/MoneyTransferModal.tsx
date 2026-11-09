@@ -35,13 +35,18 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
     moneyTransfers,
     createMoneyTransfer,
     payoutMoneyTransfer,
+    t,
+    language,
   } = useApp();
+
+  const dir = (language === 'ar' || language === 'hassaniya') ? 'rtl' : 'ltr';
 
   const workerStationId = userRole === 'worker' ? userAssignedStationId : null;
   const activeStationId =
     workerStationId || (selectedStationId && selectedStationId !== 'all' ? selectedStationId : null);
 
   const [activeTab, setActiveTab] = useState<'send' | 'list'>(initialTab);
+  const [directionFilter, setDirectionFilter] = useState<'outgoing' | 'incoming'>('outgoing');
   const [originStationId, setOriginStationId] = useState<string>(
     activeStationId || stations[0]?.id || ''
   );
@@ -125,15 +130,25 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
     return Math.round(numericSend * numericRate * 100) / 100;
   }, [numericSend, sendCurrency, payoutCurrency, numericRate]);
 
-  // فلترة الحوالات حسب المحطة المختارة (أو عرض الكل إذا كان المختار 'all')
+  const outgoingCountForActive = useMemo(() => {
+    if (!activeStationId) return moneyTransfers.length;
+    return moneyTransfers.filter(t => t.origin_station_id === activeStationId).length;
+  }, [moneyTransfers, activeStationId]);
+
+  const incomingCountForActive = useMemo(() => {
+    if (!activeStationId) return moneyTransfers.length;
+    return moneyTransfers.filter(t => t.destination_station_id === activeStationId).length;
+  }, [moneyTransfers, activeStationId]);
+
+  // فلترة الحوالات حسب المحطة المختارة مع فصل تام بين الحوالات المسجلة فالمحطة (الصادرة) والواردة إليها لمنع أي تداخل عند تبديل المحطات
   const scopedTransfers = useMemo(() => {
     let list = moneyTransfers;
     if (activeStationId) {
-      list = list.filter(
-        t =>
-          t.origin_station_id === activeStationId ||
-          t.destination_station_id === activeStationId
-      );
+      if (directionFilter === 'outgoing') {
+        list = list.filter(t => t.origin_station_id === activeStationId);
+      } else {
+        list = list.filter(t => t.destination_station_id === activeStationId);
+      }
     }
     if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase();
@@ -145,7 +160,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
         t.sender_phone.includes(q) ||
         t.receiver_phone.includes(q)
     );
-  }, [moneyTransfers, activeStationId, searchQuery]);
+  }, [moneyTransfers, activeStationId, directionFilter, searchQuery]);
 
   if (!isOpen) return null;
 
@@ -245,8 +260,8 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
       onClick={onClose}
     >
       <div
-        dir="rtl"
-        className="luxury-card border-2 border-[#D4AF37]/65 rounded-2xl w-[96%] max-w-[420px] max-h-[94dvh] p-3.5 shadow-2xl m-0 flex flex-col justify-between gap-2.5 overflow-hidden text-right"
+        dir={dir}
+        className={`luxury-card border-2 border-[#D4AF37]/65 rounded-2xl w-[96%] max-w-[420px] max-h-[94dvh] p-3.5 shadow-2xl m-0 flex flex-col justify-between gap-2.5 overflow-hidden ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
         onClick={e => e.stopPropagation()}
       >
         {/* Top Header: Title + Tabs + Close on ONE Row */}
@@ -254,7 +269,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-lg leading-none">💸</span>
             <h3 className="text-sm sm:text-base font-black text-white truncate">
-              الحوالة المالية
+              {t('remittanceModalTitle', 'الحوالة المالية')}
             </h3>
           </div>
 
@@ -268,7 +283,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               onClick={() => setActiveTab('send')}
               className="btn-add py-1.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer"
             >
-              + حوالة داخلة
+              + {t('remittanceTabIn', 'حوالة داخلة')}
             </button>
             <button
               type="button"
@@ -279,7 +294,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               onClick={() => setActiveTab('list')}
               className="btn-delete py-1.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition flex items-center gap-1 cursor-pointer"
             >
-              <span>- حوالة خارجة ({scopedTransfers.length})</span>
+              <span>- {t('remittanceTabOut', 'حوالة خارجة')} ({scopedTransfers.length})</span>
               {pendingCountForScope > 0 && (
                 <span className="badge-pill px-1 rounded-full bg-white text-[#C1272D] text-[10px] font-black">
                   {pendingCountForScope}
@@ -293,7 +308,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               data-btn-active-fixed="true"
               onClick={onClose}
               className="btn-delete p-1.5 rounded-xl shrink-0 cursor-pointer"
-              aria-label="إغلاق"
+              aria-label={t('close', 'إغلاق')}
             >
               <X className="w-4 h-4" />
             </button>
@@ -316,13 +331,13 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               {/* من محطة الإرسال (+) */}
               <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
                 <label className="block text-xs sm:text-sm text-white/90 font-black truncate">
-                  📍 محطة الإرسال (+)
+                  📍 {t('sendingStationLabel', 'محطة الإرسال (+)')}
                 </label>
                 <select
                   value={originStationId}
-                  disabled={userRole === 'worker'}
+                  disabled={Boolean(activeStationId)}
                   onChange={e => {
-                    if (userRole === 'worker') return;
+                    if (activeStationId) return;
                     const nextOrigin = e.target.value;
                     setOriginStationId(nextOrigin);
                     if (nextOrigin === destStationId) {
@@ -335,10 +350,10 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                       setSendCurrency(c);
                     }
                   }}
-                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white font-black focus:outline-none disabled:opacity-75 truncate"
+                  className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm text-white font-black focus:outline-none disabled:opacity-80 truncate"
                 >
-                  {(userRole === 'worker' && workerStationId
-                    ? stations.filter(s => s.id === workerStationId)
+                  {(activeStationId
+                    ? stations.filter(s => s.id === activeStationId)
                     : stations
                   ).map(s => (
                     <option key={s.id} value={s.id}>
@@ -351,7 +366,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               {/* إلى محطة الاستلام (−) */}
               <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
                 <label className="block text-xs sm:text-sm text-white/90 font-black truncate">
-                  📍 محطة الاستلام (−)
+                  📍 {t('receivingStationLabel', 'محطة الاستلام (−)')}
                 </label>
                 <select
                   value={destStationId}
@@ -380,14 +395,14 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               {/* بيانات المرسل */}
               <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-2">
                 <span className="font-black text-white block text-xs sm:text-sm truncate">
-                  👤 اسم المرسل
+                  👤 {t('senderName', 'اسم المرسل')}
                 </span>
                 <input
                   type="text"
                   required
                   value={senderName}
                   onChange={e => setSenderName(e.target.value)}
-                  placeholder="👤 اسم المرسل *"
+                  placeholder={`👤 ${t('senderName', 'اسم المرسل')} *`}
                   className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm font-black text-white focus:outline-none"
                 />
                 <input
@@ -395,7 +410,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   dir="ltr"
                   value={senderPhone}
                   onChange={e => setSenderPhone(e.target.value)}
-                  placeholder="📞 هاتف المرسل"
+                  placeholder={`📞 ${t('senderPhone', 'هاتف المرسل')}`}
                   className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm font-black text-white font-mono focus:outline-none"
                 />
               </div>
@@ -403,14 +418,14 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               {/* بيانات المستلم */}
               <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-2">
                 <span className="font-black text-white block text-xs sm:text-sm truncate">
-                  👤 اسم المستلم
+                  👤 {t('receiverName', 'اسم المستلم')}
                 </span>
                 <input
                   type="text"
                   required
                   value={receiverName}
                   onChange={e => setReceiverName(e.target.value)}
-                  placeholder="👤 اسم المستلم *"
+                  placeholder={`👤 ${t('receiverName', 'اسم المستلم')} *`}
                   className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm font-black text-white focus:outline-none"
                 />
                 <input
@@ -418,7 +433,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   dir="ltr"
                   value={receiverPhone}
                   onChange={e => setReceiverPhone(e.target.value)}
-                  placeholder="📞 هاتف المستلم"
+                  placeholder={`📞 ${t('receiverPhone', 'هاتف المستلم')}`}
                   className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-xs sm:text-sm font-black text-white font-mono focus:outline-none"
                 />
               </div>
@@ -429,7 +444,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               {/* المبلغ المرسل */}
               <div className="bg-black/55 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
                 <div className="flex items-center justify-between text-xs sm:text-sm font-black">
-                  <span className="truncate">💰 المبلغ المرسل *</span>
+                  <span className="truncate">💰 {t('sentAmountLabel', 'المبلغ المرسل')} *</span>
                 </div>
                 <input
                   type="text"
@@ -450,15 +465,15 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   title="عملة الإيداع (+)"
                   className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-xs sm:text-sm font-black text-emerald-400 focus:outline-none"
                 >
-                  <option value="MAD">➕ إيداع (MAD)</option>
-                  <option value="MRU">➕ إيداع (MRU)</option>
+                  <option value="MAD">➕ {t('btnDeposit', 'إيداع')} (MAD)</option>
+                  <option value="MRU">➕ {t('btnDeposit', 'إيداع')} (MRU)</option>
                 </select>
               </div>
 
               {/* عملة التسليم (−) + الصافي */}
               <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-2">
                 <span className="text-xs sm:text-sm font-black truncate">
-                  💱 الصافي للتسليم (−)
+                  💱 {t('netPayoutLabel', 'الصافي للتسليم (−)')}
                 </span>
                 <div
                   className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2.5 text-sm sm:text-base font-mono font-black text-rose-400 text-center truncate"
@@ -472,8 +487,8 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   title="عملة التسليم (−)"
                   className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-xs sm:text-sm font-black text-[#F5C84C] focus:outline-none"
                 >
-                  <option value="MAD">➖ تسليم (MAD)</option>
-                  <option value="MRU">➖ تسليم (MRU)</option>
+                  <option value="MAD">➖ {t('payoutOption', 'تسليم')} (MAD)</option>
+                  <option value="MRU">➖ {t('payoutOption', 'تسليم')} (MRU)</option>
                 </select>
               </div>
             </div>
@@ -483,7 +498,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               {/* سعر الصرف */}
               <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
                 <div className="flex items-center justify-between text-xs sm:text-sm font-black text-white">
-                  <span className="truncate">📊 سعر الصرف</span>
+                  <span className="truncate">📊 {t('exchangeRateLabel', 'سعر الصرف')}</span>
                   <span className="text-[10px] text-amber-300 font-mono">
                     {sendCurrency === payoutCurrency ? '1:1' : `${sendCurrency} ➔ ${payoutCurrency}`}
                   </span>
@@ -501,14 +516,14 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-sm sm:text-base font-mono font-black text-white text-center focus:outline-none"
                 />
                 <span className="text-[10px] text-gray-400 text-center font-bold">
-                  (ديما 0 - تعمير يدوي)
+                  {t('manualRateHint', '(ديما 0 - تعمير يدوي)')}
                 </span>
               </div>
 
               {/* مصاريف التحويلة */}
               <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-between gap-1.5">
                 <div className="flex items-center justify-between text-xs sm:text-sm font-black text-white">
-                  <span className="truncate">💵 مصاريف التحويلة</span>
+                  <span className="truncate">💵 {t('transferCommissionLabel', 'مصاريف التحويلة')}</span>
                   <span className="text-[10px] text-emerald-400 font-mono">+{sendCurrency}</span>
                 </div>
                 <input
@@ -524,7 +539,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                   className="w-full bg-black/65 border border-white/20 rounded-xl px-2.5 py-2 text-sm sm:text-base font-mono font-black text-white text-center focus:outline-none"
                 />
                 <span className="text-[10px] text-gray-400 text-center font-bold">
-                  (المجموع: {(numericSend + numericCommission).toLocaleString('en-US')} {sendCurrency})
+                  ({t('totalLabel', 'المجموع')}: {(numericSend + numericCommission).toLocaleString('en-US')} {sendCurrency})
                 </span>
               </div>
             </div>
@@ -537,11 +552,38 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               data-btn-role-fixed="true"
               className="btn-add w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer shadow-md shrink-0"
             >
-              <span>{isSubmitting ? '⏳ جاري الإرسال...' : '✅ تأكيد وإرسال الحوالة الآن 💸'}</span>
+              <span>{isSubmitting ? `⏳ ${t('sendingWait', 'جاري الإرسال...')}` : `✅ ${t('confirmSendRemittanceBtn', 'تأكيد وإرسال الحوالة الآن 💸')}`}</span>
             </button>
           </form>
         ) : (
           <div className="flex-1 flex flex-col justify-between gap-2.5 min-h-0 overflow-hidden">
+            {activeStationId && (
+              <div className="grid grid-cols-2 gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setDirectionFilter('outgoing')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-black transition cursor-pointer border ${
+                    directionFilter === 'outgoing'
+                      ? 'bg-emerald-600 text-white border-emerald-400'
+                      : 'bg-black/60 text-white/80 border-white/15'
+                  }`}
+                >
+                  📤 المسجلة فهاد المحطة ({outgoingCountForActive})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirectionFilter('incoming')}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-black transition cursor-pointer border ${
+                    directionFilter === 'incoming'
+                      ? 'bg-[#D4AF37] text-[#111111] border-[#F5C84C]'
+                      : 'bg-black/60 text-white/80 border-white/15'
+                  }`}
+                >
+                  📥 الواردة لهاد المحطة ({incomingCountForActive})
+                </button>
+              </div>
+            )}
+
             <div className="relative shrink-0">
               <Search className="w-4 h-4 text-[#F5C84C] absolute right-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -555,7 +597,11 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
 
             {scopedTransfers.length === 0 ? (
               <div className="flex-1 flex items-center justify-center text-center p-4 text-xs text-white/75 bg-black/50 rounded-2xl border border-white/15">
-                لا توجد حوالات مسجلة لهذه المحطة حالياً
+                {activeStationId
+                  ? directionFilter === 'outgoing'
+                    ? 'لا توجد حوالات صادرة مسجلة في هذه المحطة حالياً'
+                    : 'لا توجد حوالات واردة إلى هذه المحطة حالياً'
+                  : 'لا توجد حوالات مسجلة حالياً'}
               </div>
             ) : (
               <div className="flex-1 space-y-2.5 overflow-y-auto pr-0.5 min-h-0">

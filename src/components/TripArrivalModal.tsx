@@ -42,6 +42,7 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
     currentWorkspace,
     trips,
     parcels, 
+    confirmTripArrivedAtDestination,
     receiveParcelAtDestination, 
     receiveAllParcelsInTrip,
     closeTrip, 
@@ -79,6 +80,9 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
     if (missingCount <= 0) return;
     setIsBatchReceiving(true);
     try {
+      if (trip.status === 'departed') {
+        await confirmTripArrivedAtDestination(trip.id);
+      }
       const res = await receiveAllParcelsInTrip(trip.id);
       if (res.success) {
         playSuccessBeep();
@@ -98,6 +102,10 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
       showToast('يرجى كتابة ملاحظة بيان العيب في الكولي غير العادي', 'error');
       playErrorBeep();
       return;
+    }
+
+    if (trip.status === 'departed') {
+      await confirmTripArrivedAtDestination(trip.id);
     }
 
     const res = await receiveParcelAtDestination(
@@ -180,7 +188,7 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                       : 'bg-[#D4AF37]/20 text-[#F5D799] border border-[#D4AF37]/40'
                   }`}>
-                    {trip.status === 'closed' ? '🔒 مغلقة' : isTripFinished ? '✅ اكتمل' : '⏳ تفريغ'}
+                    {trip.status === 'closed' ? '🔒 مغلقة' : isTripFinished ? '✅ اكتمل' : trip.status === 'departed' ? '🚚 رحلة' : '🏁 وصلات / تفريغ'}
                   </span>
                 </div>
                 <p className="text-[10px] text-white/80 font-bold mt-0.5 flex items-center gap-1 truncate">
@@ -198,6 +206,22 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Step 4 (وصلات) Banner if trip is still 'departed' */}
+          {trip.status === 'departed' && (
+            <div className="mt-2 p-2 rounded-xl bg-amber-950/80 border border-[#F5C84C] flex items-center justify-between gap-2">
+              <span className="text-[10px] font-black text-[#F5C84C]">
+                🏁 المرحلة 4 (وصلات): أكد وصول الرحلة للمحطة قبل التفريغ
+              </span>
+              <button
+                type="button"
+                onClick={() => confirmTripArrivedAtDestination(trip.id)}
+                className="px-2.5 py-1 rounded-lg bg-[#F5C84C] text-black font-black text-[10px] shrink-0 cursor-pointer"
+              >
+                🏁 وصلات للمحطة
+              </button>
+            </div>
+          )}
 
           {/* Metrics & Driver Plate Bar (Compact 2x2) */}
           <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs">
@@ -272,7 +296,7 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
                 className="btn-gold py-2 px-2 rounded-xl font-black text-xs flex items-center justify-center gap-1 shadow-md active:scale-95 transition"
               >
                 <Zap className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>📷 تفريغ جماعي</span>
+                <span>تفريغ جماعي</span>
               </button>
 
               <button
@@ -288,7 +312,7 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
                 className="btn-cancel py-2 px-2 rounded-xl font-black text-xs flex items-center justify-center gap-1 border border-[#F5C84C]/50 text-[#F5C84C] transition"
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>🖨️ مانيفست PDF</span>
+                <span>مانيفست PDF</span>
               </button>
             </div>
 

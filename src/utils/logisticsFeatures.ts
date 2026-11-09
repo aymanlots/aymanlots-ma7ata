@@ -177,8 +177,9 @@ export function getParcelSourceOwnershipInfo(
 }
 
 /**
- * يتحقق مما إذا كان المستخدم الحالي (مدير أو عامل محطة الاستلام) يملك صلاحية قبول أو رفض كولية واردة من محطة أخرى
- * القاعدة: محطة الإرسال لا يمكنها قبول أو رفض كولي أرسلته بنفسها؛ القبول والرفض من اختصاص محطة الوصول فقط.
+ * يتحقق مما إذا كان المستخدم الحالي يملك صلاحية قبول أو رفض كولية واردة من شريك في غرفة الشراكة.
+ * القاعدة الصارمة (1): العامل (worker) لا يملك أي صلاحية للقبول أو الرفض في الشراكة إطلاقاً!
+ * المدير (owner / platform_owner) المستقبل فقط هو الوحيد المخول بالقبول أو الرفض في الشراكة.
  */
 export function canAcceptOrRejectPartnerParcel(
   parcel: Parcel,
@@ -188,17 +189,24 @@ export function canAcceptOrRejectPartnerParcel(
 ): boolean {
   if (parcel.partner_acceptance_status !== 'pending_approval') return false;
 
-  // عامل أو مدير محطة الإرسال لا يمكنه إطلاقاً قبول أو رفض كولي أرسله بنفسه!
-  if (userRole === 'worker' || userRole === 'admin') {
-    if (!userAssignedStationId) return false;
-    if (parcel.origin_station_id === userAssignedStationId) return false;
-    return (
-      parcel.destination_station_id === userAssignedStationId ||
-      parcel.partner_destination_station_id === userAssignedStationId
-    );
+  // القاعدة 1: العامل ممنوع نهائياً من القبول أو الرفض في غرفة الشراكة! المدير فقط من يقبل أو يرفض.
+  if (userRole === 'worker') {
+    return false;
   }
 
-  // المدير العام: إذا كان يفلتر على محطة الإرسال، لا يقبل تحت محطة الإرسال
+  const myWsId = currentWorkspaceId || '';
+  // المدير المرسل لا يمكنه قبول كولية أرسلها هو بنفسه لشريك آخر
+  if (
+    myWsId &&
+    parcel.partner_origin_workspace_id === myWsId &&
+    parcel.partner_workspace_id &&
+    parcel.partner_workspace_id !== myWsId &&
+    !parcel.is_collaborator_data
+  ) {
+    return false;
+  }
+
+  // المدير العام: إذا كان يفلتر على محطة الإرسال نفسها، لا يقبل تحت محطة الإرسال
   if (userAssignedStationId && userAssignedStationId !== 'all') {
     if (parcel.origin_station_id === userAssignedStationId && parcel.destination_station_id !== userAssignedStationId) {
       return false;
@@ -206,6 +214,154 @@ export function canAcceptOrRejectPartnerParcel(
   }
 
   return true;
+}
+
+export interface PartnershipSixStepInfo {
+  currentStep: 1 | 2 | 3 | 4 | 5 | 6;
+  stepKey: 'request' | 'accepted' | 'in_trip' | 'trip_arrived' | 'unloaded' | 'delivered';
+  stepLabelAr: string;
+  currentLabel: string;
+  nextActionLabelAr: string | null;
+  steps: {
+    step: 1 | 2 | 3 | 4 | 5 | 6;
+    label: string;
+    done: boolean;
+    active: boolean;
+    current: boolean;
+  }[];
+  allSteps: {
+    step: 1 | 2 | 3 | 4 | 5 | 6;
+    label: string;
+    done: boolean;
+    active: boolean;
+    current: boolean;
+  }[];
+}
+
+/**
+ * الترتيب الصارم للشراكة والكوليات (القاعدة 3):
+ * 1. طلب (pending_approval) -> 2. قبول (accepted) -> 3. رحلة (in_transit) -> 4. وصلات (trip_arrived_at) -> 5. تفريغ (arrived) -> 6. تسليم (delivered)
+ */
+export function getPartnershipSixStepInfo(parcel: Parcel, trip?: Trip | null): PartnershipSixStepInfo {
+  let currentStep: 1 | 2 | 3 | 4 | 5 | 6 = 2;
+  let stepKey: PartnershipSixStepInfo['stepKey'] = 'accepted';
+  let stepLabelAr = '2. مقبول (بانتظار الرحلة)';
+  let nextActionLabelAr: string | null = '🚚 3. إرسال في رحلة';
+
+  const isPendingPartner = parcel.partner_acceptance_status === 'pending_approval';
+  const hasTripArrived =
+    Boolean(parcel.trip_arrived_at) ||
+    Boolean(trip && (trip.status === 'arrived' || trip.status === 'closed'));
+
+  if (parcel.status === 'delivered') {
+    currentStep = 6;
+    stepKey = 'delivered';
+    stepLabelAr = '6. تم التسليم النهائي ✅';
+    nextActionLabelAr = null;
+  } else if (parcel.status === 'arrived') {
+    currentStep = 5;
+    stepKey = 'unloaded';
+    stepLabelAr = '5. تم التفريغ بالمحطة (جاهز للتسليم)';
+    nextActionLabelAr = '🤝 6. تسليم للزبون';
+  } else if (parcel.status === 'in_transit' && hasTripArrived) {
+    currentStep = 4;
+    stepKey = 'trip_arrived';
+    stepLabelAr = '4. وصلات للمحطة (بانتظار التفريغ)';
+    nextActionLabelAr = '📥 5. تفريغ للستوك';
+  } else if (parcel.status === 'in_transit') {
+    currentStep = 3;
+    stepKey = 'in_trip';
+    stepLabelAr = '3. في الرحلة (في الطريق)';
+    nextActionLabelAr = '🏁 4. تأكيد وصلات للمحطة';
+  } else if (isPendingPartner) {
+    currentStep = 1;
+    stepKey = 'request';
+    stepLabelAr = '1. طلب شراكة (بانتظار قبول المدير)';
+    nextActionLabelAr = '✅ 2. قبول الطلب (المدير)';
+  } else {
+    currentStep = 2;
+    stepKey = 'accepted';
+    stepLabelAr = '2. مقبول (بانتظار انطلاق الرحلة)';
+    nextActionLabelAr = '🚚 3. شحن في رحلة';
+  }
+
+  const labels: Array<{ step: 1 | 2 | 3 | 4 | 5 | 6; label: string }> = [
+    { step: 1, label: 'طلب' },
+    { step: 2, label: 'قبول' },
+    { step: 3, label: 'رحلة' },
+    { step: 4, label: 'وصلات' },
+    { step: 5, label: 'تفريغ' },
+    { step: 6, label: 'تسليم' },
+  ];
+
+  const mappedSteps = labels.map((item) => ({
+    step: item.step,
+    label: item.label,
+    done: item.step < currentStep || currentStep === 6,
+    active: item.step === currentStep,
+    current: item.step === currentStep,
+  }));
+
+  return {
+    currentStep,
+    stepKey,
+    stepLabelAr,
+    currentLabel: stepLabelAr,
+    nextActionLabelAr,
+    steps: mappedSteps,
+    allSteps: mappedSteps,
+  };
+}
+
+/**
+ * القاعدة 7: التحقق الصارم من ملكية الكولي عند السكان (الباركود / QR)
+ * الكولي ديال واحد المدير ما يمكنش يسكانيه مدير آخر لا علاقة له به.
+ */
+export function validateParcelScanOwnership(
+  parcel: Parcel | undefined | null,
+  currentWorkspaceId?: string | null,
+  userRole?: string,
+  userAssignedStationId?: string | null
+): { allowed: boolean; error?: string; reason?: string } {
+  if (!parcel) {
+    const msg = '⛔ الكولي غير موجود أو ينتمي لشركة أخرى غير مرتبطة بك.';
+    return { allowed: false, error: msg, reason: msg };
+  }
+  const myWsId = currentWorkspaceId || '';
+  if (myWsId) {
+    const belongsToMyWorkspace =
+      !parcel.workspace_id ||
+      parcel.workspace_id === myWsId ||
+      parcel.team_id === myWsId ||
+      parcel.partner_workspace_id === myWsId ||
+      parcel.partner_origin_workspace_id === myWsId;
+
+    if (!belongsToMyWorkspace) {
+      const msg = '⛔ مرفوض أمنياً: هذا الكولي يتبع لمدير آخر ولا تملك صلاحية مسحه أو تعديله!';
+      return {
+        allowed: false,
+        error: msg,
+        reason: msg,
+      };
+    }
+  }
+
+  if (userRole === 'worker' && userAssignedStationId) {
+    const isMyStationInvolved =
+      parcel.origin_station_id === userAssignedStationId ||
+      parcel.destination_station_id === userAssignedStationId ||
+      parcel.partner_destination_station_id === userAssignedStationId;
+    if (!isMyStationInvolved) {
+      const msg = `⛔ هذا الكولي (${parcel.origin_station_name || ''} ➔ ${parcel.destination_station_name || ''}) غير موجه لمحطتك ولا ينطلق منها!`;
+      return {
+        allowed: false,
+        error: msg,
+        reason: msg,
+      };
+    }
+  }
+
+  return { allowed: true };
 }
 
 /**
@@ -235,21 +391,19 @@ export function canControlParcelOrigin(
     return parcel.origin_station_id === userAssignedStationId;
   }
 
-  // المدير: إذا كان محدد محطة معينة بالفلتر وليست محطة الانطلاق
+  // المدير يملك صلاحية كاملة على جميع محطاته
   if (userAssignedStationId && userAssignedStationId !== 'all') {
     if (parcel.destination_station_id === userAssignedStationId && parcel.origin_station_id !== userAssignedStationId) {
       return false;
     }
   }
 
-  return !myWsId || !parcel.workspace_id || parcel.workspace_id === myWsId;
+  return !myWsId || !parcel.workspace_id || parcel.workspace_id === myWsId || parcel.partner_origin_workspace_id === myWsId;
 }
 
 /**
- * يتحقق بصرامة مما إذا كان المستخدم الحالي يملك الحق في تأكيد وصول الكولي للمحطة (arrived) أو تسليمه للزبون (delivered).
- * القاعدة الصارمة: اللي صيفط كيصيفط، واللي استقبل كيستقبل.
- * - عامل محطة الإرسال لا يمكنه نهائياً تأكيد الوصول أو التسليم أو تفريغ الكولي.
- * - الاستقبال والتسليم والتفريغ يتم حصرياً من طرف عامل أو مدير محطة الوصول.
+ * يتحقق بصرامة مما إذا كان المستخدم الحالي يملك الحق في تأكيد وصول الكولي للمحطة (وصلات / تفريغ) أو تسليمه للزبون (تسليم).
+ * القاعدة الصارمة: اللي صيفط كيصيفط، واللي استقبل كيستقبل. والمدير عندو الصلاحية الكاملة على محطاته.
  */
 export function canControlParcelDestination(
   parcel: Parcel,
@@ -266,14 +420,15 @@ export function canControlParcelDestination(
       !parcel.is_collaborator_data
   );
 
-  // إذا أرسلت كولية لشريك في غرفة الشراكة: الشريك المستقبل هو الوحيد المخول بالاستقبال والتسليم
+  // إذا أرسلت كولية لشريك في غرفة الشراكة: الشريك المستقبل هو الوحيد المخول بالاستقبال والتفريغ والتسليم
   if (isOutgoingToPartner) {
     return false;
   }
 
   const isIncomingFromPartner =
     Boolean(parcel.partner_origin_workspace_id && parcel.partner_origin_workspace_id !== myWsId) ||
-    Boolean(parcel.is_collaborator_data);
+    Boolean(parcel.is_collaborator_data) ||
+    Boolean(parcel.partner_workspace_id && parcel.partner_workspace_id === myWsId && parcel.partner_origin_workspace_id !== myWsId);
 
   if (isIncomingFromPartner) {
     if (
@@ -305,12 +460,15 @@ export function canControlParcelDestination(
     );
   }
 
-  // المدير: إذا كان محدد محطة بالفلتر وهي محطة الإرسال، لا يمكنه الاستقبال تحت محطة الإرسال
+  // المدير: إذا كان محدد محطة بالفلتر وهي محطة الإرسال، لا يستقبل تحت محطة الإرسال
   if (userAssignedStationId && userAssignedStationId !== 'all') {
     if (parcel.origin_station_id === userAssignedStationId && parcel.destination_station_id !== userAssignedStationId) {
       return false;
     }
-    return parcel.destination_station_id === userAssignedStationId;
+    return (
+      parcel.destination_station_id === userAssignedStationId ||
+      parcel.partner_destination_station_id === userAssignedStationId
+    );
   }
 
   return !myWsId || !parcel.workspace_id || parcel.workspace_id === myWsId;
@@ -568,6 +726,66 @@ export function getDormantParcels(parcels: Parcel[], minDays: number = 3): Dorma
   return list.sort((a, b) => b.daysWaiting - a.daysWaiting);
 }
 
+export const OFFICIAL_APP_LOGO_PATH = '/assets/aistudio/image_9c11f636.png';
+export const OFFICIAL_APP_BRAND_NAME = 'Sahara📦 Express';
+export const OFFICIAL_APP_SUBTITLE = 'للسفر ونقل البضائع والكوليات';
+
+export function sanitizeOfficialBrandLogo(rawUrl?: string | null): string {
+  const clean = (rawUrl || '').trim();
+  if (!clean) return '';
+  const lower = clean.toLowerCase();
+  if (
+    lower.includes('whatsapp_image') ||
+    lower.includes('icon-512') ||
+    lower.includes('icon-192') ||
+    lower.includes('pwa-512') ||
+    lower.includes('pwa-192') ||
+    lower.includes('apple-touch-icon')
+  ) {
+    return '';
+  }
+  return clean;
+}
+
+export function isPack2CustomBrandingAllowed(ws?: {
+  id?: string;
+  plan_tier?: string;
+  plan_name?: string;
+  max_stations?: number;
+  max_workers_per_station?: number;
+} | null): boolean {
+  if (!ws) return false;
+  if (
+    ws.plan_tier === 'plan_2_two_stations' ||
+    ws.max_stations === 2 ||
+    ws.max_workers_per_station === 1
+  ) {
+    return false;
+  }
+  const pName = (ws.plan_name || '').trim();
+  if (
+    pName.includes('تجريبي') ||
+    pName.includes('30 يوم') ||
+    pName.includes('مجاناً') ||
+    pName.includes('149') ||
+    pName.includes('99') ||
+    pName.includes('الباك الأول')
+  ) {
+    return false;
+  }
+  // Check if subscription is currently marked as a trial
+  try {
+    const sub = JSON.parse(localStorage.getItem('aman_subscription') || 'null');
+    if (sub && sub.is_trial && !pName.includes('299') && !pName.includes('الباك الثاني')) {
+      return false;
+    }
+  } catch {}
+  return (
+    ws.plan_tier === 'plan_1_full' &&
+    (pName.includes('299') || pName.includes('الباك الثاني'))
+  );
+}
+
 export function resolveOfficialPrintBranding(input?: {
   name?: string;
   subtitle?: string;
@@ -580,43 +798,75 @@ export function resolveOfficialPrintBranding(input?: {
   logoSrc: string;
   isPack1Basic99: boolean;
 } {
-  const defaultAppLogo = `${typeof window !== 'undefined' ? window.location.origin : ''}/assets/aistudio/image_9c11f636.png`;
-  const officialAppName = 'Sahara📦 Express';
-  const officialAppSubtitle = 'للسفر ونقل البضائع والكوليات';
-  let isPack1Basic99 = false;
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const defaultAppLogo = `${origin}${OFFICIAL_APP_LOGO_PATH}`;
+  let ws: any = null;
+  let savedWsBranding: any = {};
+  let savedStickerBranding: any = {};
+
   try {
-    const ws = JSON.parse(localStorage.getItem('aman_workspace') || 'null');
-    if (
-      ws &&
-      (ws.plan_tier === 'plan_2_two_stations' ||
-        ws.max_stations === 2 ||
-        ws.max_workers_per_station === 1)
-    ) {
-      isPack1Basic99 = true;
+    ws = JSON.parse(localStorage.getItem('aman_workspace') || 'null');
+    if (ws?.id) {
+      savedWsBranding = JSON.parse(localStorage.getItem(`alittihadia_branding_${ws.id}`) || '{}');
     }
+    savedStickerBranding = JSON.parse(localStorage.getItem('alittihadia_sticker_branding_v1') || '{}');
   } catch {}
 
-  if (isPack1Basic99) {
+  const allowCustom = isPack2CustomBrandingAllowed(ws);
+  const resolvedPhone =
+    input?.phone?.trim() ||
+    ws?.custom_brand_phone?.trim() ||
+    savedWsBranding?.custom_brand_phone?.trim() ||
+    savedStickerBranding?.agencyPhone?.trim() ||
+    ws?.owner_phone?.trim() ||
+    '';
+
+  if (!allowCustom) {
     return {
-      agencyName: officialAppName,
-      agencySubtitle: officialAppSubtitle,
-      agencyPhone: input?.phone?.trim() || '',
+      agencyName: OFFICIAL_APP_BRAND_NAME,
+      agencySubtitle: OFFICIAL_APP_SUBTITLE,
+      agencyPhone: resolvedPhone,
       logoSrc: defaultAppLogo,
       isPack1Basic99: true,
     };
   }
 
-  const rawCustomName = input?.name?.trim() || '';
+  const rawCustomName =
+    ws?.custom_brand_name?.trim() ||
+    savedWsBranding?.custom_brand_name?.trim() ||
+    savedStickerBranding?.agencyName?.trim() ||
+    input?.name?.trim() ||
+    ws?.name?.trim() ||
+    '';
+
   const finalAgencyName =
     !rawCustomName || rawCustomName === 'محطة الاتحادية'
-      ? officialAppName
+      ? OFFICIAL_APP_BRAND_NAME
       : rawCustomName;
+
+  const rawCustomLogo = sanitizeOfficialBrandLogo(
+    ws?.custom_brand_logo_url ||
+      savedWsBranding?.custom_brand_logo_url ||
+      savedStickerBranding?.logoUrl ||
+      input?.logoUrl
+  );
+
+  const finalLogoSrc = rawCustomLogo
+    ? rawCustomLogo.startsWith('/')
+      ? `${origin}${rawCustomLogo}`
+      : rawCustomLogo
+    : defaultAppLogo;
 
   return {
     agencyName: finalAgencyName,
-    agencySubtitle: input?.subtitle?.trim() || officialAppSubtitle,
-    agencyPhone: input?.phone?.trim() || '',
-    logoSrc: input?.logoUrl?.trim() || defaultAppLogo,
+    agencySubtitle:
+      ws?.custom_brand_subtitle?.trim() ||
+      savedWsBranding?.custom_brand_subtitle?.trim() ||
+      savedStickerBranding?.taglineAr?.trim() ||
+      input?.subtitle?.trim() ||
+      OFFICIAL_APP_SUBTITLE,
+    agencyPhone: resolvedPhone,
+    logoSrc: finalLogoSrc,
     isPack1Basic99: false,
   };
 }

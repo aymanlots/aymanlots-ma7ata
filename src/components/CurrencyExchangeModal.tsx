@@ -16,11 +16,16 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
   onClose,
   defaultStationId,
 }) => {
-  const { stations, userRole, userAssignedStationId, executeCurrencyExchange, stationBalances } = useApp();
+  const { stations, selectedStationId, userRole, userAssignedStationId, executeCurrencyExchange, stationBalances, t, language } = useApp();
+  const dir = (language === 'ar' || language === 'hassaniya') ? 'rtl' : 'ltr';
   const workerStationId = userAssignedStationId || '';
 
   const [stationId, setStationId] = useState<string>(
-    defaultStationId || workerStationId || stations[0]?.id || ''
+    (defaultStationId && defaultStationId !== 'all' ? defaultStationId : '') ||
+      workerStationId ||
+      (selectedStationId && selectedStationId !== 'all' ? selectedStationId : '') ||
+      stations[0]?.id ||
+      ''
   );
   const [fromCurrency, setFromCurrency] = useState<ExchangeCurrency>('MAD');
   const [toCurrency, setToCurrency] = useState<ExchangeCurrency>('MRU');
@@ -33,12 +38,17 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
-    if (defaultStationId && defaultStationId !== 'all') {
+    if (!isOpen) return;
+    if (workerStationId) {
+      setStationId(workerStationId);
+    } else if (defaultStationId && defaultStationId !== 'all') {
       setStationId(defaultStationId);
-    } else if (!stationId && (workerStationId || stations[0]?.id)) {
-      setStationId(workerStationId || stations[0]?.id || '');
+    } else if (selectedStationId && selectedStationId !== 'all') {
+      setStationId(selectedStationId);
+    } else if (!stationId && stations[0]?.id) {
+      setStationId(stations[0].id);
     }
-  }, [defaultStationId, workerStationId, stations, stationId]);
+  }, [isOpen, defaultStationId, selectedStationId, workerStationId, stations, stationId]);
 
   const parsedFrom = parseFloat(fromAmount) || 0;
   const parsedRate = parseFloat(rate) || 0;
@@ -47,7 +57,6 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
   const calculatedToAmount = useMemo(() => {
     if (parsedFrom <= 0 || parsedRate <= 0) return 0;
     if (fromCurrency === 'MRU' && toCurrency === 'MAD') {
-      // إذا أدخل المستخدم 4 (أي 4 أوقية لكل درهم) يقسم، وإذا أدخل 0.25 يضرب
       if (parsedRate >= 1) {
         return Number((parsedFrom / parsedRate).toFixed(2));
       } else {
@@ -55,7 +64,6 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
       }
     }
     if (fromCurrency === 'MAD' && toCurrency === 'MRU') {
-      // إذا أدخل المستخدم 4 (أي 4 أوقية لكل درهم) يضرب، وإذا أدخل 0.25 يقسم
       if (parsedRate >= 1) {
         return Number((parsedFrom * parsedRate).toFixed(2));
       } else {
@@ -135,8 +143,8 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
       onClick={onClose}
     >
       <div
-        dir="rtl"
-        className="w-[96%] max-w-[420px] max-h-[94dvh] rounded-2xl luxury-card border-2 border-[#D4AF37]/65 p-3.5 relative overflow-hidden shadow-2xl m-0 flex flex-col justify-between gap-2.5 text-right"
+        dir={dir}
+        className={`w-[96%] max-w-[420px] max-h-[94dvh] rounded-2xl luxury-card border-2 border-[#D4AF37]/65 p-3.5 relative overflow-hidden shadow-2xl m-0 flex flex-col justify-between gap-2.5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
@@ -144,7 +152,7 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-lg">💱</span>
             <h3 className="text-sm sm:text-base font-black text-black dark:text-white truncate">
-              تحويل وصرف العملة
+              {t('exchangeModalTitle', 'تحويل وصرف العملة')}
             </h3>
             <HelpPopover
               title="كيفاش كيخدم صرف العملة؟"
@@ -168,7 +176,7 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
           <div className="p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/15 dark:border-white/15 space-y-2 shrink-0">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs sm:text-sm font-black text-black dark:text-white flex items-center gap-1 shrink-0">
-                📍 المحطة:
+                📍 {t('stationLabel', 'المحطة')}:
               </span>
               <select
                 value={activeStation?.id || ''}
@@ -205,7 +213,7 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
           {/* 2. العملة المستلمة (+) حدا العملة المسلمة (−) */}
           <div className="grid grid-cols-2 gap-2.5 shrink-0">
             <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/35 flex flex-col justify-between gap-1.5">
-              <span className="text-xs sm:text-sm font-black truncate">📥 العملة المستلمة (+)</span>
+              <span className="text-xs sm:text-sm font-black truncate">📥 {t('receivedCurrencyLabel', 'العملة المستلمة (+)')}</span>
               <select
                 value={fromCurrency}
                 onChange={(e) => setFromCurrency(e.target.value as ExchangeCurrency)}
@@ -219,14 +227,14 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
 
             <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/35 flex flex-col justify-between gap-1.5">
               <div className="flex items-center justify-between gap-1">
-                <span className="text-xs sm:text-sm font-black truncate">📤 المسلمة (−)</span>
+                <span className="text-xs sm:text-sm font-black truncate">📤 {t('paidCurrencyLabel', 'المسلمة (−)')}</span>
                 <button
                   type="button"
                   onClick={handleSwapCurrencies}
                   title="عكس العملتين"
                   className="px-2 py-0.5 rounded-lg bg-[#D4AF37] text-black text-[10px] font-black flex items-center gap-1 shadow-sm shrink-0"
                 >
-                  <ArrowLeftRight className="w-3 h-3" /> عكس
+                  <ArrowLeftRight className="w-3 h-3" /> {t('swapBtn', 'عكس')}
                 </button>
               </div>
               <select
@@ -244,7 +252,7 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
           {/* 3. المبلغ المستلم + خانة تسعيرة الصرف */}
           <div className="grid grid-cols-2 gap-2.5 shrink-0">
             <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/35 flex flex-col justify-between gap-1.5">
-              <label className="block text-xs sm:text-sm font-black truncate">💰 المبلغ المراد صرفه *</label>
+              <label className="block text-xs sm:text-sm font-black truncate">💰 {t('amountToExchangeLabel', 'المبلغ المراد صرفه')} *</label>
               <input
                 type="number"
                 step="any"
@@ -259,7 +267,7 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
 
             <div className="p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/15 dark:border-white/15 flex flex-col justify-between gap-1.5">
               <label className="block text-xs sm:text-sm font-black truncate text-amber-500 dark:text-amber-400">
-                📊 تسعيرة الصرف *
+                📊 {t('exchangeRateLabel', 'تسعيرة الصرف')} *
               </label>
               <input
                 type="number"
@@ -267,7 +275,7 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
                 required
                 value={rate}
                 onChange={(e) => setRate(e.target.value)}
-                placeholder="تسعيرة الصرف..."
+                placeholder={t('exchangeRateLabel', 'تسعيرة الصرف...')}
                 dir="ltr"
                 className="w-full px-2.5 py-2.5 rounded-xl bg-white dark:bg-black/70 border-2 border-amber-500/50 dark:border-amber-400/50 text-sm sm:text-base font-black font-mono text-center text-black dark:text-white outline-none focus:border-[#D4AF37]"
               />
@@ -279,7 +287,7 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
             <div className="p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04] border border-amber-500/40 dark:border-amber-400/40 flex flex-col justify-between gap-1.5">
               <div className="flex items-center justify-between gap-1">
                 <label className="block text-xs sm:text-sm font-black truncate text-emerald-600 dark:text-emerald-400">
-                  ⚡ الصافي (محسوب أوتوماتيك)
+                  ⚡ {t('autoCalculatedNetLabel', 'الصافي (محسوب أوتوماتيك)')}
                 </label>
               </div>
               <div
@@ -291,12 +299,12 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
             </div>
 
             <div className="p-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/15 dark:border-white/15 flex flex-col justify-between gap-1.5">
-              <label className="block text-xs sm:text-sm font-black truncate">👤 اسم الزبون (اختياري)</label>
+              <label className="block text-xs sm:text-sm font-black truncate">👤 {t('customerNameOptionalLabel', 'اسم الزبون (اختياري)')}</label>
               <input
                 type="text"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="اسم الزبون..."
+                placeholder={t('customerNamePlaceholder', 'اسم الزبون...')}
                 className="w-full px-2.5 py-2.5 rounded-xl bg-white dark:bg-black/70 border border-black/25 dark:border-white/25 text-xs sm:text-sm font-black text-black dark:text-white outline-none"
               />
             </div>
@@ -316,7 +324,7 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
             data-btn-role-fixed="true"
             className="btn-add w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
           >
-            <span>✅ تأكيد وصرف العملة الآن</span>
+            <span>✅ {t('confirmCurrencyExchangeBtn', 'تأكيد وصرف العملة الآن')}</span>
             {calculatedToAmount > 0 && (
               <span className="font-mono text-xs sm:text-sm bg-black/15 px-2 py-0.5 rounded-lg" dir="ltr">
                 {parsedFrom} {fromCurrency} ➔ {calculatedToAmount} {toCurrency}

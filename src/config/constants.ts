@@ -13,14 +13,14 @@ export const PLATFORM_CONFIG = {
   PAYMENT_PROVIDER_NAME: 'كاش بلوس (Cash Plus)',
   PROVIDER_NAME: 'كاش بلوس (Cash Plus)',
   
-  // مدة التجربة الافتراضية لمساحات العمل الجديدة (بالأيام)
-  DEFAULT_FREE_TRIAL_DAYS: 15,
+  // مدة التجربة الافتراضية لمساحات العمل الجديدة (30 يوم تجريبي)
+  DEFAULT_FREE_TRIAL_DAYS: 30,
   
   // عدد الأيام قبل الانتهاء لبدء عرض شريط التنبيه
   WARNING_EXPIRY_DAYS: 7,
 
-  // سعر الاشتراك الشهري (بالدرهم المغربي)
-  SUBSCRIPTION_PRICE_MAD: 199,
+  // سعر الاشتراك الشهري الشامل (بالدرهم المغربي)
+  SUBSCRIPTION_PRICE_MAD: 299,
   
   // إعدادات الطابعات الحرارية المعتمدة
   THERMAL_PRINTER_WIDTHS: {

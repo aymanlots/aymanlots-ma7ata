@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { SavedCustomer, Parcel } from '../types/database';
+import { resolveOfficialPrintBranding } from '../utils/logisticsFeatures';
 import {
   X,
   Users,
@@ -323,8 +324,14 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
   };
 
   const handlePrintCustomerStatementPDF = (c: AggregatedCustomer) => {
-    const wsName =
-      currentWorkspace?.custom_brand_name || currentWorkspace?.name || 'إكسبريس الصحراء لوجستيك';
+    const resolvedBrand = resolveOfficialPrintBranding({
+      name: currentWorkspace?.custom_brand_name || currentWorkspace?.name,
+      subtitle: currentWorkspace?.custom_brand_subtitle,
+      phone: currentWorkspace?.custom_brand_phone || currentWorkspace?.owner_phone,
+      logoUrl: currentWorkspace?.custom_brand_logo_url,
+    });
+    const wsName = resolvedBrand.agencyName;
+    const logoSrc = resolvedBrand.logoSrc;
     const rows = c.allParcels
       .map((p, idx) => {
         const rem = Math.max(0, Math.round((p.amount_due - p.amount_paid) * 100) / 100);
@@ -355,6 +362,7 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
     * { box-sizing: border-box; font-family: 'Cairo', 'Tajawal', sans-serif; }
     body { margin: 0; padding: 14px; color: #000; background: #fff; font-size: 12px; }
     .hdr { border: 2px solid #000; padding: 12px 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .brand-logo { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid #000; flex-shrink: 0; background: #fff; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { border: 1.5px solid #000; padding: 6px 8px; font-size: 11px; }
     th { background: #111; color: #fff; text-align: right; }
@@ -366,10 +374,13 @@ export const CustomerAccountsModal: React.FC<CustomerAccountsModalProps> = ({
     <button onclick="window.print()" style="padding:8px 20px;background:#000;color:#F5C84C;border:none;border-radius:8px;font-weight:900;cursor:pointer;">🖨️ طباعة كشف الحساب (PDF)</button>
   </div>
   <div class="hdr">
-    <div>
-      <h2 style="margin:0;">${wsName} — كشف حساب تاجر / زبون وفي</h2>
-      <p style="margin:4px 0 0;">الاسم: <strong>${c.name}</strong> | الهاتف: <span dir="ltr">${c.phone}</span> | المدينة: ${c.city}</p>
-      ${c.vipRatePerKg ? `<p style="margin:2px 0 0;font-weight:800;">⭐ تسعيرة VIP المعتمدة: ${c.vipRatePerKg} ${c.vipCurrency || 'MAD'}/كغ</p>` : ''}
+    <div style="display:flex;align-items:center;gap:14px;">
+      ${logoSrc ? `<img src="${logoSrc}" alt="${wsName}" class="brand-logo" onerror="this.style.display='none'" />` : ''}
+      <div>
+        <h2 style="margin:0;">${wsName} — كشف حساب تاجر / زبون وفي</h2>
+        <p style="margin:4px 0 0;">الاسم: <strong>${c.name}</strong> | الهاتف: <span dir="ltr">${c.phone}</span> | المدينة: ${c.city}</p>
+        ${c.vipRatePerKg ? `<p style="margin:2px 0 0;font-weight:800;">⭐ تسعيرة VIP المعتمدة: ${c.vipRatePerKg} ${c.vipCurrency || 'MAD'}/كغ</p>` : ''}
+      </div>
     </div>
     <div style="text-align:left;font-family:monospace;">
       <div>كريدي MAD: <strong>${c.unpaidMad} MAD</strong></div>

@@ -405,7 +405,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
               className="btn-gold py-2 px-2 rounded-xl font-black text-xs flex items-center justify-center gap-1 shadow-md active:scale-95 transition"
             >
               <Zap className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>📷 مسح جماعي</span>
+              <span>مسح جماعي</span>
             </button>
 
             <button
@@ -423,7 +423,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
               className="btn-cancel py-2 px-2 rounded-xl font-black text-xs flex items-center justify-center gap-1 border border-[#F5C84C]/50 text-[#F5C84C] transition"
             >
               <FileText className="w-3.5 h-3.5" />
-              <span>🖨️ مانيفست PDF</span>
+              <span>مانيفست PDF</span>
             </button>
           </div>
 
@@ -439,7 +439,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
               type="submit"
               className="btn-gold px-3 py-2 rounded-xl font-black text-xs transition active:scale-95 shrink-0"
             >
-              ➕ شحن
+              شحن
             </button>
           </form>
 
@@ -456,10 +456,10 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
                   className="px-2 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] transition active:scale-95 shadow-sm cursor-pointer disabled:opacity-50"
                 >
                   {isBatchLoading
-                    ? '⏳ جاري الشحن...'
+                    ? 'جاري الشحن...'
                     : matchingRouteParcels.length > 0
-                    ? `⚡ شحن الكل (${matchingRouteParcels.length})`
-                    : `⚡ شحن الكل (${availableParcelsToLoad.length})`}
+                    ? `شحن الكل (${matchingRouteParcels.length})`
+                    : `شحن الكل (${availableParcelsToLoad.length})`}
                 </button>
               </div>
               <div className="flex flex-wrap items-center gap-1 max-h-20 overflow-y-auto pr-0.5 text-[10px]">
@@ -498,7 +498,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
               <Package className="w-7 h-7 text-[#D4AF37]/60 mx-auto" />
               <p className="text-xs font-black text-white">الرحلة فارغة حالياً</p>
               <p className="text-[10px] text-white/75 font-bold">
-                امسح بالكاميرا 📷 أو اختر من الكوليات الجاهزة أعلاه لشحنها
+                امسح بالكاميرا أو اختر من الكوليات الجاهزة أعلاه لشحنها
               </p>
             </div>
           ) : (
@@ -582,7 +582,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
               className="btn-gold flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl font-black text-xs shadow-lg active:scale-95 transition disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>{isDeparting ? '⏳ جاري الانطلاق...' : '🚚 انطلاق الرحلة الآن'}</span>
+              <span>{isDeparting ? 'جاري الانطلاق...' : 'انطلاق الرحلة الآن'}</span>
             </button>
           )}
         </div>

@@ -38,7 +38,11 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
     exchangeRate,
     userRole,
     userAssignedStationId,
+    t,
+    language,
   } = useApp();
+
+  const dir = (language === 'ar' || language === 'hassaniya') ? 'rtl' : 'ltr';
 
   const resolveStationId = () => {
     if (userRole === 'worker' && userAssignedStationId) return userAssignedStationId;
@@ -146,7 +150,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
   const equivalentCurrency = currency === 'MAD' ? 'MRU' : 'MAD';
   const equivalentValue =
     numAmount > 0 ? convertCurrency(numAmount, currency, equivalentCurrency) : 0;
-  const selectedStationName = stations.find(s => s.id === stationId)?.name || 'المحطة';
+  const selectedStationName = stations.find(s => s.id === stationId)?.name || t('stationLabel', 'المحطة');
 
   return (
     <div
@@ -154,15 +158,15 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
       onClick={onClose}
     >
       <div
-        dir="rtl"
-        className="luxury-card border-2 border-[#D4AF37]/65 rounded-2xl w-[96%] max-w-[420px] max-h-[94dvh] p-3.5 overflow-hidden shadow-2xl flex flex-col justify-between gap-2.5 text-right m-0"
+        dir={dir}
+        className={`luxury-card border-2 border-[#D4AF37]/65 rounded-2xl w-[96%] max-w-[420px] max-h-[94dvh] p-3.5 overflow-hidden shadow-2xl flex flex-col justify-between gap-2.5 ${dir === 'rtl' ? 'text-right' : 'text-left'} m-0`}
         onClick={e => e.stopPropagation()}
       >
         {/* Top Header */}
         <div className="pb-2 border-b border-white/15 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-sm sm:text-base font-black text-white truncate">
-              {type === 'cash_in' ? '➕ إيداع فلاكيس' : type === 'cash_out' ? '➖ سحب من لاكيس' : '📦 أداء سلع'}
+              {type === 'cash_in' ? `➕ ${t('voucherDepositTitle', 'إيداع فلاكيس')}` : type === 'cash_out' ? `➖ ${t('voucherWithdrawTitle', 'سحب من لاكيس')}` : `📦 ${t('voucherGoodsTitle', 'أداء سلع')}`}
             </h3>
             <span className="text-xs sm:text-sm text-[#F5C84C] font-black truncate">
               📍 {selectedStationName} (
@@ -181,7 +185,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
             type="button"
             onClick={onClose}
             className="btn-delete p-1.5 rounded-xl transition cursor-pointer shrink-0"
-            aria-label="إغلاق"
+            aria-label={t('close', 'إغلاق')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -201,7 +205,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
 
           {/* 1. المحطة */}
           <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5 shrink-0">
-            <label className="block text-xs sm:text-sm font-black truncate">📍 المحطة</label>
+            <label className="block text-xs sm:text-sm font-black truncate">📍 {t('stationLabel', 'المحطة')}</label>
             <select
               value={stationId}
               disabled={userRole === 'worker' || Boolean(fixedStationId && fixedStationId !== 'all')}
@@ -225,7 +229,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
 
           {/* 2. نوع العملية */}
           <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5 shrink-0">
-            <label className="block text-xs sm:text-sm font-black truncate">⚡ نوع العملية</label>
+            <label className="block text-xs sm:text-sm font-black truncate">⚡ {t('operationTypeLabel', 'نوع العملية')}</label>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
@@ -236,7 +240,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 onClick={() => setType('cash_in')}
                 className="btn-add py-2.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer"
               >
-                ➕ إيداع
+                ➕ {t('btnDeposit', 'إيداع')}
               </button>
               <button
                 type="button"
@@ -247,7 +251,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 onClick={() => setType('cash_out')}
                 className="btn-delete py-2.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer"
               >
-                ➖ سحب
+                ➖ {t('btnWithdraw', 'سحب')}
               </button>
               <button
                 type="button"
@@ -258,7 +262,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 onClick={() => setType('goods_payment')}
                 className="btn-delete py-2.5 px-2.5 rounded-xl text-xs sm:text-sm font-black transition cursor-pointer"
               >
-                📦 سلع
+                📦 {t('btnGoods', 'سلع')}
               </button>
             </div>
           </div>
@@ -266,7 +270,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
           {/* 3. المبلغ حدا العملة */}
           <div className="grid grid-cols-12 gap-2.5 shrink-0">
             <div className="col-span-7 bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5">
-              <label className="block text-xs sm:text-sm font-black truncate">💰 المبلغ *</label>
+              <label className="block text-xs sm:text-sm font-black truncate">💰 {t('amountLabel', 'المبلغ')} *</label>
               <input
                 type="text"
                 inputMode="decimal"
@@ -283,7 +287,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
             </div>
 
             <div className="col-span-5 bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5">
-              <label className="block text-xs sm:text-sm font-black truncate">💱 العملة</label>
+              <label className="block text-xs sm:text-sm font-black truncate">💱 {t('currencyLabel', 'العملة')}</label>
               <select
                 value={currency}
                 onChange={e => setCurrency(e.target.value)}
@@ -301,14 +305,14 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
           {/* 4. السبب / البيان */}
           <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5 shrink-0">
             <label className="block text-xs sm:text-sm font-black truncate">
-              📝 السبب / البيان {isOutflow && <span className="text-rose-400">*</span>}
+              📝 {t('reasonDescriptionLabel', 'السبب / البيان')} {isOutflow && <span className="text-rose-400">*</span>}
             </label>
             <input
               type="text"
               required={isOutflow}
               value={reason}
               onChange={e => setReason(e.target.value)}
-              placeholder={isOutflow ? 'اكتب سبب السحب أو الصرف *' : 'اكتب بيان العملية...'}
+              placeholder={isOutflow ? t('reasonOutflowPlaceholder', 'اكتب سبب السحب أو الصرف *') : t('reasonInflowPlaceholder', 'اكتب بيان العملية...')}
               className="w-full bg-black/65 border border-white/20 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-black text-white focus:outline-none"
             />
           </div>
@@ -316,10 +320,10 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
           {/* 5. رقم الهاتف */}
           <div className="bg-black/55 p-2.5 rounded-xl border border-white/15 flex flex-col justify-center gap-1.5 shrink-0">
             <div className="flex items-center justify-between">
-              <label className="block text-xs sm:text-sm font-black truncate">📞 رقم الهاتف (اختياري)</label>
+              <label className="block text-xs sm:text-sm font-black truncate">📞 {t('phoneOptionalLabel', 'رقم الهاتف (اختياري)')}</label>
               {isCashboxEmptyOrInsufficient && (
                 <span className="text-xs font-black text-rose-400 truncate" dir="ltr">
-                  ⚠️ بعد السحب: {resultingBalance.toLocaleString('en-US')} {currency}
+                  ⚠️ {t('afterWithdrawWarning', 'بعد السحب:')} {resultingBalance.toLocaleString('en-US')} {currency}
                 </span>
               )}
             </div>
@@ -342,7 +346,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
               type === 'cash_in' ? 'btn-add' : 'btn-delete'
             } w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base cursor-pointer shadow-md shrink-0`}
           >
-            {type === 'cash_in' ? '✅ تأكيد الإيداع فلاكيس (+)' : '✅ تأكيد السحب من لاكيس (−)'}
+            {type === 'cash_in' ? `✅ ${t('confirmDepositBtn', 'تأكيد الإيداع فلاكيس (+)')}` : `✅ ${t('confirmWithdrawBtn', 'تأكيد السحب من لاكيس (−)')}`}
           </button>
         </form>
 

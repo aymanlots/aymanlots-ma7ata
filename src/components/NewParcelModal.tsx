@@ -69,6 +69,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
     registeredManagersNetwork,
     loadRegisteredManagersNetwork,
     showToast,
+    t,
   } = useApp();
 
   // Collect all stations belonging to active partners in غرفة الشراكة
@@ -119,7 +120,9 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
   const initialOriginId =
     userRole === 'worker' && userAssignedStationId
       ? userAssignedStationId
-      : selectedStationId || stations[0]?.id || '';
+      : selectedStationId && selectedStationId !== 'all'
+      ? selectedStationId
+      : stations[0]?.id || '';
 
   const [originStationId, setOriginStationId] = useState<string>(initialOriginId);
   const [destinationStationId, setDestinationStationId] = useState<string>(
@@ -691,10 +694,10 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-lg leading-none">📦</span>
             <h2 className="text-sm sm:text-base font-black text-[#F5D799] truncate">
-              تسجيل كولي جديد
+              {t('newParcel', 'تسجيل كولي جديد')}
             </h2>
             <HelpPopover
-              title="تسجيل الكوليات"
+              title={t('newParcel', 'تسجيل الكوليات')}
               text="السطر الأول: محطة الانطلاق حدا محطة الوصول. السطر الثاني: المرسل تحت الانطلاق والمستلم تحت الوصول. السطر الثالث: وصف البضاعة حدا الثمن."
             />
           </div>
@@ -721,7 +724,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              aria-label="إغلاق"
+              aria-label={t('btnClose', 'إغلاق')}
               className="btn-delete p-1.5 rounded-xl"
             >
               <X className="w-4 h-4" />
@@ -770,7 +773,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             {/* محطة الانطلاق (اليمين) */}
             <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-1.5">
               <label className="block text-[#F5D799] font-black text-xs sm:text-sm truncate">
-                📍 محطة الانطلاق
+                📍 {t('originStation', 'محطة الانطلاق')}
               </label>
               <select
                 value={originStationId}
@@ -791,7 +794,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-1.5">
               <div className="flex items-center justify-between gap-1">
                 <label className="block text-[#F5D799] font-black text-xs sm:text-sm truncate">
-                  📍 محطة الوصول
+                  📍 {t('destStation', 'محطة الوصول')}
                 </label>
                 {selectedPartnerDest && (
                   <span className="px-1.5 py-0.5 rounded bg-purple-950/80 border border-purple-400/50 text-purple-200 text-[10px] font-black truncate shrink-0">
@@ -812,7 +815,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 required
               >
                 {stations.length > 0 && (
-                  <optgroup label="🏠 محطاتنا">
+                  <optgroup label={`🏠 ${t('stations', 'محطاتنا')}`}>
                     {stations.map((st) => (
                       <option key={st.id} value={st.id}>
                         🏠 {st.name} ({st.city})
@@ -838,11 +841,11 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             {/* اسم المرسل (تحت محطة الانطلاق نيشان) */}
             <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
               <span className="font-black text-[#F5D799] block text-xs sm:text-sm truncate">
-                👤 اسم المرسل
+                👤 {t('sender', 'اسم المرسل')}
               </span>
               <input
                 type="text"
-                placeholder="👤 اسم المرسل *"
+                placeholder={`👤 ${t('sender', 'اسم المرسل')} *`}
                 required
                 value={senderName}
                 onChange={(e) => setSenderName(e.target.value)}
@@ -850,7 +853,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
               />
               <input
                 type="tel"
-                placeholder="📞 هاتف المرسل *"
+                placeholder={`📞 ${t('senderPhone', 'هاتف المرسل')} *`}
                 required
                 value={senderPhone}
                 onChange={(e) => setSenderPhone(e.target.value)}
@@ -863,11 +866,11 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
             {registrationMode === 'single' || multiSubMode === 'one_receiver' ? (
               <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
                 <span className="font-black text-[#E6C37A] block text-xs sm:text-sm truncate">
-                  👤 اسم المستلم
+                  👤 {t('receiver', 'اسم المستلم')}
                 </span>
                 <input
                   type="text"
-                  placeholder="👤 اسم المستلم *"
+                  placeholder={`👤 ${t('receiver', 'اسم المستلم')} *`}
                   required
                   value={receiverName}
                   onChange={(e) => setReceiverName(e.target.value)}
@@ -875,7 +878,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 />
                 <input
                   type="tel"
-                  placeholder="📞 هاتف المستلم *"
+                  placeholder={`📞 ${t('receiverPhone', 'هاتف المستلم')} *`}
                   required
                   value={receiverPhone}
                   onChange={(e) => setReceiverPhone(e.target.value)}
@@ -898,27 +901,27 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 {/* وصف البضاعة (اليمين) */}
                 <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
                   <div className="flex items-center justify-between text-xs sm:text-sm font-black text-[#F5D799]">
-                    <span className="truncate">📦 وصف البضاعة</span>
+                    <span className="truncate">📦 {t('parcelCategory', 'وصف البضاعة')}</span>
                     {(parseInt(itemsCount, 10) || 1) > 1 && (
                       <span className="text-xs font-black shrink-0">🖨️ {itemsCount}</span>
                     )}
                   </div>
                   <input
                     type="text"
-                    placeholder="📦 وصف البضاعة *"
+                    placeholder={`📦 ${t('parcelCategory', 'وصف البضاعة')} *`}
                     required
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     className="w-full bg-[#120a00] border border-[#D4AF37]/50 rounded-xl px-2.5 py-2.5 text-white font-black text-xs sm:text-sm focus:outline-none"
                   />
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-[#F5D799] shrink-0">🔢 العدد:</span>
+                    <span className="text-xs font-black text-[#F5D799] shrink-0">🔢 {t('itemsCount', 'العدد')}:</span>
                     <input
                       type="number"
                       min="1"
                       max="100"
                       required
-                      title="شحال من كولية (العدد)"
+                      title={t('itemsCount', 'العدد')}
                       placeholder="1"
                       value={itemsCount}
                       onChange={(e) => setItemsCount(e.target.value)}
@@ -930,14 +933,14 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 {/* الثمن (اليسار - حدا وصف البضاعة) */}
                 <div className="bg-[#1a0f00]/80 p-2.5 rounded-xl border border-[#D4AF37]/50 flex flex-col justify-between gap-2">
                   <span className="font-black text-[#F5D799] block text-xs sm:text-sm truncate">
-                    💰 الثمن
+                    💰 {t('shippingFee', 'الثمن')}
                   </span>
                   <div className="grid grid-cols-12 gap-1.5 items-center">
                     <input
                       type="text"
                       inputMode="decimal"
                       required
-                      placeholder="💰 الثمن"
+                      placeholder={`💰 ${t('shippingFee', 'الثمن')}`}
                       value={amountDue}
                       onChange={(e) => {
                         const val = e.target.value.replace(/[^0-9.]/g, '');
@@ -968,7 +971,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                       payer === 'sender' ? 'btn-add' : 'btn-delete'
                     }`}
                   >
-                    {payer === 'sender' ? '✅ خالص' : '⏳ كريدي'}
+                    {payer === 'sender' ? `✅ ${t('paidPrepaid', 'خالص')}` : `⏳ ${t('codUnpaid', 'كريدي')}`}
                   </button>
                 </div>
               </div>
@@ -981,7 +984,7 @@ export const NewParcelModal: React.FC<NewParcelModalProps> = ({
                 data-btn-role-fixed="true"
                 className="btn-add w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow disabled:opacity-50 cursor-pointer shrink-0"
               >
-                <span>{isSubmitting ? '⏳ جاري التسجيل...' : '✅ تسجيل الكولية وطباعة الملصق 🖨️'}</span>
+                <span>{isSubmitting ? '⏳ ...' : `✅ ${t('btnSave', 'تسجيل الكولية')} 🖨️`}</span>
               </button>
             </>
           ) : (

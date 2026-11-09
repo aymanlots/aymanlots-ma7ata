@@ -21,6 +21,8 @@ import {
   canControlParcelOrigin,
   canControlParcelDestination,
   canAcceptOrRejectPartnerParcel,
+  getPartnershipSixStepInfo,
+  validateParcelScanOwnership,
 } from '../utils/logisticsFeatures';
 import { 
   Package, 
@@ -72,13 +74,18 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     userAssignedStationId,
     isWorkerStationDeleted,
     hideAmounts,
+    confirmParcelTripArrived,
+    confirmTripArrivedAtDestination,
     updateParcelStatus,
     respondToPartnerParcel,
     acceptAllPendingPartnerParcels,
     deleteParcel,
     deleteTrip,
-    showToast 
+    showToast,
+    t,
+    language,
   } = useApp();
+  const isRtl = language === 'ar' || language === 'hassaniya';
 
   const [itemToDelete, setItemToDelete] = useState<{
     type: 'parcel' | 'trip';
@@ -87,7 +94,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
   } | null>(null);
 
   // Navigation Tabs within Parcels Module
-  const [activeTab, setActiveTab] = useState<'parcels' | 'trips' | 'incoming' | 'overview'>('parcels');
+  const [activeTab, setActiveTab] = useState<'parcels' | 'trips' | 'incoming'>('parcels');
 
   // Search & Filter state for Parcels Tab
   const [searchQuery, setSearchQuery] = useState('');
@@ -162,7 +169,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
   // Active Station context (for workers or selected station)
   const activeStationId = (userRole === 'worker' && userAssignedStationId)
     ? userAssignedStationId
-    : (selectedStationId || stations[0]?.id || '');
+    : (selectedStationId && selectedStationId !== 'all' ? selectedStationId : stations[0]?.id || '');
   const activeStation = stations.find(s => s.id === activeStationId) || stations[0];
 
   // Helper: check if parcel is an incoming partnership parcel that has NOT been shipped yet by the sender
@@ -189,13 +196,15 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
         if (cond !== conditionFilter) return false;
       }
 
-      // Station Filter
+      // Station Filter (Strictly isolate unshipped parcels to their origin station)
       if (stationFilter !== 'all') {
-        if (
-          p.origin_station_id !== stationFilter &&
-          p.destination_station_id !== stationFilter &&
-          p.partner_destination_station_id !== stationFilter
-        ) {
+        const isOrigin = p.origin_station_id === stationFilter;
+        const isShippedToDest =
+          (p.destination_station_id === stationFilter ||
+            p.partner_destination_station_id === stationFilter) &&
+          p.status !== 'registered' &&
+          p.status !== 'pending';
+        if (!isOrigin && !isShippedToDest) {
           return false;
         }
       }
@@ -249,15 +258,17 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     currentWorkspace?.name,
   ]);
 
-  // Scoped parcels & trips for the currently selected station (excluding unshipped incoming partner parcels so they stay only in sender's stock)
+  // Scoped parcels & trips for the currently selected station (excluding unshipped parcels from other stations so they stay exclusively in their origin station)
   const stationScopedParcels = useMemo(() => {
     const visibleParcels = parcels.filter(p => !isUnshippedIncomingPartnerParcel(p));
     if (stationFilter === 'all') return visibleParcels;
     return visibleParcels.filter(
       p =>
         p.origin_station_id === stationFilter ||
-        p.destination_station_id === stationFilter ||
-        p.partner_destination_station_id === stationFilter
+        ((p.destination_station_id === stationFilter ||
+          p.partner_destination_station_id === stationFilter) &&
+          p.status !== 'registered' &&
+          p.status !== 'pending')
     );
   }, [parcels, stationFilter, currentWorkspace?.id]);
 
@@ -293,8 +304,9 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     return trips.filter(
       t =>
         t.origin_station_id === stationFilter ||
-        t.destination_station_id === stationFilter ||
-        t.partner_destination_station_id === stationFilter
+        ((t.destination_station_id === stationFilter ||
+          t.partner_destination_station_id === stationFilter) &&
+          t.status !== 'loading')
     );
   }, [trips, stationFilter]);
 
@@ -383,6 +395,19 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
     const found = parcels.find(p => matchesTrackingCode(p, code));
 
     if (found) {
+      const scanAuth = validateParcelScanOwnership(
+        found,
+        currentWorkspace?.id,
+        userRole,
+        activeStationId
+      );
+      if (!scanAuth.allowed) {
+        playErrorBeep();
+        setIsBarcodeScannerOpen(false);
+        showToast(scanAuth.reason || '⛔ غير مسموح بمسح هذا الكولي', 'error');
+        return;
+      }
+
       playSuccessBeep();
       setIsBarcodeScannerOpen(false);
       setDetailParcel(found);
@@ -447,14 +472,14 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
   }
 
   return (
-    <div className="space-y-2.5 pb-28 text-right">
+    <div className={`space-y-2.5 pb-28 ${isRtl ? 'text-right' : 'text-left'}`} dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Top Banner & Compact Quick Actions */}
       <div className="luxury-card p-3.5 rounded-[22px] space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <Package className="w-5 h-5 text-[#F5C84C] shrink-0" />
             <h1 className="text-base sm:text-lg font-black text-white truncate">
-              📦 الكوليات
+              📦 {t('navParcels', 'الكوليات')}
             </h1>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/60 text-[#F5C84C] border border-[#F5C84C]/40 font-mono font-black shrink-0">
               {stats.total}
@@ -471,7 +496,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             className="btn-cancel px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1 shrink-0 cursor-pointer"
             title="إظهار أو إخفاء الأدوات السريعة"
           >
-            <span>⚡ أدوات</span>
+            <span>⚡ {t('toolsBtn', 'أدوات')}</span>
             <ChevronDown
               className={`w-3.5 h-3.5 text-[#F5C84C] transition-transform duration-200 ${
                 isMoreToolsOpen ? 'rotate-180' : ''
@@ -488,7 +513,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             className="btn-hero-action btn-add flex items-center justify-center gap-2 py-3.5 px-4 rounded-[12px] font-black text-sm sm:text-base cursor-pointer"
           >
             <PlusCircle className="w-5 h-5" />
-            <span>➕ تسجيل كولي جديد</span>
+            <span>{t('newParcel', 'تسجيل كولي جديد')}</span>
           </button>
 
           <button
@@ -497,7 +522,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             className="btn-cancel flex items-center justify-center gap-2 py-3.5 px-4 rounded-[12px] font-black text-sm sm:text-base cursor-pointer"
           >
             <Scan className="w-5 h-5" />
-            <span>📷 سكانر QR</span>
+            <span>{t('scannerTitle', 'سكانر QR')}</span>
           </button>
         </div>
 
@@ -533,7 +558,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                   className="btn-cancel flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-black text-xs transition active:scale-95 cursor-pointer"
                 >
                   <Users className="w-3.5 h-3.5" />
-                  <span>حسابات الزبناء</span>
+                  <span>{t('customerAccountsBtn', 'حسابات الزبناء')}</span>
                 </button>
               )}
 
@@ -544,7 +569,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                   className="btn-cancel flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-black text-xs transition active:scale-95 cursor-pointer"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
-                  <span>غرف الشراكة</span>
+                  <span>{t('collabRoomTitle', 'غرف الشراكة')}</span>
                 </button>
               )}
             </div>
@@ -605,8 +630,8 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
           </div>
         )}
 
-        {/* 4 Core Module Navigation Tabs in 1 Compact Row */}
-        <div className="grid grid-cols-4 gap-1 border-t border-white/15 pt-2 text-[10px] font-black">
+        {/* 3 Core Module Navigation Tabs in 1 Compact Row (Single Top Station Selector is used at Header level) */}
+        <div className="grid grid-cols-3 gap-1.5 border-t border-white/15 pt-2 text-[10px] font-black">
           <button
             type="button"
             data-btn-role="info"
@@ -619,7 +644,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             }`}
           >
             <Package className="w-3 h-3 shrink-0" />
-            <span className="truncate">الكوليات ({stationScopedParcels.length})</span>
+            <span className="truncate">{t('navParcels', 'الكوليات')} ({stationScopedParcels.length})</span>
           </button>
 
           <button
@@ -650,21 +675,6 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
           >
             <Inbox className="w-3 h-3 shrink-0" />
             <span className="truncate">الوارد ({incomingTrips.length})</span>
-          </button>
-
-          <button
-            type="button"
-            data-btn-role="info"
-            data-btn-role-fixed="true"
-            data-btn-active={activeTab === 'overview' ? 'true' : 'false'}
-            data-btn-active-fixed="true"
-            onClick={() => setActiveTab('overview')}
-            className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-xl transition cursor-pointer truncate ${
-              activeTab === 'overview' ? 'btn-gold' : 'btn-cancel'
-            }`}
-          >
-            <Layers className="w-3 h-3 shrink-0" />
-            <span className="truncate">المحطات</span>
           </button>
         </div>
       </div>
@@ -884,20 +894,6 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
               <div className="pt-2 border-t border-white/15 space-y-2 animate-fadeIn">
                 <div className="grid grid-cols-2 gap-1.5 text-xs">
                   <select
-                    value={statusFilter}
-                    onChange={e => setStatusFilter(e.target.value)}
-                    className="w-full bg-black/60 border border-white/20 rounded-xl px-2 py-1.5 text-white text-[11px] font-bold focus:outline-none focus:border-[#F5C84C]"
-                  >
-                    <option value="all">جميع الحالات</option>
-                    <option value="registered">1. مسجلة بالمحطة</option>
-                    <option value="in_transit">2. في الطريق</option>
-                    <option value="arrived">3. فـ الستوك (جاهزة للتسليم)</option>
-                    <option value="delivered">4. تم التسليم</option>
-                    <option value="return_in_transit">في طريق الإرجاع للمرسل ↺</option>
-                    <option value="returned">تم الإرجاع للمرسل ✓</option>
-                  </select>
-
-                  <select
                     value={conditionFilter}
                     onChange={e => setConditionFilter(e.target.value)}
                     className="w-full bg-black/60 border border-white/20 rounded-xl px-2 py-1.5 text-white text-[11px] font-bold focus:outline-none focus:border-[#F5C84C]"
@@ -915,20 +911,6 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                     <option value="all">جميع حالات الدفع</option>
                     <option value="settled">خالص بالكامل</option>
                     <option value="unpaid">متبقي بذمة العميل</option>
-                  </select>
-
-                  <select
-                    value={stationFilter}
-                    disabled={userRole === 'worker'}
-                    onChange={e => setStationFilter(e.target.value)}
-                    className="w-full bg-black/60 border border-white/20 rounded-xl px-2 py-1.5 text-white text-[11px] font-bold focus:outline-none focus:border-[#F5C84C] disabled:opacity-65"
-                  >
-                    {userRole !== 'worker' && <option value="all">جميع المحطات</option>}
-                    {stations
-                      .filter(s => userRole !== 'worker' || s.id === activeStationId)
-                      .map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
                   </select>
                 </div>
 
@@ -978,8 +960,8 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
             )}
           </div>
 
-          {/* BANNER: طلبات قبول الكوليات الواردة من غرفة الشراكة (المشكل 1) */}
-          {pendingPartnerApprovalParcels.length > 0 && (
+          {/* BANNER: طلبات قبول الكوليات الواردة من غرفة الشراكة (للمدير فقط — المشكل 1) */}
+          {userRole !== 'worker' && pendingPartnerApprovalParcels.length > 0 && (
             <div className="luxury-card p-3.5 rounded-[20px] border-2 border-purple-400/75 bg-purple-950/60 space-y-2.5 animate-fadeIn">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
@@ -988,11 +970,11 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                   </span>
                   <div className="flex items-center gap-1.5">
                     <h3 className="text-xs sm:text-sm font-black text-white">
-                      🤝 كوليات بانتظار القبول ({pendingPartnerApprovalParcels.length})
+                      🤝 كوليات بانتظار قبول المدير ({pendingPartnerApprovalParcels.length})
                     </h3>
                     <HelpPopover
-                      title="قبول كوليات الشراكة"
-                      text="أرسل إليك شريك كوليات نحو محطتك — راجعها واضغط «قبول» أو «رفض» قبل دخولها للستوك."
+                      title="قبول كوليات الشراكة (للمدير فقط)"
+                      text="أرسل إليك شريك كوليات نحو محطتك — المدير وحده يملك صلاحية القبول أو الرفض قبل انطلاق الرحلة."
                     />
                   </div>
                 </div>
@@ -1150,6 +1132,10 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                 );
 
                 const isOutgoingPartnerParcel = ownershipInfo.direction === 'outgoing_partner';
+                const sixStep = getPartnershipSixStepInfo(
+                  parcel,
+                  parcel.current_trip_id ? trips.find(tr => tr.id === parcel.current_trip_id) : null
+                );
 
                 return (
                   <div 
@@ -1214,7 +1200,7 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                           }`}
                           title={ownershipInfo.fullBannerTitle}
                         >
-                          {ownershipInfo.isPartnership ? '🤝 شراكة' : '🏠 محطتنا'}
+                          {ownershipInfo.isPartnership ? `🤝 ${sixStep.currentLabel}` : '🏠 محطتنا'}
                         </span>
 
                         <div className="min-w-0 flex-1 truncate">
@@ -1243,21 +1229,21 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                           {hideAmounts ? '•••' : parcel.amount_due} {parcel.currency}
                         </span>
 
-                        {/* PARTNER APPROVAL BUTTONS IF PENDING INCOMING PARTNER PARCEL */}
+                        {/* PARTNER APPROVAL BUTTONS IF PENDING INCOMING PARTNER PARCEL (Manager Only) */}
                         {canApprovePartner && (
                           <>
                             <button
                               type="button"
                               onClick={() => respondToPartnerParcel(parcel.id, 'accepted')}
                               className="px-2 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
-                              title="قبول الكولية الواردة من الشريك"
+                              title="2. قبول الكولية الواردة من الشريك"
                             >
-                              ✅ قبول
+                              ✅ 2. قبول
                             </button>
                             <button
                               type="button"
                               onClick={() =>
-                                respondToPartnerParcel(parcel.id, 'rejected', 'رفض استلام الكولية من طرف محطة الاستلام')
+                                respondToPartnerParcel(parcel.id, 'rejected', 'رفض استلام الكولية من طرف المدير المستقبل')
                               }
                               className="px-1.5 py-1 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 border border-rose-500/50 font-black text-[10px] transition active:scale-95 cursor-pointer"
                               title="رفض الكولية الواردة من الشريك"
@@ -1275,11 +1261,11 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
 
                         {isOutgoingPartnerParcel && parcel.partner_acceptance_status === 'pending_approval' && (
                           <span className="px-1.5 py-0.5 rounded-lg bg-amber-950/80 text-amber-300 font-black text-[9px] border border-amber-500/50">
-                            ⏳ بانتظار قبول الشريك
+                            ⏳ 1. طلب (بانتظار قبول الشريك)
                           </span>
                         )}
 
-                        {/* DIRECT 1-CLICK STAGE PROGRESSION BUTTON */}
+                        {/* DIRECT 1-CLICK STAGE PROGRESSION BUTTON (طلب -> قبول -> رحلة -> وصلات -> تفريغ -> تسليم) */}
                         {parcel.status === 'registered' &&
                           isOriginForCurrentUser &&
                           parcel.partner_acceptance_status !== 'rejected' &&
@@ -1288,17 +1274,30 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                             type="button"
                             onClick={async () => {
                               await updateParcelStatus(parcel.id, 'in_transit', {
-                                notes: 'تم شحن الكولي وانطلاقه في الطريق نحو محطة الوجهة',
+                                notes: 'تم شحن الكولي وانطلاقه في رحلة نحو محطة الوجهة',
                               });
                             }}
                             className="px-2 py-1 rounded-lg bg-[#F5C84C] hover:bg-[#ffe074] text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
-                            title="شحن الكولي وإرساله في الطريق"
+                            title="3. شحن الكولي في رحلة وإرساله في الطريق"
                           >
-                            🚚 شحن
+                            🚚 3. رحلة
                           </button>
                         )}
 
-                        {parcel.status === 'in_transit' && isDestForCurrentUser && (
+                        {parcel.status === 'in_transit' && !parcel.trip_arrived_at && isDestForCurrentUser && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await confirmParcelTripArrived(parcel.id);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                            title="4. تأكيد وصول الرحلة للمحطة (وصلات)"
+                          >
+                            🏁 4. وصلات
+                          </button>
+                        )}
+
+                        {parcel.status === 'in_transit' && Boolean(parcel.trip_arrived_at) && isDestForCurrentUser && (
                           <button
                             type="button"
                             onClick={async () => {
@@ -1310,14 +1309,14 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                                 }
                               }
                               await updateParcelStatus(parcel.id, 'arrived', {
-                                notes: 'تم تأكيد وصول الكولي وإدخاله للستوك',
+                                notes: 'تم تفريغ الكولي وإدخاله للستوك بعد وصول الرحلة',
                               });
-                              showToast(`تم إدخال الكولي #${parcel.parcel_number} للستوك بنجاح ✓`, 'success');
+                              showToast(`تم تفريغ الكولي #${parcel.parcel_number} للستوك بنجاح ✓`, 'success');
                             }}
-                            className="px-2 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
-                            title="تأكيد وصول الكولي وإدخاله للستوك"
+                            className="px-2 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                            title="5. تفريغ الكولي وإدخاله للستوك"
                           >
-                            📥 للستوك
+                            📥 5. تفريغ
                           </button>
                         )}
 
@@ -1329,27 +1328,27 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                               setIsQuickDeliverOpen(true);
                             }}
                             className="px-2 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
-                            title="تسليم الكولي للزبون الآن"
+                            title="6. تسليم الكولي للزبون الآن"
                           >
-                            ✅ تسليم
+                            ✅ 6. تسليم
                           </button>
                         )}
 
-                        {/* Read-only indicator for the Sender of a Partnership Parcel (المشكل 2) */}
+                        {/* Read-only indicator for the Sender of a Partnership Parcel */}
                         {isOutgoingPartnerParcel &&
                           parcel.partner_acceptance_status === 'accepted' &&
                           parcel.status !== 'delivered' && (
                             <span
                               className="px-1.5 py-0.5 rounded-lg bg-purple-950/80 text-purple-200 font-black text-[9px] border border-purple-400/50"
-                              title="المدير والعامل في محطة الاستلام هما المسؤولان عن تأكيد الوصول والتسليم"
+                              title="المدير والعامل في محطة الاستلام هما المسؤولان عن تأكيد الوصول والتفريغ والتسليم"
                             >
-                              {parcel.status === 'arrived' ? '📦 وصلت عند الشريك' : '✓ قبلها الشريك'}
+                              {sixStep.currentLabel}
                             </span>
                           )}
 
                         {parcel.status === 'delivered' && (
                           <span className="px-1.5 py-0.5 rounded-lg bg-white/15 text-white font-black text-[10px] border border-white/20">
-                            ✓ سُلِّم
+                            ✓ 6. سُلِّم
                           </span>
                         )}
 
@@ -1383,6 +1382,26 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                             {ownershipInfo.isPartnership ? 'حساب الشريك مستقل' : 'خاص بمحطتنا'}
                           </span>
                         </div>
+
+                        {/* 6-Step Partnership Progress Strip: طلب -> قبول -> رحلة -> وصلات -> تفريغ -> تسليم */}
+                        {ownershipInfo.isPartnership && (
+                          <div className="grid grid-cols-6 gap-1">
+                            {sixStep.allSteps.map((st) => (
+                              <div
+                                key={st.step}
+                                className={`text-center py-1 px-1 rounded-lg text-[9px] font-black border ${
+                                  st.current
+                                    ? 'bg-[#F5C84C] text-[#1a0f00] border-[#F5C84C]'
+                                    : st.done
+                                    ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/40'
+                                    : 'bg-black/40 text-white/45 border-white/10'
+                                }`}
+                              >
+                                {st.step}. {st.label}
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Tracking Code, Quick Copy, Status & Date */}
                         <div className="flex items-center justify-between flex-wrap gap-1.5 text-[11px]">
@@ -1568,19 +1587,32 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                               </button>
                             )}
 
-                            {parcel.status === 'in_transit' && isDestForCurrentUser && (
+                            {parcel.status === 'in_transit' && !parcel.trip_arrived_at && isDestForCurrentUser && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await confirmParcelTripArrived(parcel.id);
+                                }}
+                                className="btn-gold flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-black text-[11px] transition"
+                              >
+                                <Inbox className="w-3.5 h-3.5" />
+                                <span>🏁 4. وصلات للمحطة</span>
+                              </button>
+                            )}
+
+                            {parcel.status === 'in_transit' && Boolean(parcel.trip_arrived_at) && isDestForCurrentUser && (
                               <button
                                 type="button"
                                 onClick={async () => {
                                   await updateParcelStatus(parcel.id, 'arrived', {
-                                    notes: 'تم إدخال الكولي للستوك يدوياً',
+                                    notes: 'تم تفريغ الكولي وإدخاله للستوك يدوياً بعد وصول الرحلة',
                                   });
-                                  showToast(`تم إدخال الكولي #${parcel.parcel_number} للستوك ✓`, 'success');
+                                  showToast(`تم تفريغ الكولي #${parcel.parcel_number} للستوك ✓`, 'success');
                                 }}
                                 className="btn-cancel flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-[11px] border border-amber-500/40 text-amber-300 transition"
                               >
                                 <Inbox className="w-3.5 h-3.5 text-amber-400" />
-                                <span>إدخال للستوك الآن</span>
+                                <span>📥 5. تفريغ للستوك الآن</span>
                               </button>
                             )}
 
@@ -1798,17 +1830,27 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                             onClick={() => setDispatchTrip(trip)}
                             className="px-2 py-1 rounded-lg bg-[#F5C84C] text-slate-950 font-black text-[10px] cursor-pointer"
                           >
-                            🚚 شحن
+                            🚚 3. رحلة
                           </button>
                         )}
 
-                        {(trip.status === 'departed' || trip.status === 'arrived') && isTripDestForMe && (
+                        {trip.status === 'departed' && isTripDestForMe && (
+                          <button
+                            type="button"
+                            onClick={() => confirmTripArrivedAtDestination(trip.id)}
+                            className="px-2 py-1 rounded-lg bg-amber-400 text-slate-950 font-black text-[10px] cursor-pointer"
+                          >
+                            🏁 4. وصلات
+                          </button>
+                        )}
+
+                        {trip.status === 'arrived' && isTripDestForMe && (
                           <button
                             type="button"
                             onClick={() => setArrivalTrip(trip)}
                             className="px-2 py-1 rounded-lg bg-emerald-500 text-slate-950 font-black text-[10px] cursor-pointer"
                           >
-                            📥 تفريغ
+                            📥 5. تفريغ
                           </button>
                         )}
 
@@ -2010,14 +2052,26 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
                       </div>
 
                       {isDestForMe && (
-                        <button
-                          type="button"
-                          onClick={() => setArrivalTrip(trip)}
-                          className="btn-gold px-3 py-2 rounded-xl font-black text-xs transition flex items-center gap-1 cursor-pointer"
-                        >
-                          <Scan className="w-3.5 h-3.5" />
-                          <span>تفريغ للستوك</span>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          {trip.status === 'departed' ? (
+                            <button
+                              type="button"
+                              onClick={() => confirmTripArrivedAtDestination(trip.id)}
+                              className="px-3 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>🏁 4. وصلات للمحطة</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setArrivalTrip(trip)}
+                              className="btn-gold px-3 py-2 rounded-xl font-black text-xs transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <Scan className="w-3.5 h-3.5" />
+                              <span>📥 5. تفريغ للستوك</span>
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -2029,50 +2083,6 @@ export const ParcelsView: React.FC<ParcelsViewProps> = ({
               })}
             </div>
           )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 4: STATION OVERVIEW */}
-      {/* ========================================================================= */}
-      {activeTab === 'overview' && (
-        <div className="space-y-3">
-          {stations.map(st => {
-            const inTransitParcels = parcels.filter(
-              p => p.destination_station_id === st.id && p.status === 'in_transit'
-            );
-            const waitingForDelivery = parcels.filter(
-              p => p.destination_station_id === st.id && p.status === 'arrived'
-            );
-
-            return (
-              <div 
-                key={st.id}
-                className="luxury-card p-4 rounded-[22px] space-y-3"
-              >
-                <div className="flex items-center justify-between pb-2 border-b border-white/15">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">{st.country === 'MA' ? '🇲🇦' : '🇲🇷'}</span>
-                    <div>
-                      <h3 className="text-xs font-black text-white">{st.name} ({st.city})</h3>
-                      <span className="text-[10px] text-white/75">{st.address}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-black/50 p-2.5 rounded-xl border border-white/15 text-center">
-                    <span className="block text-[10px] text-white/75">قادم في الطريق</span>
-                    <span className="font-black text-sm text-[#F5C84C]">{inTransitParcels.length} كولي</span>
-                  </div>
-                  <div className="bg-black/50 p-2.5 rounded-xl border border-white/15 text-center">
-                    <span className="block text-[10px] text-white/75">بانتظار التسليم</span>
-                    <span className="font-black text-sm text-[#2ECC71]">{waitingForDelivery.length} كولي</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
         </div>
       )}
 
