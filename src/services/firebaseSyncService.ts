@@ -109,9 +109,21 @@ export function sanitizeForFirestore<T>(input: T): T {
   return result as T;
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): void {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  const isOfflineOrTransient =
+    errMsg.includes('Could not reach Cloud Firestore backend') ||
+    errMsg.includes('the client is offline') ||
+    errMsg.includes('unavailable') ||
+    errMsg.includes('network-request-failed');
+
+  if (isOfflineOrTransient) {
+    console.warn(`Firestore offline/transient notice [${operationType} ${path}]:`, errMsg);
+    return;
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
     authInfo: {
       userId: auth.currentUser?.uid || null,
       email: auth.currentUser?.email || null,

@@ -268,12 +268,27 @@ const MainApp: React.FC = () => {
     return () => observer.disconnect();
   }, [themeMode, language]);
 
-  // Mark guided tour as seen so station/worker creation happens strictly from the Manager's Settings
+  // Open first-time onboarding & guided tour automatically ONCE for new users
   useEffect(() => {
     if (!currentUser || !currentWorkspace) return;
-    localStorage.setItem(`alittihadia_guided_tour_seen_${currentUser.id}`, 'true');
-    localStorage.setItem(`alittihadia_guided_tour_completed_${currentWorkspace.id}`, 'true');
-  }, [currentUser?.id, currentWorkspace?.id]);
+    if (userRole !== 'owner' && userRole !== 'admin') return;
+
+    const seenKey = `alittihadia_guided_tour_seen_${currentUser.id}`;
+    const completedKey = `alittihadia_guided_tour_completed_${currentWorkspace.id}`;
+    const pendingKey = `alittihadia_guided_tour_pending_${currentWorkspace.id}`;
+
+    const hasSeen = localStorage.getItem(seenKey) === 'true';
+    const hasCompleted = localStorage.getItem(completedKey) === 'true';
+    if (hasSeen || hasCompleted) return;
+
+    const isPending = localStorage.getItem(pendingKey) === 'true';
+    if (isPending || stations.length === 0) {
+      setShowGuidedTour(true);
+    } else if (!showGuidedTour && stations.length > 0) {
+      localStorage.setItem(seenKey, 'true');
+      localStorage.setItem(completedKey, 'true');
+    }
+  }, [currentUser?.id, currentWorkspace?.id, userRole, stations.length, showGuidedTour]);
 
   // Fixed Background Wrapper: framed strictly to phone width (max-w-[430px]) centered on screen
   const renderDesertFrameBackground = () => {

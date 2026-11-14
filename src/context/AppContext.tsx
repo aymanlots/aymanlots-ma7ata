@@ -572,13 +572,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return getTranslation(language, key, fallback);
   };
 
-  // Theme Mode: Dark Mode ('dark') is the default on first visit
+  // Theme Mode: Light Mode ('light') is the default on first visit
   const [themeMode, setThemeModeState] = useState<'light' | 'dark'>(() => {
     try {
       const saved = localStorage.getItem('sahara_theme_mode_v3');
       if (saved === 'dark' || saved === 'light') return saved;
     } catch {}
-    return 'dark';
+    return 'light';
   });
 
   const setThemeMode = useCallback((mode: 'light' | 'dark') => {
@@ -603,11 +603,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const body = document.body;
     if (themeMode === 'light') {
       root.classList.add('theme-light');
-      root.classList.remove('theme-dark');
+      root.classList.remove('theme-dark', 'dark');
       body.classList.add('theme-light');
-      body.classList.remove('theme-dark');
+      body.classList.remove('theme-dark', 'dark');
     } else {
-      root.classList.add('theme-dark');
+      root.classList.add('theme-dark', 'dark');
       root.classList.remove('theme-light');
       body.classList.add('theme-dark');
       body.classList.remove('theme-light');
@@ -2361,7 +2361,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           workspace_id: wsId,
           team_id: wsId,
         }));
-        if (cleanList.length > 0) {
+        if (cleanList.length > 0 && localStorage.getItem(`alittihadia_guided_tour_pending_${wsId}`) !== 'true') {
           localStorage.setItem(`alittihadia_user_created_station_${wsId}`, 'true');
           localStorage.setItem(`alittihadia_guided_tour_completed_${wsId}`, 'true');
         }
@@ -3574,7 +3574,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 created_at: cloudData.workspace.created_at || new Date().toISOString(),
               });
               localStorage.setItem(`ittihadiya_demo_deleted_${cloudData.workspace.id}`, 'true');
-              localStorage.setItem(`alittihadia_guided_tour_completed_${cloudData.workspace.id}`, 'true');
+              if (cloudData.stations.length > 0) {
+                localStorage.setItem(`alittihadia_guided_tour_completed_${cloudData.workspace.id}`, 'true');
+              }
             }
             setAccountTerminatedNotice({ isOpen: false, reason: 'deleted', message: '' });
             setStations(cloudData.stations);
@@ -3943,7 +3945,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (cloudData.workspace) {
             setCurrentWorkspace(cloudData.workspace);
             localStorage.setItem(`ittihadiya_demo_deleted_${cloudData.workspace.id}`, 'true');
-            localStorage.setItem(`alittihadia_guided_tour_completed_${cloudData.workspace.id}`, 'true');
+            if (cloudData.stations.length > 0) {
+              localStorage.setItem(`alittihadia_guided_tour_completed_${cloudData.workspace.id}`, 'true');
+            }
           }
           setStations(cloudData.stations);
           setAllParcels(cloudData.parcels);
@@ -8046,7 +8050,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addBalanceAdjustment = async (stationId: string, currency: string, amount: number, note: string) => {
-    if (userRole !== 'owner') return { success: false, error: 'غير مصرح' };
+    if (userRole !== 'owner' && userRole !== 'admin') return { success: false, error: 'غير مصرح' };
     const st = stations.find(s => s.id === stationId);
     
     return await createTransaction({

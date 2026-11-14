@@ -1,11 +1,40 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  doc,
+  getDocFromServer,
+  setLogLevel,
+  Firestore,
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+// Silence internal @firebase/firestore transport timeout console.error logs when switching to offline/long-polling mode
+try {
+  setLogLevel('silent');
+} catch {
+  // Ignore if setLogLevel is unavailable
+}
+
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+function initDb(): Firestore {
+  try {
+    return initializeFirestore(
+      app,
+      {
+        experimentalAutoDetectLongPolling: true,
+      },
+      firebaseConfig.firestoreDatabaseId
+    );
+  } catch {
+    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+}
+
+export const db = initDb();
 export const googleProvider = new GoogleAuthProvider();
 
 export const isFirebaseConfigured = (): boolean => {
@@ -19,6 +48,7 @@ export const isFirebaseConfigured = (): boolean => {
 // Validate Connection to Firestore on boot
 export async function testFirebaseConnection() {
   if (!isFirebaseConfigured()) return false;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
     return true;

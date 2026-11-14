@@ -12,4 +12,8 @@ const pool = new Pool({
   connectionTimeoutMillis: 15000,
 });
 
+pool.on('error', (err) => {
+  console.warn('[PG Pool Error]', err.message);
+});
+
 export const db = drizzle(pool, { schema });
