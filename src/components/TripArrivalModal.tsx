@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Trip, Parcel, ParcelCondition } from '../types/database';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
@@ -19,7 +19,8 @@ import {
   Phone,
   Printer,
   Zap,
-  MessageCircle
+  MessageCircle,
+  Edit3
 } from 'lucide-react';
 import { playSuccessBeep, playErrorBeep } from '../utils/audioFeedback';
 
@@ -42,9 +43,13 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
     currentWorkspace,
     trips,
     parcels, 
+    exchangeRate,
+    hideAmounts,
+    userRole,
     confirmTripArrivedAtDestination,
     receiveParcelAtDestination, 
     receiveAllParcelsInTrip,
+    updateTripExpenses,
     closeTrip, 
     showToast 
   } = useApp();
@@ -52,10 +57,21 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
   const [showScanner, setShowScanner] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [isBatchReceiving, setIsBatchReceiving] = useState(false);
+  const [showBulkWhatsApp, setShowBulkWhatsApp] = useState(false);
+  const [notifiedParcelIds, setNotifiedParcelIds] = useState<Record<string, boolean>>({});
   
   // State for condition assignment on arrival scan
   const [scanCondition, setScanCondition] = useState<ParcelCondition>('normal');
   const [scanConditionNotes, setScanConditionNotes] = useState('');
+
+  // Trip Expenses quick editor state
+  const [showExpensesEditor, setShowExpensesEditor] = useState(false);
+  const [fuelExpense, setFuelExpense] = useState('0');
+  const [tollExpense, setTollExpense] = useState('0');
+  const [driverCommission, setDriverCommission] = useState('0');
+  const [otherExpense, setOtherExpense] = useState('0');
+  const [expenseCurrency, setExpenseCurrency] = useState<'MAD' | 'MRU'>('MAD');
+  const [deductFromCashbox, setDeductFromCashbox] = useState(false);
 
   // Close trip with manual reason modal state
   const [showCloseReasonModal, setShowCloseReasonModal] = useState(false);
@@ -63,6 +79,19 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
   const [isClosingTrip, setIsClosingTrip] = useState(false);
 
   const trip = trips.find(t => t.id === tripProp?.id) || tripProp;
+
+  useEffect(() => {
+    if (trip) {
+      setFuelExpense(String(trip.fuel_expense ?? 0));
+      setTollExpense(String(trip.toll_expense ?? 0));
+      setDriverCommission(String(trip.driver_commission ?? 0));
+      setOtherExpense(String(trip.other_expense ?? 0));
+      setExpenseCurrency((trip.expense_currency as 'MAD' | 'MRU') || 'MAD');
+      setDeductFromCashbox(Boolean(trip.deduct_from_cashbox));
+      setShowExpensesEditor(false);
+      setShowBulkWhatsApp(false);
+    }
+  }, [trip?.id]);
 
   if (!isOpen || !trip) return null;
 
@@ -75,6 +104,59 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
   const receivedCount = trip.received_parcel_ids.length;
   const missingCount = Math.max(0, totalCount - receivedCount);
   const isTripFinished = missingCount === 0 && totalCount > 0;
+
+  // Trip Profit Calculation
+  const expCurr = (trip.expense_currency as 'MAD' | 'MRU') || 'MAD';
+  const totalRoadExpenses =
+    Math.round(
+      ((trip.fuel_expense || 0) +
+        (trip.toll_expense || 0) +
+        (trip.driver_commission || 0) +
+        (trip.other_expense || 0)) *
+        100
+    ) / 100;
+  const tripRevenueInExpCurrency = allLoadedParcels.reduce((acc, p) => {
+    if (p.is_returning) return acc;
+    const due = Number(p.amount_due) || 0;
+    if (p.currency === expCurr) return acc + due;
+    if (expCurr === 'MAD' && p.currency === 'MRU') {
+      return acc + (exchangeRate > 0 ? due / exchangeRate : 0);
+    }
+    if (expCurr === 'MRU' && p.currency === 'MAD') {
+      return acc + due * exchangeRate;
+    }
+    return acc + due;
+  }, 0);
+  const roundedRevenue = Math.round(tripRevenueInExpCurrency * 100) / 100;
+  const netTripProfit = Math.round((roundedRevenue - totalRoadExpenses) * 100) / 100;
+
+  // Bulk WhatsApp notification queue for arrived/loaded parcels
+  const notifiableParcels = allLoadedParcels.filter(
+    p => p.status !== 'delivered' && Boolean((p.is_returning ? p.sender_phone : p.receiver_phone)?.trim())
+  );
+  const pendingNotifyParcels = notifiableParcels.filter(p => !notifiedParcelIds[p.id]);
+
+  const handleNotifyOneParcel = (parcel: Parcel) => {
+    openWhatsAppParcelNotification(
+      parcel,
+      'arrived_receiver',
+      currentWorkspace?.custom_brand_name || currentWorkspace?.name
+    );
+    setNotifiedParcelIds(prev => ({ ...prev, [parcel.id]: true }));
+  };
+
+  const handleSaveExpenses = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await updateTripExpenses(trip.id, {
+      fuelExpense: Math.max(0, parseFloat(fuelExpense) || 0),
+      tollExpense: Math.max(0, parseFloat(tollExpense) || 0),
+      driverCommission: Math.max(0, parseFloat(driverCommission) || 0),
+      otherExpense: Math.max(0, parseFloat(otherExpense) || 0),
+      expenseCurrency,
+      deductFromCashbox,
+    });
+    setShowExpensesEditor(false);
+  };
 
   const handleBatchReceiveAll = async () => {
     if (missingCount <= 0) return;
@@ -248,6 +330,198 @@ export const TripArrivalModal: React.FC<TripArrivalModalProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Trip Financials & Net Profit Strip (Visible to owner/manager) */}
+          {userRole !== 'worker' && (
+            <div className="mt-2 bg-black/50 p-2 rounded-xl border border-[#D4AF37]/30 space-y-1.5 text-[10px]">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-white text-[11px]">💰 حساب الرحلة والربح الصافي:</span>
+                <button
+                  type="button"
+                  onClick={() => setShowExpensesEditor(prev => !prev)}
+                  className="btn-cancel px-2 py-0.5 rounded-lg text-[10px] font-black flex items-center gap-1"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>{showExpensesEditor ? 'إغلاق' : '⚙️ المصاريف'}</span>
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 text-center font-mono">
+                <div className="bg-black/45 p-1 rounded-lg border border-white/10">
+                  <span className="text-white/70 block font-sans font-bold">📥 المداخيل</span>
+                  <span className="font-black text-emerald-400" dir="ltr">
+                    {hideAmounts ? '••••' : roundedRevenue} {expCurr}
+                  </span>
+                </div>
+                <div className="bg-black/45 p-1 rounded-lg border border-white/10">
+                  <span className="text-white/70 block font-sans font-bold">📤 المصاريف</span>
+                  <span className="font-black text-rose-400" dir="ltr">
+                    {hideAmounts ? '••••' : totalRoadExpenses} {expCurr}
+                  </span>
+                </div>
+                <div className="bg-black/45 p-1 rounded-lg border border-[#D4AF37]/35">
+                  <span className="text-white/70 block font-sans font-bold">💎 الصافي</span>
+                  <span
+                    className={`font-black ${netTripProfit >= 0 ? 'text-[#F5C84C]' : 'text-rose-400'}`}
+                    dir="ltr"
+                  >
+                    {hideAmounts ? '••••' : netTripProfit} {expCurr}
+                  </span>
+                </div>
+              </div>
+
+              {showExpensesEditor && (
+                <form onSubmit={handleSaveExpenses} className="pt-2 border-t border-white/15 space-y-2">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div>
+                      <label className="block text-[9px] font-bold text-white/80 mb-0.5">⛽ المازوط:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={fuelExpense}
+                        onChange={e => setFuelExpense(e.target.value)}
+                        className="w-full bg-black/55 border border-[#D4AF37]/40 rounded-lg px-2 py-1 text-white font-mono font-black text-xs"
+                        dir="ltr"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-white/80 mb-0.5">🛣️ الطريق/المعبر:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={tollExpense}
+                        onChange={e => setTollExpense(e.target.value)}
+                        className="w-full bg-black/55 border border-[#D4AF37]/40 rounded-lg px-2 py-1 text-white font-mono font-black text-xs"
+                        dir="ltr"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-white/80 mb-0.5">👤 عمولة السائق:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={driverCommission}
+                        onChange={e => setDriverCommission(e.target.value)}
+                        className="w-full bg-black/55 border border-[#D4AF37]/40 rounded-lg px-2 py-1 text-white font-mono font-black text-xs"
+                        dir="ltr"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-white/80 mb-0.5">📝 أخرى:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={otherExpense}
+                        onChange={e => setOtherExpense(e.target.value)}
+                        className="w-full bg-black/55 border border-[#D4AF37]/40 rounded-lg px-2 py-1 text-white font-mono font-black text-xs"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={expenseCurrency}
+                      onChange={e => setExpenseCurrency(e.target.value as 'MAD' | 'MRU')}
+                      className="bg-black/55 border border-[#D4AF37]/40 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs"
+                    >
+                      <option value="MAD">MAD</option>
+                      <option value="MRU">MRU</option>
+                    </select>
+                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-white/90 cursor-pointer flex-1">
+                      <input
+                        type="checkbox"
+                        checked={deductFromCashbox}
+                        disabled={Boolean(trip.deduct_from_cashbox)}
+                        onChange={e => setDeductFromCashbox(e.target.checked)}
+                        className="accent-[#D4AF37] w-3.5 h-3.5 rounded"
+                      />
+                      <span>{trip.deduct_from_cashbox ? '✓ مخصوم من الصندوق' : 'خصم من صندوق الانطلاق'}</span>
+                    </label>
+                  </div>
+                  <button type="submit" className="btn-gold w-full py-1.5 rounded-lg font-black text-xs">
+                    ✅ حفظ المصاريف
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* Bulk WhatsApp Broadcast Bar when Trip has arrived / loaded parcels */}
+          {notifiableParcels.length > 0 && (
+            <div className="mt-2 bg-emerald-950/55 border border-emerald-500/45 rounded-xl p-2 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-black text-emerald-300 truncate">
+                    📲 إعلام جماعي للزبناء بوصول الرحلة
+                  </p>
+                  <p className="text-[9px] text-white/75 font-bold">
+                    {pendingNotifyParcels.length > 0
+                      ? `باقي ${pendingNotifyParcels.length} من ${notifiableParcels.length} زبون للإعلام`
+                      : `تم إعلام جميع الزبناء (${notifiableParcels.length}) ✅`}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {pendingNotifyParcels.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleNotifyOneParcel(pendingNotifyParcels[0])}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[10px] flex items-center gap-1 shadow-sm cursor-pointer"
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                      <span>أرسل للتالي ({pendingNotifyParcels.length})</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkWhatsApp(prev => !prev)}
+                    className="btn-cancel px-2 py-1.5 rounded-lg text-[10px] font-black cursor-pointer"
+                  >
+                    {showBulkWhatsApp ? 'إخفاء' : 'القائمة'}
+                  </button>
+                </div>
+              </div>
+
+              {showBulkWhatsApp && (
+                <div className="max-h-36 overflow-y-auto space-y-1 pt-1 border-t border-emerald-500/25">
+                  {notifiableParcels.map(p => {
+                    const isSent = Boolean(notifiedParcelIds[p.id]);
+                    const rem = Math.max(0, Math.round((p.amount_due - p.amount_paid) * 100) / 100);
+                    return (
+                      <div
+                        key={p.id}
+                        className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg border text-[10px] ${
+                          isSent ? 'bg-emerald-500/15 border-emerald-500/40' : 'bg-black/50 border-white/10'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 truncate">
+                          <span className="font-mono font-black text-[#F5C84C] mr-1">#{p.parcel_number}</span>
+                          <span className="font-black text-white">{p.is_returning ? p.sender_name : p.receiver_name}</span>
+                          <span className="text-white/70 mx-1 font-mono" dir="ltr">
+                            {rem > 0 ? `(الباقي: ${rem} ${p.currency})` : '(خالص ✓)'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleNotifyOneParcel(p)}
+                          className={`px-2 py-1 rounded-md font-black text-[10px] shrink-0 cursor-pointer ${
+                            isSent
+                              ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-emerald-500 text-slate-950'
+                          }`}
+                        >
+                          {isSent ? '✓ أُرسل' : '💬 واتساب'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Scan Actions & Condition Quick Toggle */}

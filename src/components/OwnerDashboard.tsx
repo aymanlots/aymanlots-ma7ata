@@ -403,6 +403,109 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         )}
       </div>
 
+      {/* 1.5 بطاقة تبسيط أول 3 دقائق (تظهر للمدير قبل إتمام إضافة محطتين) */}
+      {isOwner && stations.length < 2 && (
+        <div className="luxury-card rounded-[22px] p-4 border-2 border-[#F5C84C]/65 bg-gradient-to-br from-[#F5C84C]/12 via-black/60 to-emerald-950/35 space-y-3 shadow-xl animate-fadeIn">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-xl bg-[#F5C84C] text-[#111111] flex items-center justify-center font-black shrink-0 shadow">
+                <Store className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-white">
+                  🚀 ابدأ في دقيقتين (تجهيز وكالتك)
+                </h3>
+                <p className="text-[11px] font-bold text-[#F5C84C]">
+                  {stations.length === 0
+                    ? 'أضف محطة الانطلاق ومحطة الوصول باش تبدا تقييد الكوليات فوراً'
+                    : 'زِد المحطة الثانية باش تقدر ترسل وتستقبل الكوليات بين المحطتين'}
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-full bg-black/60 border border-[#F5C84C]/40 text-[10px] font-black text-[#F5C84C]">
+              {stations.length}/2 محطات
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+            <div
+              className={`p-2.5 rounded-xl border flex items-center gap-2 ${
+                stations.length >= 1
+                  ? 'bg-emerald-950/55 border-emerald-500/50 text-emerald-200'
+                  : 'bg-black/55 border-[#F5C84C]/50 text-white'
+              }`}
+            >
+              <CheckCircle2
+                className={`w-4 h-4 shrink-0 ${
+                  stations.length >= 1 ? 'text-emerald-400' : 'text-[#F5C84C]'
+                }`}
+              />
+              <span className="font-black">1. إضافة المحطة الأولى</span>
+            </div>
+
+            <div
+              className={`p-2.5 rounded-xl border flex items-center gap-2 ${
+                stations.length >= 2
+                  ? 'bg-emerald-950/55 border-emerald-500/50 text-emerald-200'
+                  : 'bg-black/55 border-white/15 text-white/85'
+              }`}
+            >
+              <CheckCircle2
+                className={`w-4 h-4 shrink-0 ${
+                  stations.length >= 2 ? 'text-emerald-400' : 'text-white/40'
+                }`}
+              />
+              <span className="font-black">2. إضافة المحطة الثانية</span>
+            </div>
+
+            <div
+              className={`p-2.5 rounded-xl border flex items-center gap-2 ${
+                parcels.length >= 1
+                  ? 'bg-emerald-950/55 border-emerald-500/50 text-emerald-200'
+                  : 'bg-black/55 border-white/15 text-white/85'
+              }`}
+            >
+              <CheckCircle2
+                className={`w-4 h-4 shrink-0 ${
+                  parcels.length >= 1 ? 'text-emerald-400' : 'text-white/40'
+                }`}
+              />
+              <span className="font-black">3. تقييد أول كولي</span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenSettings) onOpenSettings();
+                else if (onOpenTeamSettings) onOpenTeamSettings();
+                else if (onNavigateToView) onNavigateToView('settings');
+              }}
+              className="btn-gold flex-1 py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow-md"
+            >
+              <Store className="w-4 h-4" />
+              <span>
+                {stations.length === 0
+                  ? '🏪 أضف المحطة الأولى دابا ➔'
+                  : '🏪 أضف المحطة الثانية دابا ➔'}
+              </span>
+            </button>
+
+            {stations.length >= 1 && parcels.length === 0 && (
+              <button
+                type="button"
+                onClick={handleOpenNewParcelAction}
+                className="btn-add py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>تقييد أول كولي</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 2. ملخص الكوليات والطرود للمحطة المختارة */}
       <div className="luxury-card rounded-[22px] p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -588,7 +691,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             });
           });
 
-          // 2. العمليات المالية فـ لاكيس والحوالات التي نفذها هذا العامل حصرياً
+          // 2. العمليات المالية فالصندوق والحوالات التي نفذها هذا العامل حصرياً
           transactions.forEach(tx => {
             if (tx.created_by !== workerId) return;
             const isHawala = Boolean(tx.hawala_transfer_id || tx.hawala_meta);
@@ -605,7 +708,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 : isOut
                 ? '📤 سحب من الصندوق'
                 : '📥 إيداع في الصندوق',
-              title: `${tx.reason || (isOut ? 'سحب مالي من لاكيس' : 'إيداع مالي فلاكيس')} (${sign}${tx.amount} ${tx.currency})`,
+              title: `${tx.reason || (isOut ? 'سحب مالي من الصندوق' : 'إيداع مالي فالصندوق')} (${sign}${tx.amount} ${tx.currency})`,
               details: tx.note || `المبلغ: ${sign}${tx.amount} ${tx.currency}`,
               stationName: tx.station_name || workerStationName,
               timestamp: tx.created_at,
@@ -757,7 +860,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         })()}
       </div>
 
-      {/* 3. صندوق (لاكيس) المحطة: مطوي افتراضياً حتى يدخل المستخدم للصندوق ليرى الفلوس */}
+      {/* 3. صندوق المحطة: مطوي افتراضياً حتى يدخل المستخدم للصندوق ليرى الفلوس */}
       <div className="luxury-card rounded-[22px] p-4 space-y-3.5">
         <div
           role="button"
@@ -839,7 +942,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                     </p>
                     {isNegative && (
                       <span className="text-[9px] font-black text-rose-300 block mt-0.5">
-                        رصيد سالب (عجز فلاكيس)
+                        رصيد سالب (عجز فالصندوق)
                       </span>
                     )}
                   </div>
@@ -984,7 +1087,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
       {/* إدارة اشتراكات الشركات موجودة في الشريط العلوي (زر التاج) وفي الإعدادات بدون تكرار */}
 
-      {/* نافذة التنبيه عند تسليم حوالة ولاكيس المحطة خاوية */}
+      {/* نافذة التنبيه عند تسليم حوالة وصندوق المحطة خاوي */}
       {pendingPayoutWarningTransfer && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 animate-fadeIn"
@@ -999,7 +1102,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 <AlertTriangle className="w-6 h-6 shrink-0" />
                 <div>
                   <h4 className="text-sm font-black text-white">
-                    تنبيه: لاكيس محطة الاستلام خاوية أو غير كافية!
+                    تنبيه: صندوق محطة الاستلام خاوي أو غير كافٍ!
                   </h4>
                   <p className="text-[11px] text-white/80 font-bold">
                     المحطة: {pendingPayoutWarningTransfer.destination_station_name}

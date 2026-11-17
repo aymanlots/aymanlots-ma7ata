@@ -6,6 +6,7 @@ import { ParcelDetailModal } from './ParcelDetailModal';
 import { TransactionDetailModal } from './TransactionDetailModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { MoneyTransferModal } from './MoneyTransferModal';
+import { DailyFinancialReportModal } from './DailyFinancialReportModal';
 import {
   formatDateTimeStandard,
   formatTrackingCodeNumeric,
@@ -14,6 +15,7 @@ import {
   canControlParcelDestination,
   getPartnershipSixStepInfo,
   validateParcelScanOwnership,
+  isRealPartnershipParcel,
 } from '../utils/logisticsFeatures';
 import {
   Plus,
@@ -33,6 +35,7 @@ import {
   AlertTriangle,
   ChevronDown,
   CheckCircle2,
+  Lock,
 } from 'lucide-react';
 import { HelpPopover } from './HelpPopover';
 import { CurrencyExchangeModal } from './CurrencyExchangeModal';
@@ -77,6 +80,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
   const [showScanner, setShowScanner] = useState<boolean>(false);
   const [showMoneyTransferModal, setShowMoneyTransferModal] = useState<boolean>(false);
   const [showWorkerExchange, setShowWorkerExchange] = useState<boolean>(false);
+  const [showClosingModal, setShowClosingModal] = useState<boolean>(false);
   const [pendingPayoutWarningTransfer, setPendingPayoutWarningTransfer] = useState<MoneyTransfer | null>(null);
   const [activeBottomSheet, setActiveBottomSheet] = useState<'in' | 'out' | 'return' | null>(null);
   const [selectedParcelForReceipt, setSelectedParcelForReceipt] = useState<Parcel | null>(null);
@@ -394,6 +398,19 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             <span>{t('currencyExchange', 'صرف عملة')}</span>
           </button>
         </div>
+
+        {/* End-of-Day Cashbox Audit Button for Worker */}
+        <button
+          type="button"
+          onClick={() => setShowClosingModal(true)}
+          className="w-full py-2.5 px-3 rounded-xl bg-black/55 hover:bg-black/75 border border-[#F5C84C]/45 text-[#F5C84C] font-black text-xs flex items-center justify-between gap-2 transition cursor-pointer"
+        >
+          <span className="flex items-center gap-1.5">
+            <Lock className="w-3.5 h-3.5 shrink-0" />
+            <span>🔒 جرد وإقفال الصندوق (آخر النهار)</span>
+          </span>
+          <span className="text-[10px] text-white/80 font-bold">حساب الدرج ←</span>
+        </button>
 
         {/* Unified Currency Exchange Modal */}
         <CurrencyExchangeModal
@@ -719,7 +736,8 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                       <span className="text-[10px] font-black text-white/80">
                         الحالة:{' '}
                         <strong className="text-[#F5C84C]">
-                          {p.partner_acceptance_status === 'pending_approval'
+                          {p.partner_acceptance_status === 'pending_approval' &&
+                          isRealPartnershipParcel(p, currentWorkspace?.id)
                             ? '⏳ المرحلة 1 (طلب): بانتظار قبول المدير في غرفة الشراكة'
                             : p.partner_acceptance_status === 'rejected'
                             ? '❌ مرفوضة'
@@ -739,7 +757,10 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
                         {p.origin_station_id === currentStation.id &&
                           p.status === 'registered' &&
                           p.partner_acceptance_status !== 'rejected' &&
-                          p.partner_acceptance_status !== 'pending_approval' && (
+                          !(
+                            p.partner_acceptance_status === 'pending_approval' &&
+                            isRealPartnershipParcel(p, currentWorkspace?.id)
+                          ) && (
                           <button
                             type="button"
                             onClick={async () => {
@@ -1126,6 +1147,13 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
         onClose={() => setShowMoneyTransferModal(false)}
       />
 
+      {/* DAILY END-OF-DAY CASHBOX CLOSING MODAL */}
+      <DailyFinancialReportModal
+        isOpen={showClosingModal}
+        onClose={() => setShowClosingModal(false)}
+        initialTab="closing"
+      />
+
       {/* Empty Cashbox Warning Modal for Direct Hawala Payout */}
       {pendingPayoutWarningTransfer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
@@ -1133,7 +1161,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
             <div className="flex items-center gap-2.5 text-rose-400">
               <AlertTriangle className="w-7 h-7 shrink-0" />
               <div>
-                <h3 className="text-sm font-black text-white">تنبيه: لاكيس محطة الاستلام خاوية أو غير كافية!</h3>
+                <h3 className="text-sm font-black text-white">تنبيه: صندوق محطة الاستلام خاوي أو غير كافي!</h3>
                 <p className="text-xs text-white/75">المحطة: {pendingPayoutWarningTransfer.destination_station_name}</p>
               </div>
             </div>
@@ -1144,7 +1172,7 @@ export const WorkerStationView: React.FC<WorkerStationViewProps> = ({
               return (
                 <div className="bg-black/70 border border-rose-500/35 rounded-2xl p-3.5 space-y-1.5 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-white/75">الرصيد الحالي فلاكيس:</span>
+                    <span className="text-white/75">الرصيد الحالي فالصندوق:</span>
                     <span dir="ltr" className="font-mono font-black text-[#F5C84C]">
                       {currentBal.toLocaleString('en-US')} {curr}
                     </span>

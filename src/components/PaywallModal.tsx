@@ -217,19 +217,19 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({ isOpen, onClose }) =
 
         {/* Scrollable Body: Trial Banner + Two Packages Comparison & Selection */}
         <div className="p-3.5 space-y-3 overflow-y-auto flex-1 text-xs">
-          {/* 30-Day Free Trial Banner */}
+          {/* 30-Day Pack 2 Free Trial Banner */}
           <div className="p-3 rounded-2xl bg-gradient-to-l from-emerald-950/80 via-black/80 to-amber-950/60 border border-[#F5C84C]/45 space-y-1">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-black text-[#F5C84C] flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 shrink-0" />
-                <span>🎁 الفترة التجريبية المجانية: 30 يوماً (مرة واحدة فقط)</span>
+                <span>🎁 الباك الثاني الكامل مفتوح لك: شهر واحد تجريبي (30 يوماً)</span>
               </span>
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-black">
                 تنبيه قبل 3 أيام
               </span>
             </div>
             <p className="text-[11px] text-white/90 leading-relaxed">
-              تُمنح <strong>30 يوماً تجريبية مجانية مرة واحدة فقط</strong> لكل حساب جديد مع إشعار تنبيهي قبل 3 أيام من الانتهاء. عند انتهاء الـ 30 يوماً دون تجديد، يتحول الحساب إلى <strong>وضع المشاهدة فقط</strong> (تبقى جميع بياناتك القديمة محفوظة للمشاهدة، ويتوقف الإرسال والإضافة والتعديل والحذف حتى التجديد).
+              عند التسجيل أول مرة يُفتح لك <strong>الباك الثاني (299 درهم) بالكامل لمدة شهر واحد فقط (30 يوماً)</strong> لتجربة اللوغو الخاص واسم وكالتك وجميع الصلاحيات بلا حدود. عند انتهاء الشهر يتحول الحساب إلى <strong>وضع المشاهدة فقط</strong> حتى تتواصل مع الإدارة لتفعيل الباك الذي يناسبك (الباك الأول 149 درهم أو الباك الثاني 299 درهم).
             </p>
           </div>
 

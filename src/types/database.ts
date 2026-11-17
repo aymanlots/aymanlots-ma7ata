@@ -93,6 +93,8 @@ export interface Workspace {
   last_action_summary?: string;
   subscription_end_date?: string;
   subscription_status?: SubscriptionStatus;
+  deleted?: boolean;
+  deleted_at?: string;
 }
 
 // التوافق مع الكود السابق

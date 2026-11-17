@@ -7,7 +7,9 @@ import {
   User, 
   MapPin, 
   CheckCircle2, 
-  Package
+  Package,
+  ChevronDown,
+  Wallet
 } from 'lucide-react';
 
 interface NewTripModalProps {
@@ -97,14 +99,19 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
   const [originStationId, setOriginStationId] = useState<string>(defaultOriginId);
   const [destinationStationId, setDestinationStationId] = useState<string>('');
 
-  // Auto-select valid origin & destination stations when modal opens or stations/partners change
+  // Initialize origin station whenever the modal opens
+  useEffect(() => {
+    if (isOpen && defaultOriginId) {
+      setOriginStationId(defaultOriginId);
+    }
+  }, [isOpen, defaultOriginId]);
+
+  // Auto-select valid destination station when modal opens or origin/stations change
   useEffect(() => {
     if (!isOpen) return;
     const validOrigin =
       userRole === 'worker' && userAssignedStationId
         ? userAssignedStationId
-        : selectedStationId && selectedStationId !== 'all' && stations.some(s => s.id === selectedStationId)
-        ? selectedStationId
         : stations.some(s => s.id === originStationId)
         ? originStationId
         : defaultOriginId;
@@ -130,12 +137,19 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
       );
       setDestinationStationId(destWithWaitingParcels || allDestinations[0] || '');
     }
-  }, [isOpen, originStationId, defaultOriginId, stations, partnerStations, parcels, userRole, userAssignedStationId]);
+  }, [isOpen, originStationId, destinationStationId, defaultOriginId, stations, partnerStations, parcels, userRole, userAssignedStationId]);
 
   const [driverName, setDriverName] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [notes, setNotes] = useState('');
+  const [showExpenses, setShowExpenses] = useState(false);
+  const [fuelExpense, setFuelExpense] = useState('');
+  const [tollExpense, setTollExpense] = useState('');
+  const [driverCommission, setDriverCommission] = useState('');
+  const [otherExpense, setOtherExpense] = useState('');
+  const [expenseCurrency, setExpenseCurrency] = useState<'MAD' | 'MRU'>('MAD');
+  const [deductFromCashbox, setDeductFromCashbox] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -201,6 +215,12 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
         originStationId,
         destinationStationId,
         notes: notes.trim() || undefined,
+        fuelExpense: Math.max(0, parseFloat(fuelExpense) || 0),
+        tollExpense: Math.max(0, parseFloat(tollExpense) || 0),
+        driverCommission: Math.max(0, parseFloat(driverCommission) || 0),
+        otherExpense: Math.max(0, parseFloat(otherExpense) || 0),
+        expenseCurrency,
+        deductFromCashbox,
       });
 
       if (res.success && res.trip) {
@@ -251,7 +271,7 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
         {/* Form Body */}
         <form
           onSubmit={handleSubmit}
-          className="flex-1 flex flex-col justify-between gap-2.5 min-h-0 overflow-hidden text-xs sm:text-sm"
+          className="flex-1 flex flex-col justify-between gap-2.5 min-h-0 overflow-y-auto pr-0.5 text-xs sm:text-sm"
         >
           {errorMessage && (
             <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 font-black text-xs sm:text-sm shrink-0 truncate">
@@ -399,6 +419,103 @@ export const NewTripModal: React.FC<NewTripModalProps> = ({
                 className="w-full bg-[#0d0700] border border-white/20 rounded-xl px-2.5 py-2.5 text-white font-black text-xs sm:text-sm focus:outline-none"
               />
             </div>
+          </div>
+
+          {/* 4.5 مصاريف الطريق للسائق (اختياري - لحساب الربح الصافي للرحلة) */}
+          <div className="bg-black/55 rounded-xl border border-[#D4AF37]/30 overflow-hidden shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowExpenses(prev => !prev)}
+              className="w-full px-3 py-2 flex items-center justify-between text-xs font-black text-[#F5C84C] hover:bg-white/5 transition cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5">
+                <Wallet className="w-3.5 h-3.5" />
+                <span>⛽ مصاريف الرحلة والربح الصافي (اختياري)</span>
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform duration-200 ${showExpenses ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {showExpenses && (
+              <div className="p-2.5 pt-1 border-t border-white/10 space-y-2 animate-fadeIn">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-white/80 mb-0.5">⛽ المازوط:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0"
+                      dir="ltr"
+                      value={fuelExpense}
+                      onChange={e => setFuelExpense(e.target.value)}
+                      className="w-full bg-[#0d0700] border border-white/20 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-white/80 mb-0.5">🛣️ الطريق / المعبر:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0"
+                      dir="ltr"
+                      value={tollExpense}
+                      onChange={e => setTollExpense(e.target.value)}
+                      className="w-full bg-[#0d0700] border border-white/20 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-white/80 mb-0.5">👤 عمولة الشيفور:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0"
+                      dir="ltr"
+                      value={driverCommission}
+                      onChange={e => setDriverCommission(e.target.value)}
+                      className="w-full bg-[#0d0700] border border-white/20 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-white/80 mb-0.5">📝 مصاريف أخرى:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0"
+                      dir="ltr"
+                      value={otherExpense}
+                      onChange={e => setOtherExpense(e.target.value)}
+                      className="w-full bg-[#0d0700] border border-white/20 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <select
+                    value={expenseCurrency}
+                    onChange={e => setExpenseCurrency(e.target.value as 'MAD' | 'MRU')}
+                    className="bg-[#0d0700] border border-[#D4AF37]/40 rounded-lg px-2 py-1.5 text-white font-mono font-black text-xs"
+                  >
+                    <option value="MAD">MAD</option>
+                    <option value="MRU">MRU</option>
+                  </select>
+
+                  <label className="flex items-center gap-1.5 text-[11px] font-bold text-white/90 cursor-pointer flex-1">
+                    <input
+                      type="checkbox"
+                      checked={deductFromCashbox}
+                      onChange={e => setDeductFromCashbox(e.target.checked)}
+                      className="accent-[#D4AF37] w-4 h-4 rounded"
+                    />
+                    <span>خصم تلقائي من صندوق المحطة</span>
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 5. زر التأكيد الكبير فالتحت */}

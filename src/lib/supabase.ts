@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * توحيد صيغة أرقام الهواتف للمغرب وموريتانيا لمنع تكرار الحسابات لنفس الشخص:
@@ -66,60 +66,33 @@ export const generateTemporaryPassword = (): string => {
   return `Itt-${randomPart}`;
 };
 
-// Get Supabase credentials from environment or localStorage (only anon public key)
+// Legacy Supabase client is retired in favor of Firebase Firestore; keep shared utility signatures intact
 export const getStoredCredentials = () => {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL;
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const localUrl = localStorage.getItem('aman_supabase_url');
-  const localKey = localStorage.getItem('aman_supabase_anon_key');
-
-  const url = localUrl || (envUrl && !envUrl.includes('your-project-id') ? envUrl : '');
-  const key = localKey || (envKey && !envKey.includes('your-anon-public-key') ? envKey : '');
-
-  return { url, key, isConfigured: Boolean(url && key) };
+  try {
+    localStorage.removeItem('aman_supabase_url');
+    localStorage.removeItem('aman_supabase_anon_key');
+  } catch {}
+  return { url: '', key: '', isConfigured: false };
 };
 
-let clientInstance: SupabaseClient | null = null;
-
 export const isSupabaseConfigured = (): boolean => {
-  return getStoredCredentials().isConfigured;
+  return false;
 };
 
 export const getSupabaseClient = (): SupabaseClient | null => {
-  const { url, key, isConfigured } = getStoredCredentials();
-  if (!isConfigured) return null;
-
-  if (!clientInstance) {
-    try {
-      clientInstance = createClient(url, key, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: false
-        },
-      });
-    } catch (e) {
-      console.warn('Failed to initialize Supabase client:', e);
-      return null;
-    }
-  }
-  return clientInstance;
+  return null;
 };
 
-export const saveSupabaseConfig = (url: string, key: string) => {
-  if (url && key) {
-    localStorage.setItem('aman_supabase_url', url.trim());
-    localStorage.setItem('aman_supabase_anon_key', key.trim());
-    clientInstance = null; // Reset to force re-instantiation
-  } else {
+export const saveSupabaseConfig = (_url: string, _key: string) => {
+  try {
     localStorage.removeItem('aman_supabase_url');
     localStorage.removeItem('aman_supabase_anon_key');
-    clientInstance = null;
-  }
+  } catch {}
 };
 
 export const clearSupabaseConfig = () => {
-  localStorage.removeItem('aman_supabase_url');
-  localStorage.removeItem('aman_supabase_anon_key');
-  clientInstance = null;
+  try {
+    localStorage.removeItem('aman_supabase_url');
+    localStorage.removeItem('aman_supabase_anon_key');
+  } catch {}
 };

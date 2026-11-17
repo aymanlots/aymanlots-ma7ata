@@ -14,6 +14,7 @@ import {
   canControlParcelOrigin,
   canControlParcelDestination,
   canAcceptOrRejectPartnerParcel,
+  isRealPartnershipParcel,
 } from '../utils/logisticsFeatures';
 import { 
   X, 
@@ -60,6 +61,7 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
     parcels,
     hideAmounts,
     updateParcelStatus, 
+    confirmParcelTripArrived,
     respondToPartnerParcel,
     recordParcelPayment,
     initiateParcelReturn,
@@ -70,7 +72,10 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
     showToast 
   } = useApp();
 
-  const workerStationId = userRole === 'worker' ? (userAssignedStationId || selectedStationId || '') : '';
+  const permissionStationId =
+    userRole === 'worker'
+      ? (userAssignedStationId || '')
+      : (selectedStationId && selectedStationId !== 'all' ? selectedStationId : 'all');
 
   const parcel = parcels.find(p => p.id === parcelProp?.id) || parcelProp;
 
@@ -152,6 +157,13 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
   const executeStatusUpdate = async () => {
     setIsUpdatingStatus(true);
     try {
+      if (selectedStatus === 'arrived' && parcel.status === 'in_transit' && !parcel.trip_arrived_at) {
+        const arriveStep = await confirmParcelTripArrived(parcel.id);
+        if (!arriveStep.success) {
+          setIsUpdatingStatus(false);
+          return;
+        }
+      }
       const res = await updateParcelStatus(
         parcel.id,
         selectedStatus,
@@ -164,11 +176,8 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
       );
 
       if (res.success) {
-        showToast(`تم تحديث حالة الكولي إلى "${statusNames[selectedStatus]}" بنجاح`, 'success');
         setStatusNote('');
         setShowUnpaidWarning(false);
-      } else {
-        showToast(res.error || 'تعذر تحديث الحالة', 'error');
       }
     } catch (err: any) {
       showToast(err.message, 'error');
@@ -316,7 +325,7 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
         </div>
 
         {/* Partner Parcel Approval Box (المشكل 1) */}
-        {canAcceptOrRejectPartnerParcel(parcel, currentWorkspace?.id, userRole, workerStationId) && (
+        {canAcceptOrRejectPartnerParcel(parcel, currentWorkspace?.id, userRole, permissionStationId) && (
           <div className="bg-purple-950/90 border-2 border-[#F5C84C] rounded-2xl p-3 space-y-2 shrink-0">
             <div className="text-xs font-black text-[#F5C84C]">
               🔔 طلب قبول كولية واردة من الشريك ({parcel.partner_origin_workspace_name || 'شريك'}):
@@ -662,13 +671,13 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                       parcel,
                       currentWorkspace?.id,
                       userRole,
-                      workerStationId
+                      permissionStationId
                     );
                     const canDest = canControlParcelDestination(
                       parcel,
                       currentWorkspace?.id,
                       userRole,
-                      workerStationId
+                      permissionStationId
                     );
                     const isBlockedByPermission =
                       (isOriginStage && !canOrigin) || (isDestStage && !canDest);
@@ -680,7 +689,7 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                     const isTransitBlockedByPendingPartner =
                       st === 'in_transit' &&
                       Boolean(
-                        parcel.is_partnership_parcel &&
+                        isRealPartnershipParcel(parcel, currentWorkspace?.id) &&
                           parcel.partner_acceptance_status === 'pending_approval'
                       );
 
@@ -723,6 +732,23 @@ export const ParcelDetailModal: React.FC<ParcelDetailModalProps> = ({
                     );
                   })}
                 </div>
+
+                {parcel.status === 'in_transit' &&
+                  !parcel.trip_arrived_at &&
+                  canControlParcelDestination(parcel, currentWorkspace?.id, userRole, permissionStationId) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await confirmParcelTripArrived(parcel.id);
+                        if (res.success) {
+                          setSelectedStatus('arrived');
+                        }
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition active:scale-95 cursor-pointer shadow-sm"
+                    >
+                      🏁 المرحلة 4: تأكيد وصول الرحلة لمحطة الوجهة (وصلات)
+                    </button>
+                  )}
 
                 {parcel.status !== 'arrived' && parcel.status !== 'delivered' && (
                   <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-200 text-[10px] font-bold leading-relaxed flex items-start gap-1.5">

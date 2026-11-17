@@ -18,7 +18,7 @@ const STATUS_AR: Record<string, string> = {
 };
 
 const TX_TYPE_AR: Record<string, string> = {
-  cash_in: '+ إيداع نقدي فلاكيس',
+  cash_in: '+ إيداع نقدي فالصندوق',
   cash_out: '- سحب / صرف نقدي',
   parcel_shipping_fee: '+ تحصيل أجرة شحن كولي',
   parcel_cod_collection: '+ تحصيل قيمة بضاعة (COD)',

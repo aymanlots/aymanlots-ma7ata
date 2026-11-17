@@ -18,7 +18,7 @@ export const CurrencyExchangeModal: React.FC<CurrencyExchangeModalProps> = ({
 }) => {
   const { stations, selectedStationId, userRole, userAssignedStationId, executeCurrencyExchange, stationBalances, t, language } = useApp();
   const dir = (language === 'ar' || language === 'hassaniya') ? 'rtl' : 'ltr';
-  const workerStationId = userAssignedStationId || '';
+  const workerStationId = userRole === 'worker' ? (userAssignedStationId || '') : '';
 
   const [stationId, setStationId] = useState<string>(
     (defaultStationId && defaultStationId !== 'all' ? defaultStationId : '') ||

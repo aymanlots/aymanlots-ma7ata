@@ -56,6 +56,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
   const [password, setPassword] = useState('');
   const [isOwnerRole, setIsOwnerRole] = useState(true);
   const [teamInviteCode, setTeamInviteCode] = useState('');
+  const [showWorkerPhoneOption, setShowWorkerPhoneOption] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,20 +130,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
     setIsLoading(true);
 
     try {
-      // Check if phone number or Gmail is already registered in Firestore before sending OTP
+      // Check if phone number or Gmail is already registered in Firestore (automatically cleans leftover orphans from deleted accounts)
       const normalizedPhone = cleanPhoneNumber(cleanPhone);
       if (firebaseSyncService.isAvailable()) {
-        const existingByPhone =
-          (normalizedPhone ? await firebaseSyncService.getUserAccount(normalizedPhone) : null) ||
-          (await firebaseSyncService.findUserAccountByIdentifier(normalizedPhone || cleanPhone));
-        if (existingByPhone && !existingByPhone.deleted && existingByPhone.status !== 'revoked') {
+        const existingByPhone = await firebaseSyncService.findActiveUserForRegistration(
+          normalizedPhone || cleanPhone,
+          'phone'
+        );
+        if (existingByPhone) {
           setIsLoading(false);
           setError('رقم الهاتف هذا مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.');
           return;
         }
 
-        const existingByEmail = await firebaseSyncService.findUserAccountByIdentifier(cleanEmail);
-        if (existingByEmail && !existingByEmail.deleted && existingByEmail.status !== 'revoked') {
+        const existingByEmail = await firebaseSyncService.findActiveUserForRegistration(
+          cleanEmail,
+          'email'
+        );
+        if (existingByEmail) {
           setIsLoading(false);
           setError('عنوان البريد الإلكتروني (Gmail) هذا مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.');
           return;
@@ -636,12 +641,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
               </span>
             </div>
 
-            <div className="pt-1 border-t border-[#D4AF37]/20 space-y-2.5">
-              <div>
-                <label className="block text-[#C8B08A] font-bold mb-1 text-[11px]">
-                  رقم هاتف العامل (اختياري — إلا بغيتي تدخل بالنمرة والكود)
-                </label>
-                <div className="relative">
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowWorkerPhoneOption(prev => !prev)}
+                className="text-[11px] text-[#C8B08A] hover:text-[#F5D799] font-bold underline underline-offset-4 cursor-pointer"
+              >
+                {showWorkerPhoneOption ? 'إخفاء رقم الهاتف' : 'هل لديك رقم هاتف مع الكود؟ (اختياري)'}
+              </button>
+
+              {showWorkerPhoneOption && (
+                <div className="relative animate-fadeIn">
                   <input
                     type="tel"
                     dir="ltr"
@@ -653,7 +663,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenPub
                   />
                   <Phone className="w-3.5 h-3.5 text-[#D4AF37]/80 absolute left-3 top-1/2 -translate-y-1/2" />
                 </div>
-              </div>
+              )}
             </div>
 
             <button

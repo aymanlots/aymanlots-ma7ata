@@ -5,6 +5,7 @@ import { Parcel } from '../types/database';
 import { useApp } from '../context/AppContext';
 import {
   formatTrackingCodeNumeric,
+  buildPublicTrackingUrl,
   isPack2CustomBrandingAllowed,
   sanitizeOfficialBrandLogo,
   OFFICIAL_APP_LOGO_PATH,
@@ -947,8 +948,8 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
       for (const p of missingParcels) {
         if (cancelled) return;
         try {
-          const numCode = formatTrackingCodeNumeric(p.tracking_code, p.parcel_number);
-          const url = await QRCode.toDataURL(numCode, {
+          const qrTarget = buildPublicTrackingUrl(p.tracking_code, p.parcel_number);
+          const url = await QRCode.toDataURL(qrTarget, {
             width: 260,
             margin: 0,
             color: { dark: '#000000', light: '#ffffff' },
@@ -1084,8 +1085,8 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
       for (let i = 0; i < expandedStickers.length; i++) {
         const p = expandedStickers[i];
         if (!nextQrMap[p.tracking_code]) {
-          const numCode = formatTrackingCodeNumeric(p.tracking_code, p.parcel_number);
-          nextQrMap[p.tracking_code] = await QRCode.toDataURL(numCode, {
+          const qrTarget = buildPublicTrackingUrl(p.tracking_code, p.parcel_number);
+          nextQrMap[p.tracking_code] = await QRCode.toDataURL(qrTarget, {
             width: 260,
             margin: 0,
             color: { dark: '#000000', light: '#ffffff' },
@@ -1777,7 +1778,7 @@ export const ParcelStickerModal: React.FC<ParcelStickerModalProps> = ({
                 <div className="bg-black/60 border border-[#F5C84C]/35 rounded-xl p-3 space-y-2.5">
                   {isPack1Basic99 ? (
                     <div className="p-2.5 rounded-xl bg-amber-950/60 border border-[#F5C84C]/45 text-[11px] text-[#F5C84C] font-bold leading-relaxed">
-                      🔒 أنت حالياً على <strong>الفترة التجريبية أو الباك الأول (149 درهم)</strong>: تخرج جميع الملصقات والتقارير وجميع الـ PDF باسم التطبيق الرسمي (<strong>Sahara📦 Express</strong>) ولوغو التطبيق الرسمي الثابت ولا يمكن تغييرهما. لتخصيص اللوغو والاسم الخاص بشركتك، انتقل إلى <strong>الباك الثاني (299 درهم)</strong> من صفحة الإعدادات.
+                      🔒 أنت حالياً على <strong>الباك الأول (149 درهم)</strong>: تخرج جميع الملصقات والتقارير وجميع الـ PDF باسم التطبيق الرسمي (<strong>Sahara📦 Express</strong>) ولوغو التطبيق الرسمي الثابت ولا يمكن تغييرهما. لتخصيص اللوغو والاسم الخاص بشركتك، اطلب الترقية إلى <strong>الباك الثاني (299 درهم)</strong> من صفحة الإعدادات.
                     </div>
                   ) : (
                     <>

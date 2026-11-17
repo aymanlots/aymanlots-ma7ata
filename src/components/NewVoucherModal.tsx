@@ -127,7 +127,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
       currency,
       phone_number: phoneNumber.trim(),
       reason:
-        reason.trim() || (type === 'cash_in' ? 'إيداع نقدي فلاكيس (+)' : 'سحب من لاكيس (-)'),
+        reason.trim() || (type === 'cash_in' ? 'إيداع نقدي فالصندوق (+)' : 'سحب من الصندوق (-)'),
       photo_url: photoPreview || undefined,
       note: note.trim(),
     });
@@ -166,7 +166,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
         <div className="pb-2 border-b border-white/15 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-sm sm:text-base font-black text-white truncate">
-              {type === 'cash_in' ? `➕ ${t('voucherDepositTitle', 'إيداع فلاكيس')}` : type === 'cash_out' ? `➖ ${t('voucherWithdrawTitle', 'سحب من لاكيس')}` : `📦 ${t('voucherGoodsTitle', 'أداء سلع')}`}
+              {type === 'cash_in' ? `➕ ${t('voucherDepositTitle', 'إيداع فالصندوق')}` : type === 'cash_out' ? `➖ ${t('voucherWithdrawTitle', 'سحب من الصندوق')}` : `📦 ${t('voucherGoodsTitle', 'أداء سلع')}`}
             </h3>
             <span className="text-xs sm:text-sm text-[#F5C84C] font-black truncate">
               📍 {selectedStationName} (
@@ -346,7 +346,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
               type === 'cash_in' ? 'btn-add' : 'btn-delete'
             } w-full py-3.5 px-4 rounded-xl font-black text-sm sm:text-base cursor-pointer shadow-md shrink-0`}
           >
-            {type === 'cash_in' ? `✅ ${t('confirmDepositBtn', 'تأكيد الإيداع فلاكيس (+)')}` : `✅ ${t('confirmWithdrawBtn', 'تأكيد السحب من لاكيس (−)')}`}
+            {type === 'cash_in' ? `✅ ${t('confirmDepositBtn', 'تأكيد الإيداع فالصندوق (+)')}` : `✅ ${t('confirmWithdrawBtn', 'تأكيد السحب من الصندوق (−)')}`}
           </button>
         </form>
 
@@ -363,7 +363,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
               <div className="flex items-center gap-3 text-[#F5C84C]">
                 <CheckCircle2 className="w-7 h-7 shrink-0" />
                 <div>
-                  <h4 className="text-sm font-black text-white">تأكيد تسجيل العملية فلاكيس</h4>
+                  <h4 className="text-sm font-black text-white">تأكيد تسجيل العملية فالصندوق</h4>
                   <p className="text-xs text-white/75">المحطة: {selectedStationName}</p>
                 </div>
               </div>
@@ -372,7 +372,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                 <div className="p-3.5 rounded-2xl bg-rose-950/80 border-2 border-rose-500/60 space-y-1.5">
                   <div className="flex items-center gap-2 text-rose-200 font-black text-xs">
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                    <span>تنبيه: لاكيس المحطة خاوية أو غير كافية!</span>
+                    <span>تنبيه: صندوق المحطة خاوي أو غير كافي!</span>
                   </div>
                   <p className="text-xs text-white font-bold leading-relaxed">
                     الرصيد الحالي في الصندوق هو{' '}
@@ -395,9 +395,9 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                   <span className="text-white/80">نوع العملية:</span>
                   <span className="font-bold text-white">
                     {type === 'cash_in'
-                      ? '+ زيادة فلاكيس (قبض)'
+                      ? '+ زيادة فالصندوق (قبض)'
                       : type === 'cash_out'
-                      ? '− سحب من لاكيس (صرف)'
+                      ? '− سحب من الصندوق (صرف)'
                       : '− أداء سلع وبضائع'}
                   </span>
                 </div>
@@ -414,7 +414,7 @@ export const NewVoucherModal: React.FC<NewVoucherModalProps> = ({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-white/80">رصيد لاكيس بعد العملية:</span>
+                  <span className="text-white/80">رصيد الصندوق بعد العملية:</span>
                   <span
                     className={`font-black text-sm font-mono ${
                       resultingBalance < 0 ? 'text-rose-400' : 'text-[#F5C84C]'

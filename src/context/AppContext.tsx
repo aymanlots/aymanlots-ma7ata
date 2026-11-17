@@ -56,6 +56,7 @@ import {
   canControlParcelOrigin,
   canControlParcelDestination,
   canAcceptOrRejectPartnerParcel,
+  isRealPartnershipParcel,
   validateParcelScanOwnership,
   isPack2CustomBrandingAllowed,
   sanitizeOfficialBrandLogo,
@@ -464,6 +465,16 @@ interface AppContextType {
   updateWorkspaceQuotas: (workspaceId: string, quotas: { max_workers: number; max_stations: number; max_workers_per_station?: number; max_collaborations: number; plan_name?: string; plan_tier?: 'plan_1_full' | 'plan_2_two_stations' }) => Promise<{ success: boolean; error?: string }>;
   switchWorkspacePlan: (planTier: 'plan_1_full' | 'plan_2_two_stations', workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
   deleteWorkspaceFromPlatform: (workspaceId: string) => Promise<{ success: boolean; error?: string }>;
+  unlockDeletedAccountCredentials: (
+    identifiers: { email?: string; phone?: string },
+    targetWorkspaceId?: string
+  ) => Promise<{
+    success: boolean;
+    status: 'unlocked' | 'already_free' | 'active_conflict';
+    cleanedDocs: number;
+    workspaceName?: string;
+    message: string;
+  }>;
 
   // Password Reset System (Worker to Admin, Automatic WhatsApp Recovery for Manager) & Contact Update
   passwordResetRequests: PasswordResetRequest[];
@@ -1220,6 +1231,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         wsList.push({
           ...item,
+          deleted: Boolean(item.deleted),
+          deleted_at: item.deleted_at,
           subscription_status: effectiveStatus,
           subscription_end_date: endDate,
         });
@@ -1239,9 +1252,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           created_at: item.created_at || new Date().toISOString(),
         });
       });
-      setAllWorkspacesState(wsList);
+      setAllWorkspacesState(prev => {
+        const incomingIds = new Set(wsList.map(w => w.id));
+        const extraDeleted = prev.filter(w => w.deleted && !incomingIds.has(w.id));
+        const merged = [...wsList, ...extraDeleted];
+        localStorage.setItem('alittihadia_all_workspaces', JSON.stringify(merged));
+        return merged;
+      });
       setAllSubscriptionsState(subList);
-      localStorage.setItem('alittihadia_all_workspaces', JSON.stringify(wsList));
       localStorage.setItem('alittihadia_all_subscriptions', JSON.stringify(subList));
     });
     return () => unsub();
@@ -1596,11 +1614,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // الباك الأول (149 درهم): محطتين (2) فقط + 2 عمال + الملصقات والبونات باسم ولوغو التطبيق الرسمي
   const isPlan2TwoStations = useMemo(() => {
     if (!currentWorkspace) return false;
-    const pName = (currentWorkspace.plan_name || '').trim();
-    if (pName.includes('تجريبي') || pName.includes('30 يوم') || pName.includes('مجاناً')) {
-      return false;
-    }
-    return currentWorkspace.plan_tier === 'plan_2_two_stations';
+    if (currentWorkspace.plan_tier === 'plan_1_full') return false;
+    return (
+      currentWorkspace.plan_tier === 'plan_2_two_stations' ||
+      currentWorkspace.max_stations === 2 ||
+      currentWorkspace.max_workers_per_station === 1
+    );
   }, [currentWorkspace]);
 
   // Visible Stations: Filter by currentWorkspace.id
@@ -1650,6 +1669,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     return rawAssignedWorkerStationId || visibleStations[0]?.id || null;
   }, [currentUser, userRole, isWorkerStationDeleted, rawAssignedWorkerStationId, visibleStations]);
+
+  const effectiveActionStationId = useMemo(() => {
+    if (userRole === 'worker') return userAssignedStationId;
+    return selectedStationId || 'all';
+  }, [userRole, userAssignedStationId, selectedStationId]);
 
   useEffect(() => {
     if (userRole === 'worker') {
@@ -2828,7 +2852,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const msg =
         effectiveSubscriptionStatus === 'suspended'
           ? '⛔ تم تعليق اشتراك مساحة العمل: الحساب في وضع المشاهدة فقط ولا يمكن إضافة أو تعديل أو حذف أي عملية حتى تفعيل الاشتراك.'
-          : '🔒 انتهت الفترة التجريبية (30 يوماً) — حسابك الآن في وضع المشاهدة فقط (بياناتك وسجلاتك محفوظة بالكامل 100%). يرجى تجديد الاشتراك (الباك الأول 149 درهم أو الباك الثاني 299 درهم) لإضافة أو تعديل العمليات.';
+          : '🔒 انتهت مدة الشهر التجريبي (30 يوماً) — حسابك الآن في وضع المشاهدة فقط (بياناتك وسجلاتك محفوظة بالكامل 100%). يرجى التواصل مع الإدارة لتفعيل الباك الذي يناسبك (الباك الأول 149 درهم أو الباك الثاني 299 درهم).';
       showToast(msg, 'error');
       return { allowed: false, error: msg };
     }
@@ -2871,8 +2895,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         pushNotification({
           workspace_id: currentWorkspace.id,
           target_role: 'all',
-          title: `⏳ تنبيه: متبقي ${daysUntilExpiry} أيام على انتهاء الفترة التجريبية`,
-          message: `يرجى تجديد الاشتراك (الباك الأول 149 درهم أو الباك الثاني 299 درهم) لتفادي تحول الحساب إلى وضع المشاهدة فقط.`,
+          title: `⏳ تنبيه: متبقي ${daysUntilExpiry} أيام على انتهاء اشتراك الشهر`,
+          message: `يرجى التواصل مع الإدارة لتفعيل الباك الأول (149 درهم) أو الباك الثاني (299 درهم) لتفادي تحول الحساب إلى وضع المشاهدة فقط.`,
           type: 'subscription',
         });
       }
@@ -2924,18 +2948,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return { success: false, error: 'كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام' };
       }
 
-      // Check Firestore duplicates for both phone and email
+      // Check Firestore duplicates for both phone and email (auto-cleans leftover orphans from deleted accounts)
       if (firebaseSyncService.isAvailable()) {
         try {
-          const existingPhone = (await firebaseSyncService.getUserAccount(cleanPhone)) || (await firebaseSyncService.findUserAccountByIdentifier(cleanPhone));
-          if (existingPhone && !existingPhone.deleted && existingPhone.status !== 'revoked') {
+          const existingPhone = await firebaseSyncService.findActiveUserForRegistration(cleanPhone, 'phone');
+          if (existingPhone) {
             return {
               success: false,
               error: 'رقم الهاتف هذا مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.',
             };
           }
-          const existingEmail = await firebaseSyncService.findUserAccountByIdentifier(cleanEmail);
-          if (existingEmail && !existingEmail.deleted && existingEmail.status !== 'revoked') {
+          const existingEmail = await firebaseSyncService.findActiveUserForRegistration(cleanEmail, 'email');
+          if (existingEmail) {
             return {
               success: false,
               error: 'عنوان البريد الإلكتروني (Gmail) مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.',
@@ -2944,17 +2968,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         } catch (e) {
           console.warn('Firestore duplicate check warning in registerUser:', e);
         }
-      }
-
-      // Prevent duplicate accounts in local/active workspace members
-      const duplicateLocalCheck = workspaceMembers.some(
-        m => !m.is_demo && (cleanPhoneNumber(m.profile?.phone || '') === cleanPhone || (m.profile?.email && m.profile.email.toLowerCase() === cleanEmail))
-      ) || (currentUser && (cleanPhoneNumber(currentUser.phone) === cleanPhone || (currentUser.email && currentUser.email.toLowerCase() === cleanEmail)));
-      if (duplicateLocalCheck) {
-        return {
-          success: false,
-          error: 'هذا الرقم أو البريد الإلكتروني مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.'
-        };
+      } else {
+        // Offline-only fallback duplicate check in local workspaceMembers
+        const duplicateLocalCheck = workspaceMembers.some(
+          m => !m.is_demo && (cleanPhoneNumber(m.profile?.phone || '') === cleanPhone || (m.profile?.email && m.profile.email.toLowerCase() === cleanEmail))
+        ) || (currentUser && (cleanPhoneNumber(currentUser.phone) === cleanPhone || (currentUser.email && currentUser.email.toLowerCase() === cleanEmail)));
+        if (duplicateLocalCheck) {
+          return {
+            success: false,
+            error: 'هذا الرقم أو البريد الإلكتروني مسجل بالفعل في النظام. يرجى التبديل إلى تسجيل الدخول بدلاً من إنشاء حساب جديد.'
+          };
+        }
       }
 
       const syntheticEmail = cleanEmail || phoneToEmail(cleanPhone);
@@ -3004,13 +3028,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       }
 
-      // Clear any previous termination notice, set new registration grace window, and clear local revocation entry
+      // Clear any previous termination notice, set new registration grace window, and clear local revocation entries
       registrationGraceUntilRef.current = Date.now() + 25000;
       setAccountTerminatedNotice({ isOpen: false, reason: 'deleted', message: '' });
       try {
         const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
-        if (revokedMap[cleanPhone]) {
-          delete revokedMap[cleanPhone];
+        let changedRevoked = false;
+        [cleanPhone, cleanEmail, ...firebaseSyncService.getPhoneDocVariants(cleanPhone)].forEach((k) => {
+          if (k && revokedMap[k]) {
+            delete revokedMap[k];
+            changedRevoked = true;
+          }
+        });
+        if (changedRevoked) {
           localStorage.setItem('alittihadia_revoked_accounts_v1', JSON.stringify(revokedMap));
         }
       } catch {}
@@ -3060,8 +3090,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           invite_code,
           created_by: newProfile.id,
           created_at: new Date().toISOString(),
+          owner_name: newProfile.name,
+          owner_email: cleanEmail,
           owner_phone: cleanPhone,
           owner_whatsapp: cleanWhatsapp,
+          plan_tier: 'plan_1_full',
+          plan_name: 'الباك الثاني (299 درهم — شهر تجريبي مجاني)',
+          max_stations: 999,
+          max_workers: 999,
+          max_workers_per_station: 99,
+          max_collaborations: 999,
           subscription_end_date: initialSubEnd,
           subscription_status: 'active',
         };
@@ -3079,6 +3117,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               rpcCreated = true;
               newWorkspace = {
                 ...(rpcData.workspace as Workspace),
+                plan_tier: 'plan_1_full',
+                plan_name: 'الباك الثاني (299 درهم — شهر تجريبي مجاني)',
+                max_stations: 999,
+                max_workers: 999,
+                max_workers_per_station: 99,
+                max_collaborations: 999,
                 subscription_end_date: rpcData.subscription?.end_date || initialSubEnd,
                 subscription_status: rpcData.subscription?.status || 'active',
               };
@@ -3175,6 +3219,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             workspace_id: newWorkspace.id,
             team_id: newWorkspace.id,
             status: 'active',
+            plan_name: 'الباك الثاني (299 درهم — شهر تجريبي مجاني)',
+            is_trial: true,
             start_date: newWorkspace.created_at,
             end_date: initialSubEnd,
             created_at: newWorkspace.created_at,
@@ -3197,7 +3243,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         localStorage.removeItem(`alittihadia_guided_tour_completed_${newWorkspace.id}`);
         localStorage.removeItem(`alittihadia_user_created_station_${newWorkspace.id}`);
 
-        showToast(`مرحباً بك يا ${newProfile.name}! لنبدأ الآن بإعداد محطاتك وعملاتها وشعارك خطوة بخطوة`, 'success');
+        showToast(`مرحباً بك يا ${newProfile.name}! تم تفعيل الباك الثاني (الشامل) لمدة شهر واحد مجاناً لتجربة اللوغو الخاص وكامل الصلاحيات`, 'success');
         return { success: true };
       } else {
         // 4. If Worker: Submit Join Request using invite code
@@ -3363,8 +3409,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         } catch {}
       }
 
-      // Block locally revoked accounts immediately
-      if (cleanPhone && isAccountRevokedLocally(undefined, cleanPhone)) {
+      // Only block locally revoked accounts immediately when Firebase cloud is offline
+      if (!firebaseSyncService.isAvailable() && cleanPhone && isAccountRevokedLocally(undefined, cleanPhone)) {
         return {
           success: false,
           error: 'تم إيقاف أو حذف هذا الحساب من طرف مدير المحطة. لم يعد بإمكانك تسجيل الدخول.',
@@ -3418,6 +3464,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               error: 'تم توقيف أو حذف هذا الحساب من قِبل الإدارة أو Firebase. لم يعد بإمكانك تسجيل الدخول.',
             };
           }
+
+          // Clear stale local revocation flag if Firebase confirms this is an active account
+          try {
+            const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
+            const pKey = cleanPhoneNumber(cloudAcc.phone || cleanPhone);
+            if ((pKey && revokedMap[pKey]) || (cloudAcc.id && revokedMap[cloudAcc.id])) {
+              if (pKey) delete revokedMap[pKey];
+              if (cloudAcc.id) delete revokedMap[cloudAcc.id];
+              localStorage.setItem('alittihadia_revoked_accounts_v1', JSON.stringify(revokedMap));
+            }
+          } catch {}
 
           const storedPass = (cloudAcc.password || '').trim();
           const storedWorkerCode = (cloudAcc.worker_code || '').trim();
@@ -4691,7 +4748,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const parcel = allParcelsRef.current.find(p => p.id === parcelId);
     if (!parcel) return { success: false, error: 'الكولية غير موجودة' };
 
-    if (!canAcceptOrRejectPartnerParcel(parcel, currentWorkspace.id, userRole, userAssignedStationId)) {
+    if (!canAcceptOrRejectPartnerParcel(parcel, currentWorkspace.id, userRole, effectiveActionStationId)) {
       const msg = 'لا تملك صلاحية البت في طلب هذه الكولية (القبول والرفض للمدير المستقبل فقط)';
       showToast(msg, 'error');
       return { success: false, error: msg };
@@ -4778,7 +4835,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const pendingTargets = allParcelsRef.current.filter(p => {
       if (parcelIds && parcelIds.length > 0 && !parcelIds.includes(p.id)) return false;
-      return canAcceptOrRejectPartnerParcel(p, currentWorkspace.id, userRole, userAssignedStationId);
+      return canAcceptOrRejectPartnerParcel(p, currentWorkspace.id, userRole, effectiveActionStationId);
     });
 
     if (pendingTargets.length === 0) {
@@ -4848,7 +4905,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const parcel = allParcelsRef.current.find(p => p.id === parcelId);
     if (!parcel) return { success: false, error: 'الكولية غير موجودة' };
 
-    if (!canControlParcelDestination(parcel, currentWorkspace.id, userRole, userAssignedStationId)) {
+    if (!canControlParcelDestination(parcel, currentWorkspace.id, userRole, effectiveActionStationId)) {
       const msg = `⛔ لا يمكنك تأكيد وصول الرحلة (وصلات) لأنها متجهة إلى محطة "${parcel.destination_station_name}" فقط`;
       showToast(msg, 'error');
       return { success: false, error: msg };
@@ -4920,6 +4977,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const targetTrip = allTripsRef.current.find(t => t.id === tripId);
     if (!targetTrip) return { success: false, error: 'الرحلة غير موجودة' };
+
+    const isSenderOfPartnerTrip = Boolean(
+      targetTrip.partner_workspace_id &&
+        targetTrip.partner_workspace_id !== currentWorkspace.id &&
+        !targetTrip.is_collaborator_data
+    );
+    if (isSenderOfPartnerTrip) {
+      const msg = `⛔ لا يمكنك تأكيد وصول هذه الرحلة لأنك الطرف المرسل! المدير أو العامل في محطة الوصول "${targetTrip.destination_station_name}" هما الوحيدان المخولان بتأكيد الوصول.`;
+      showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+    if (userRole === 'worker') {
+      if (
+        userAssignedStationId === targetTrip.origin_station_id &&
+        targetTrip.destination_station_id !== userAssignedStationId
+      ) {
+        const msg = `⛔ لا يمكن لمحطة الإرسال ("${targetTrip.origin_station_name}") تأكيد وصول الرحلة. التأكيد يتم في محطة الوصول ("${targetTrip.destination_station_name}").`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+      if (
+        userAssignedStationId &&
+        targetTrip.destination_station_id !== userAssignedStationId &&
+        targetTrip.partner_destination_station_id !== userAssignedStationId
+      ) {
+        const msg = `⛔ لا يمكنك تأكيد وصول هذه الرحلة لأنها متجهة إلى محطة "${targetTrip.destination_station_name}" فقط`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
+    if (selectedStationId && selectedStationId !== 'all') {
+      if (
+        selectedStationId === targetTrip.origin_station_id &&
+        selectedStationId !== targetTrip.destination_station_id
+      ) {
+        const msg = `⛔ محطة الإرسال ("${targetTrip.origin_station_name}") لا تستقبل الرحلة. لتأكيد الوصول يرجى التبديل لمحطة الاستلام ("${targetTrip.destination_station_name}") أو عرض كافة المحطات.`;
+        showToast(msg, 'error');
+        return { success: false, error: msg };
+      }
+    }
 
     const nowIso = new Date().toISOString();
     const updatedTrip: Trip = {
@@ -5540,14 +5637,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .filter(Boolean)
       .join(' | ');
 
-    // 1. إدخال المبلغ المستلم من الزبون إلى لاكيس المحطة (+)
+    // 1. إدخال المبلغ المستلم من الزبون إلى صندوق المحطة (+)
     const inRes = await createTransaction({
-      station_id: params.stationId,
+      station_id: targetStationId,
       type: 'cash_in',
       amount: totalCashIn,
       currency: params.fromCurrency,
       phone_number: params.customerPhone?.trim() || '',
-      reason: `صرف عملة (+ إيداع فلاكيس): قبض ${cleanFrom} ${params.fromCurrency}${feeLabel} مقابل تسليم ${cleanTo} ${params.toCurrency}${custLabel}`,
+      reason: `صرف عملة (+ إيداع فالصندوق): قبض ${cleanFrom} ${params.fromCurrency}${feeLabel} مقابل تسليم ${cleanTo} ${params.toCurrency}${custLabel}`,
       note: extraNote,
     });
 
@@ -5555,14 +5652,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, error: inRes.error || 'تعذر تسجيل قبض العملة المستلمة' };
     }
 
-    // 2. إخراج المبلغ المصروف للزبون من لاكيس المحطة (-)
+    // 2. إخراج المبلغ المصروف للزبون من صندوق المحطة (-)
     const outRes = await createTransaction({
-      station_id: params.stationId,
+      station_id: targetStationId,
       type: 'cash_out',
       amount: cleanTo,
       currency: params.toCurrency,
       phone_number: params.customerPhone?.trim() || '',
-      reason: `صرف عملة (- سحب من لاكيس): تسليم ${cleanTo} ${params.toCurrency} مقابل قبض ${cleanFrom} ${params.fromCurrency}${custLabel}`,
+      reason: `صرف عملة (- سحب من الصندوق): تسليم ${cleanTo} ${params.toCurrency} مقابل قبض ${cleanFrom} ${params.fromCurrency}${custLabel}`,
       note: extraNote,
     });
 
@@ -5571,7 +5668,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     showToast(
-      `تمت عملية الصرف فلاكيس بنجاح: (+${cleanFrom} ${params.fromCurrency}) و (-${cleanTo} ${params.toCurrency})`,
+      `تمت عملية الصرف فالصندوق بنجاح: (+${cleanFrom} ${params.fromCurrency}) و (-${cleanTo} ${params.toCurrency})`,
       'success'
     );
     return { success: true };
@@ -5754,9 +5851,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const totalCashIn = Math.round((sendAmt + commAmt) * 100) / 100;
     const commLabel = commAmt > 0 ? ` (شامل عمولة ${commAmt} ${params.send_currency})` : '';
 
-    // 1. زيادة المبلغ فلاكيس محطة الإرسال (+) مع حفظ بيانات الحوالة للمزامنة الفورية مع محطة الاستلام
+    // 1. زيادة المبلغ فصندوق محطة الإرسال (+) مع حفظ بيانات الحوالة للمزامنة الفورية مع محطة الاستلام
     const txRes = await createTransaction({
-      station_id: params.origin_station_id,
+      station_id: effectiveOriginStationId,
       type: 'cash_in',
       amount: totalCashIn,
       currency: params.send_currency,
@@ -5786,7 +5883,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     showToast(
-      `تم تسجيل الحوالة [${transferCode}] وإضافة +${totalCashIn} ${params.send_currency} في لاكيس ${originSt?.name || 'المحطة'}`,
+      `تم تسجيل الحوالة [${transferCode}] وإضافة +${totalCashIn} ${params.send_currency} في صندوق ${originSt?.name || 'المحطة'}`,
       'success'
     );
     return { success: true, transfer: newTransfer };
@@ -5866,7 +5963,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       action: 'PAYMENT',
       table_name: 'hawala_transfers',
       record_id: target.id,
-      reason: `[${currentUser?.name || 'المستخدم'}] (${userRole === 'worker' ? 'عامل' : 'مدير'}): صرف وتسليم حوالة واردة [${target.transfer_code}] للمستلم: ${target.receiver_name} في محطة [${target.destination_station_name}] وخصم المبلغ من لاكيس المحطة`,
+      reason: `[${currentUser?.name || 'المستخدم'}] (${userRole === 'worker' ? 'عامل' : 'مدير'}): صرف وتسليم حوالة واردة [${target.transfer_code}] للمستلم: ${target.receiver_name} في محطة [${target.destination_station_name}] وخصم المبلغ من صندوق المحطة`,
       details: `مرسلة من: ${target.sender_name} (${target.origin_station_name}) بمبلغ ${target.send_amount} ${target.send_currency} ➔ المبلغ المسلم: ${target.payout_amount} ${target.payout_currency}`,
       is_partnership: Boolean(target.is_partnership || target.partner_workspace_id),
       old_data: { status: 'pending' },
@@ -5911,7 +6008,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     showToast(
-      `تم تسليم الحوالة [${target.transfer_code}] وخصم -${target.payout_amount} ${target.payout_currency} من لاكيس ${target.destination_station_name} مع توثيق العملية بالسبب في السجل`,
+      `تم تسليم الحوالة [${target.transfer_code}] وخصم -${target.payout_amount} ${target.payout_currency} من صندوق ${target.destination_station_name} مع توثيق العملية بالسبب في السجل`,
       'success'
     );
     return { success: true };
@@ -6066,10 +6163,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       status: parcelStatus,
       condition,
       condition_notes: conditionNotes,
-      partner_acceptance_status:
-        effectiveOriginStationId !== data.destination_station_id
-          ? ('pending_approval' as const)
-          : ('accepted' as const),
+      partner_acceptance_status: partnerDestMeta
+        ? ('pending_approval' as const)
+        : ('accepted' as const),
       partner_rejection_reason: null,
       ...(partnerDestMeta
         ? {
@@ -6133,7 +6229,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       table_name: 'parcels',
       record_id: newParcel.id,
       reason: `[${currentUser.name}] (${userRole === 'worker' ? 'عامل' : 'مدير'}): تسجيل كولي جديد [${newParcel.tracking_code}] من محطة [${newParcel.origin_station_name}] إلى محطة [${newParcel.destination_station_name}] — ثمن الشحن: ${newParcel.amount_due} ${newParcel.currency}`,
-      details: `المرسل: ${newParcel.sender_name} (${newParcel.sender_phone}) ➔ المستلم: ${newParcel.receiver_name} (${newParcel.receiver_phone}) | الوصف: ${newParcel.item_description || 'بضاعة'}`,
+      details: `المرسل: ${newParcel.sender_name} (${newParcel.sender_phone}) ➔ المستلم: ${newParcel.receiver_name} (${newParcel.receiver_phone}) | الوصف: ${newParcel.description || 'بضاعة'}`,
       is_partnership: Boolean(newParcel.is_partnership_parcel || partnerDestMeta),
       old_data: null,
       new_data: {
@@ -6300,7 +6396,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
-      if (parcel.partner_acceptance_status === 'pending_approval') {
+      if (parcel.partner_acceptance_status === 'pending_approval' && isRealPartnershipParcel(parcel, currentWorkspace?.id)) {
         const isOutgoingToPartner = Boolean(
           parcel.partner_workspace_id &&
             parcel.partner_workspace_id !== currentWorkspace?.id &&
@@ -6313,7 +6409,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return { success: false, error: msg };
       }
 
-      if (!canControlParcelDestination(parcel, currentWorkspace?.id, userRole, userAssignedStationId)) {
+      if (!canControlParcelDestination(parcel, currentWorkspace?.id, userRole, effectiveActionStationId)) {
         const isOutgoingToPartner = Boolean(
           parcel.partner_workspace_id &&
             parcel.partner_workspace_id !== currentWorkspace?.id &&
@@ -6359,12 +6455,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
-      if (parcel.partner_acceptance_status === 'pending_approval') {
+      if (parcel.partner_acceptance_status === 'pending_approval' && isRealPartnershipParcel(parcel, currentWorkspace?.id)) {
         const msg = `⛔ الترتيب الصارم للشراكة (طلب -> قبول -> رحلة -> وصلات -> تفريغ -> تسليم): لا يمكن بدء الرحلة أو شحن هذا الكولي قبل أن يقبله المدير في محطة الوصول ("${parcel.destination_station_name}").`;
         showToast(msg, 'error');
         return { success: false, error: msg };
       }
-      if (!canControlParcelOrigin(parcel, currentWorkspace?.id, userRole, userAssignedStationId)) {
+      if (!canControlParcelOrigin(parcel, currentWorkspace?.id, userRole, effectiveActionStationId)) {
         const msg = `لا يمكنك شحن هذا الكولي لأنه صادر من محطة "${parcel.origin_station_name}" فقط`;
         showToast(msg, 'error');
         return { success: false, error: msg };
@@ -7073,7 +7169,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     if (!isPack2CustomBrandingAllowed(currentWorkspace)) {
-      const msg = 'في الفترة التجريبية (30 يوم) والباك الأول (149 درهم) يخرج لوغو واسم التطبيق الرسمي الثابت في كل المطبوعات. لتغيير سمية وتصويرة شركتك يرجى تفعيل الباك الثاني (299 درهم).';
+      const msg = 'في الباك الأول (149 درهم) يخرج لوغو واسم التطبيق الرسمي الثابت في كل المطبوعات. لتغيير سمية وتصويرة شركتك يرجى ترقية حسابك إلى الباك الثاني (299 درهم).';
       showToast(msg, 'error');
       return { success: false, error: msg };
     }
@@ -7450,7 +7546,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       { id: currentUser.id, name: currentUser.name },
       allTripsRef.current,
       allParcelsRef.current,
-      userAssignedStationId || undefined,
+      effectiveActionStationId === 'all' ? undefined : effectiveActionStationId || undefined,
       (msg: string) => showToast(msg, 'error')
     );
 
@@ -7498,6 +7594,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       if (p.status !== 'registered' && p.status !== 'return_in_transit') return false;
       if (p.origin_station_id !== targetTrip.origin_station_id && !p.is_returning) return false;
+      if (p.partner_acceptance_status === 'rejected') return false;
+      if (p.partner_acceptance_status === 'pending_approval' && isRealPartnershipParcel(p, currentWorkspace?.id)) return false;
       const pDest = p.partner_destination_station_id || p.destination_station_id;
       return pDest === destId || p.destination_station_id === targetTrip.destination_station_id;
     });
@@ -7520,7 +7618,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { id: currentUser.id, name: currentUser.name },
         currentTrips,
         currentParcels,
-        userAssignedStationId || undefined
+        effectiveActionStationId === 'all' ? undefined : effectiveActionStationId || undefined
       );
       if (step.success && step.trip && step.parcel) {
         currentTrips = step.updatedTrips;
@@ -9200,7 +9298,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return res;
   };
 
-  // Permanently delete a workspace, its subcollections (stations, parcels, trips, transactions, members, activity_logs) and its users from Firebase Firestore
+  // Permanently purge a manager's auth & workspace operational data so they can re-register cleanly with the same phone & Gmail,
+  // while keeping their soft-deleted archive record visible in the Super Admin dashboard.
   const deleteWorkspaceFromPlatform = async (
     workspaceId: string
   ): Promise<{ success: boolean; error?: string }> => {
@@ -9218,17 +9317,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const targetWs = allWorkspacesState.find((w) => w.id === workspaceId);
+    const nowIso = new Date().toISOString();
 
     try {
       if (firebaseSyncService.isAvailable()) {
         await firebaseSyncService.deleteWorkspaceCompletelyFromCloud(
           workspaceId,
-          targetWs?.owner_phone
+          targetWs?.owner_phone,
+          targetWs?.owner_email
         );
       }
 
+      // Clean any local browser caches for this manager's phone/email
+      try {
+        const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+        const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
+        if (targetWs?.owner_phone) {
+          firebaseSyncService.getPhoneDocVariants(targetWs.owner_phone).forEach((pv) => {
+            delete localAccounts[pv];
+            delete revokedMap[pv];
+          });
+        }
+        if (targetWs?.owner_email) {
+          delete revokedMap[targetWs.owner_email.trim().toLowerCase()];
+        }
+        localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
+        localStorage.setItem('alittihadia_revoked_accounts_v1', JSON.stringify(revokedMap));
+      } catch {}
+
       setAllWorkspacesState((prev) => {
-        const next = prev.filter((w) => w.id !== workspaceId);
+        const next = prev.map((w) =>
+          w.id === workspaceId
+            ? {
+                ...w,
+                deleted: true,
+                deleted_at: nowIso,
+                subscription_status: 'suspended' as const,
+                stations_count: 0,
+                workers_count: 0,
+                parcels_count: 0,
+                last_action_summary: 'تم حذف الحساب نهائياً (بياناته ممسوحة ويمكنه إعادة التسجيل)',
+              }
+            : w
+        );
         localStorage.setItem('alittihadia_all_workspaces', JSON.stringify(next));
         return next;
       });
@@ -9240,7 +9371,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
 
       showToast(
-        `🗑️ تم حذف شركة "${targetWs?.name || workspaceId}" وحساب مديرها وجميع بياناتها من Firebase نهائياً`,
+        `🗑️ تم مسح بيانات "${targetWs?.name || workspaceId}" نهائياً — يقدر دابا يعاود يسجل بنفس النمرة و Gmail، وبقى محفوظ فلائحة الممسوحين`,
         'info'
       );
       return { success: true };
@@ -9248,9 +9379,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.error('deleteWorkspaceFromPlatform error:', err);
       return {
         success: false,
-        error: err?.message || 'تعذر حذف الشركة من Firebase Firestore',
+        error: err?.message || 'تعذر حذف الحساب من السحابة',
       };
     }
+  };
+
+  // Super Admin tool: safely unlock leftover credentials (Gmail or Phone) from previously deleted accounts
+  const unlockDeletedAccountCredentials = async (
+    identifiers: { email?: string; phone?: string },
+    targetWorkspaceId?: string
+  ) => {
+    if (!isPlatformOwner && !checkIsMasterAccount(currentUser, currentWorkspace)) {
+      return {
+        success: false,
+        status: 'active_conflict' as const,
+        cleanedDocs: 0,
+        message: 'هذه الصلاحية خاصة بمالك التطبيق فقط',
+      };
+    }
+
+    const res = await firebaseSyncService.unlockDeletedAccountCredentials(identifiers, targetWorkspaceId);
+
+    if (res.success) {
+      try {
+        const localAccounts = JSON.parse(localStorage.getItem('alittihadia_local_accounts_v1') || '{}');
+        const revokedMap = JSON.parse(localStorage.getItem('alittihadia_revoked_accounts_v1') || '{}');
+        if (identifiers.phone) {
+          firebaseSyncService.getPhoneDocVariants(identifiers.phone).forEach((pv) => {
+            delete localAccounts[pv];
+            delete revokedMap[pv];
+          });
+        }
+        if (identifiers.email) {
+          delete revokedMap[identifiers.email.trim().toLowerCase()];
+        }
+        localStorage.setItem('alittihadia_local_accounts_v1', JSON.stringify(localAccounts));
+        localStorage.setItem('alittihadia_revoked_accounts_v1', JSON.stringify(revokedMap));
+      } catch {}
+    }
+
+    return res;
   };
 
   // Password Reset Request (Worker to Workspace Admin, Automatic WhatsApp Recovery for Manager)
@@ -10475,6 +10643,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               email_verified: true,
             })
             .catch(() => {});
+
+          // If email changed, clean up the old email alias document so the old email isn't left locked forever
+          if (oldEmail && cleanNewEmail && oldEmail !== cleanNewEmail) {
+            const oldEmailDoc = firebaseSyncService.getEmailDocId(oldEmail);
+            if (oldEmailDoc) {
+              firebaseSyncService
+                .deleteUserDocsForDeletedWorkspace(baseAcc.workspace_id || currentWorkspace?.id || '', [oldEmailDoc])
+                .catch(() => {});
+            }
+          }
         })
         .catch(() => {});
     }
@@ -10619,6 +10797,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateWorkspaceQuotas,
         switchWorkspacePlan,
         deleteWorkspaceFromPlatform,
+        unlockDeletedAccountCredentials,
         passwordResetRequests: passwordResetRequestsState,
         submitPasswordResetRequest,
         resolvePasswordResetRequest,

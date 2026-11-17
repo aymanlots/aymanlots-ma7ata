@@ -688,7 +688,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                           {(userRole === 'worker' ? (workerStationId === t.destination_station_id && workerStationId !== t.origin_station_id) : (selectedStationId === 'all' || !selectedStationId || selectedStationId === t.destination_station_id)) ? (
                             <>
                               <div className="text-[11px] text-white/80 font-bold">
-                                رصيد لاكيس {t.destination_station_name} الحالي:{' '}
+                                رصيد صندوق {t.destination_station_name} الحالي:{' '}
                                 <span
                                   dir="ltr"
                                   className={`font-mono font-black ${
@@ -722,7 +722,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
                         <div className="text-[11px] text-emerald-400 font-bold flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>
-                            تم تسليم المبلغ للمستلم وخصمه من لاكيس {t.destination_station_name} بواسطة{' '}
+                            تم تسليم المبلغ للمستلم وخصمه من صندوق {t.destination_station_name} بواسطة{' '}
                             {t.paid_out_by || 'المحطة'}
                           </span>
                         </div>
@@ -750,7 +750,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
               <AlertTriangle className="w-7 h-7 shrink-0" />
               <div>
                 <h4 className="text-sm font-black text-white">
-                  تنبيه: لاكيس محطة الاستلام خاوية أو غير كافية!
+                  تنبيه: صندوق محطة الاستلام خاوي أو غير كافي!
                 </h4>
                 <p className="text-xs text-white/80 font-bold">
                   المحطة: {pendingPayoutWarningTransfer.destination_station_name}
@@ -788,7 +788,7 @@ export const MoneyTransferModal: React.FC<MoneyTransferModalProps> = ({
             })()}
 
             <p className="text-xs text-white/90 font-bold leading-relaxed">
-              هل تريد تأكيد تسليم الحوالة للمستلم وتسجيل رصيد لاكيس المحطة بالسالب؟
+              هل تريد تأكيد تسليم الحوالة للمستلم وتسجيل رصيد صندوق المحطة بالسالب؟
             </p>
 
             <div className="flex items-center gap-2.5 pt-1">

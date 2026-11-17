@@ -27,7 +27,8 @@ import {
   SlidersHorizontal,
   Store,
   Trash2,
-  CheckCircle2
+  CheckCircle2,
+  Lock
 } from 'lucide-react';
 import { HelpPopover } from './HelpPopover';
 import { CurrencyExchangeModal } from './CurrencyExchangeModal';
@@ -104,6 +105,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
 
   // Modals
   const [showDailyReport, setShowDailyReport] = useState(false);
+  const [dailyReportInitialTab, setDailyReportInitialTab] = useState<'report' | 'closing'>('report');
   const [showMoneyTransferModal, setShowMoneyTransferModal] = useState(false);
   const [showConverter, setShowConverter] = useState(false);
   const [exchangeStationId, setExchangeStationId] = useState<string>(() =>
@@ -384,13 +386,13 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
           <div className="flex items-center gap-2 min-w-0">
             <Coins className="w-5 h-5 text-[#F5C84C] shrink-0" />
             <h2 className="text-base sm:text-lg font-black text-white truncate">
-              💰 {t('ledgerTitle', 'الصناديق (لاكيس)')}
+              💰 {t('ledgerTitle', 'الصناديق')}
             </h2>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/60 text-[#F5C84C] border border-[#F5C84C]/40 font-mono font-black shrink-0">
               {filteredTransactions.length}
             </span>
             <HelpPopover
-              title={t('ledgerHelpTitle', 'دفتر الصناديق (لاكيس)')}
+              title={t('ledgerHelpTitle', 'دفتر الصناديق')}
               text={t('ledgerHelpText', 'إيداع وسحب السيولة النقدية، إرسال واستقبال الحوالات بين المحطات، وصرف العملات (MAD ⇄ MRU).')}
             />
           </div>
@@ -465,7 +467,9 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
               data-btn-role-fixed="true"
               onClick={() => {
                 if (!exchangeStationId && stations[0]?.id) {
-                  setExchangeStationId(selectedStationId || stations[0].id);
+                  setExchangeStationId(
+                    selectedStationId && selectedStationId !== 'all' ? selectedStationId : stations[0].id
+                  );
                 }
                 setShowConverter(prev => !prev);
               }}
@@ -484,7 +488,10 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
           <div className="pt-2 border-t border-white/15 grid grid-cols-2 gap-2 animate-fadeIn">
             <button
               type="button"
-              onClick={() => setShowDailyReport(true)}
+              onClick={() => {
+                setDailyReportInitialTab('report');
+                setShowDailyReport(true);
+              }}
               className="btn-cancel flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5 text-[#F5C84C]" />
@@ -572,13 +579,31 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
                 </div>
                 {isNegative && (
                   <span className="text-[9px] font-black text-rose-300 block mt-0.5">
-                    {t('negativeBalanceWarning', 'عجز فلاكيس')}
+                    {t('negativeBalanceWarning', 'رصيد سالب (عجز فالصندوق)')}
                   </span>
                 )}
               </div>
             );
           })}
         </div>
+
+        {/* Direct End-of-Day Cashbox Audit (جرد الصندوق آخر النهار) */}
+        <button
+          type="button"
+          onClick={() => {
+            setDailyReportInitialTab('closing');
+            setShowDailyReport(true);
+          }}
+          className="w-full py-2.5 px-3 rounded-xl bg-black/55 hover:bg-black/75 border border-[#F5C84C]/45 text-[#F5C84C] font-black text-xs flex items-center justify-between gap-2 transition cursor-pointer"
+        >
+          <span className="flex items-center gap-1.5">
+            <Lock className="w-3.5 h-3.5 shrink-0" />
+            <span>🔒 جرد وإقفال الصندوق (آخر النهار)</span>
+          </span>
+          <span className="text-[10px] px-2 py-0.5 rounded-lg bg-[#F5C84C]/15 border border-[#F5C84C]/35 text-white font-bold">
+            مطابقة الدرج ←
+          </span>
+        </button>
 
         {/* اختيار المحطة يتم حصرياً من الشريط العلوي الموحد للمدير */}
       </div>
@@ -1037,6 +1062,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
       <DailyFinancialReportModal
         isOpen={showDailyReport}
         onClose={() => setShowDailyReport(false)}
+        initialTab={dailyReportInitialTab}
       />
 
       {/* Money Transfer / Hawala Modal */}
@@ -1052,7 +1078,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
             <div className="flex items-center gap-2.5 text-rose-400">
               <AlertTriangle className="w-7 h-7 shrink-0" />
               <div>
-                <h3 className="text-sm font-black text-white">تنبيه: لاكيس محطة الاستلام خاوية أو غير كافية!</h3>
+                <h3 className="text-sm font-black text-white">تنبيه: صندوق محطة الاستلام خاوي أو غير كافي!</h3>
                 <p className="text-xs text-white/75">المحطة: {pendingPayoutWarningTransfer.destination_station_name}</p>
               </div>
             </div>
@@ -1063,7 +1089,7 @@ export const LedgerView: React.FC<LedgerViewProps> = ({
               return (
                 <div className="bg-black/70 border border-rose-500/35 rounded-2xl p-3.5 space-y-1.5 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-white/75">الرصيد الحالي فلاكيس:</span>
+                    <span className="text-white/75">الرصيد الحالي فالصندوق:</span>
                     <span dir="ltr" className="font-mono font-black text-[#F5C84C]">
                       {currentBal.toLocaleString('en-US')} {curr}
                     </span>

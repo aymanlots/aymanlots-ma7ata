@@ -118,7 +118,7 @@ const MainApp: React.FC = () => {
       const fullText = `${rawText} ${metaText}`.trim();
 
       // 1. Explicit special cases
-      if (/عملية فلاكيس/.test(rawText)) return 'add';
+      if (/عملية فلاكيس|عملية فالصندوق/.test(rawText)) return 'add';
       if (/حوالة خارجة/.test(fullText)) return 'remove';
       if (/حوالة داخلة/.test(fullText)) return 'add';
       if (/الشراكة|شراكة|Partenariat|Partnership|Asociación/i.test(fullText) && !/سلعة/.test(rawText)) return 'add';
@@ -190,7 +190,7 @@ const MainApp: React.FC = () => {
         const isLargePrimaryAction =
           btn.getAttribute('type') === 'submit' ||
           btn.classList.contains('btn-hero-action') ||
-          /\+\s*إيداع|➕\s*إيداع|\+\s*زيادة|−\s*سحب|➖\s*سحب|-\s*سحب|تسجيل كولي جديد|كولي جديد|عملية فلاكيس|إضافة محطة|تسجيل الدخول|إنشاء حساب|تأكيد وإرسال|حفظ ونشر|تأكيد العملية|اعتماد وحفظ|حوالة داخلة|حوالة خارجة|سجل العمليات|سجل عمليات|سجل الحوالات/.test(
+          /\+\s*إيداع|➕\s*إيداع|\+\s*زيادة|−\s*سحب|➖\s*سحب|-\s*سحب|تسجيل كولي جديد|كولي جديد|عملية فلاكيس|عملية فالصندوق|إضافة محطة|تسجيل الدخول|إنشاء حساب|تأكيد وإرسال|حفظ ونشر|تأكيد العملية|اعتماد وحفظ|حوالة داخلة|حوالة خارجة|سجل العمليات|سجل عمليات|سجل الحوالات/.test(
             rawText
           );
 
@@ -246,26 +246,45 @@ const MainApp: React.FC = () => {
       });
     };
 
+    let rafId: number | null = null;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     const syncAll = () => {
       applyButtonRolesAndActiveState();
       applyDomLocalization(document.body, language);
     };
 
+    const scheduleSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          syncAll();
+        });
+      }, 45);
+    };
+
     syncAll();
 
-    const observer = new MutationObserver(() => {
-      syncAll();
+    const observer = new MutationObserver((mutations) => {
+      const hasRelevantChildChange = mutations.some((m) => m.type === 'childList');
+      if (hasRelevantChildChange || mutations.length > 0) {
+        scheduleSync();
+      }
     });
 
     observer.observe(document.body, {
       childList: true,
       subtree: true,
-      characterData: true,
       attributes: true,
       attributeFilter: ['class'],
     });
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [themeMode, language]);
 
   // Open first-time onboarding & guided tour automatically ONCE for new users
@@ -574,7 +593,13 @@ const MainApp: React.FC = () => {
         {/* Floating Bottom Navigation */}
         <BottomNav
           currentTab={currentTab}
-          onSelectTab={setCurrentTab}
+          onSelectTab={(tab) => {
+            setCurrentTab(tab);
+            setShowNewVoucher(false);
+            setShowNewParcel(false);
+            setShowQuickDeliver(false);
+            setShowPaywall(false);
+          }}
           onOpenNewVoucher={() => {
             if (isSubscriptionExpired) {
               showToast('انتهت صلاحية الاشتراك (30 يوماً) — لا يمكن إضافة أي سند مالي حتى التجديد.', 'error');

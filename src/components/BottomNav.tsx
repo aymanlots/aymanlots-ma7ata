@@ -94,7 +94,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               className="btn-add w-full flex items-center justify-between p-3.5 rounded-2xl transition active:scale-95 text-right cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <h4 className="text-sm font-black">{t('cashVoucherOption', 'عملية فلاكيس (إيداع / سحب)')}</h4>
+                <h4 className="text-sm font-black">{t('cashVoucherOption', 'عملية فالصندوق (إيداع / سحب)')}</h4>
               </div>
               <Coins className="w-5 h-5" />
             </button>

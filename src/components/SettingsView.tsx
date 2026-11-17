@@ -4,7 +4,6 @@ import { SUPPORTED_LANGUAGES, LanguageOption } from '../lib/i18n';
 import { 
   Settings, 
   Key, 
-  RotateCw, 
   Copy, 
   Check, 
   LogOut, 
@@ -26,7 +25,8 @@ import {
   X,
   Clock,
   CheckCircle2,
-  Mail
+  Mail,
+  Sparkles
 } from 'lucide-react';
 import { exportService } from '../services/exportService';
 import {
@@ -74,15 +74,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     parcels,
     stations,
     selectedStationId,
-    setSelectedStationId,
     addStation,
     updateStation,
     deleteStation,
-    renewInviteCode, 
     logout,
-    exchangeRate,
-    setExchangeRate,
-    updateUnclaimedDaysThreshold,
     updateUserContactNumbers,
     sendRegistrationEmailOtp,
     verifyRegistrationEmailOtp,
@@ -93,7 +88,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     daysUntilExpiry,
     subscriptionRemainingLabel,
     isSubscriptionExpired,
-    extendSubscription,
     startFiveMinuteSubscriptionTest,
     showToast,
     themeMode,
@@ -105,9 +99,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const dir = (language === 'ar' || language === 'hassaniya') ? 'rtl' : 'ltr';
 
-  const isInFree30Days = daysUntilExpiry > 0 && !isSubscriptionExpired;
   const isPlan2TwoStations =
-    !isInFree30Days &&
+    currentWorkspace?.plan_tier !== 'plan_1_full' &&
     (currentWorkspace?.plan_tier === 'plan_2_two_stations' ||
       currentWorkspace?.max_stations === 2 ||
       currentWorkspace?.max_workers_per_station === 1);
@@ -117,14 +110,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const isOnline = useOnlineStatus();
   const teamSectionRef = useRef<HTMLDivElement | null>(null);
 
-  // Collapsible sections state (collapsed by default)
+  // Clean 4-section collapsible controls + collapsed advanced/dangerous toggle
   const [openStationsSection, setOpenStationsSection] = useState(true);
-  const [openWorkspaceInfo, setOpenWorkspaceInfo] = useState(false);
   const [openBrandingSection, setOpenBrandingSection] = useState(false);
-  const [openExportSection, setOpenExportSection] = useState(false);
-  const [openLangSection, setOpenLangSection] = useState(false);
-  const [openTeamSection, setOpenTeamSection] = useState<boolean>(Boolean(initialOpenTeam));
+  const [openSubscriptionSection, setOpenSubscriptionSection] = useState(false);
   const [openContactSection, setOpenContactSection] = useState(false);
+  const [openLangThemeSection, setOpenLangThemeSection] = useState(false);
+  const [openDangerousSettings, setOpenDangerousSettings] = useState(false);
 
   // Unified Station + Workers creation state in Settings
   const [editingStationId, setEditingStationId] = useState<string | null>(null);
@@ -211,16 +203,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [initialOpenTeam, onTeamOpened]);
 
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [copiedWsId, setCopiedWsId] = useState(false);
-  const [isRegenerating, setIsRegenerating] = useState(false);
   const [showPasswordResetAdmin, setShowPasswordResetAdmin] = useState(false);
 
   // Add Worker form state
-  const [showAddWorkerForm, setShowAddWorkerForm] = useState(false);
   const [newWorkerName, setNewWorkerName] = useState('');
   const [newWorkerPhone, setNewWorkerPhone] = useState('');
-  const [newWorkerStationId, setNewWorkerStationId] = useState(stations[0]?.id || 'st-dakhla');
   const [isAddingWorker, setIsAddingWorker] = useState(false);
 
   // One-time temporary password alert box
@@ -231,45 +218,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   } | null>(null);
   const [copiedTempPass, setCopiedTempPass] = useState(false);
 
-  // Unclaimed days form state
-  const [unclaimedDaysInput, setUnclaimedDaysInput] = useState(
-    String(currentWorkspace?.unclaimed_days_threshold ?? 7)
-  );
-
   // Worker removal confirmation modal state
   const [workerToDelete, setWorkerToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isDeletingWorker, setIsDeletingWorker] = useState(false);
 
   // Demo data deletion confirmation modal state
   const [showDeleteDemoConfirm, setShowDeleteDemoConfirm] = useState(false);
-
-  const handleCopyInviteCode = () => {
-    if (!currentWorkspace?.invite_code) return;
-    navigator.clipboard.writeText(currentWorkspace.invite_code);
-    setCopiedCode(true);
-    showToast('تم نسخ رمز دعوة مساحة العمل بنجاح', 'success');
-    setTimeout(() => setCopiedCode(false), 2500);
-  };
-
-  const handleCopyShortId = () => {
-    if (!currentWorkspace?.short_id) return;
-    navigator.clipboard.writeText(currentWorkspace.short_id);
-    setCopiedWsId(true);
-    showToast(`تم نسخ المعرف القصير [${currentWorkspace.short_id}] بنجاح`, 'success');
-    setTimeout(() => setCopiedWsId(false), 2500);
-  };
-
-  const handleRegenerateCode = async () => {
-    setIsRegenerating(true);
-    try {
-      const newCode = await renewInviteCode();
-      showToast(`تم تجديد رمز الدعوة بنجاح: ${newCode}`, 'success');
-    } catch {
-      showToast('تعذر تجديد رمز الدعوة', 'error');
-    } finally {
-      setIsRegenerating(false);
-    }
-  };
 
   const handleConfirmDeleteWorker = async () => {
     if (!workerToDelete) return;
@@ -523,83 +477,65 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <PWAInstallButton />
         </div>
 
-        {/* Quick Light / Dark Mode Switcher */}
-        <div className="grid grid-cols-2 gap-2 pt-1">
-          <button
-            type="button"
-            data-btn-role="info"
-            data-btn-role-fixed="true"
-            data-btn-active={themeMode === 'light' ? 'true' : 'false'}
-            data-btn-active-fixed="true"
-            onClick={() => setThemeMode('light')}
-            className={`py-2 rounded-xl text-xs font-black transition cursor-pointer ${
-              themeMode === 'light' ? 'btn-gold' : 'btn-cancel'
-            }`}
-          >
-            ☀️ {t('dayMode', 'وضع النهار')}
-          </button>
-          <button
-            type="button"
-            data-btn-role="info"
-            data-btn-role-fixed="true"
-            data-btn-active={themeMode === 'dark' ? 'true' : 'false'}
-            data-btn-active-fixed="true"
-            onClick={() => setThemeMode('dark')}
-            className={`py-2 rounded-xl text-xs font-black transition cursor-pointer ${
-              themeMode === 'dark' ? 'btn-gold' : 'btn-cancel'
-            }`}
-          >
-            🌙 {t('nightMode', 'وضع الليل')}
-          </button>
-        </div>
-
-        {/* Connection status badge */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-            isOnline 
-              ? 'bg-[#006233]/30 text-[#2ECC71] border-[#006233]/50' 
-              : 'bg-rose-950/60 text-rose-300 border-rose-500/40 animate-pulse'
-          }`}>
-            {isOnline ? <Wifi className="w-3 h-3 text-[#2ECC71]" /> : <WifiOff className="w-3 h-3" />}
-            <span>{isOnline ? 'متصل' : 'أوفلاين'}</span>
-          </div>
-
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border bg-[#D4AF37]/20 text-[#F5C84C] border-[#D4AF37]/50 shadow-sm">
-            <ShieldCheck className="w-3 h-3 text-[#F5C84C]" />
-            <span>☁️ سحابة نشطة ⚡</span>
-          </div>
-        </div>
-
-        {/* Live 30-Day Subscription Timer & Status Bar */}
-        <div className="pt-2 border-t border-white/15 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-black flex-wrap">
-            <Clock className={`w-4 h-4 ${isSubscriptionExpired ? 'text-rose-400' : 'text-[#F5C84C]'}`} />
-            <span className="text-white/85">⏳ الاشتراك:</span>
-            <span className={`px-2 py-0.5 rounded-lg font-mono text-[11px] border ${
-              isSubscriptionExpired
-                ? 'bg-rose-950/80 text-rose-300 border-rose-500/40'
-                : daysUntilExpiry <= 3
-                ? 'bg-amber-950/80 text-[#F5C84C] border-[#F5C84C]/50'
-                : 'bg-[#F5C84C]/20 text-[#F5C84C] border-[#F5C84C]/40'
+        {/* Connection & Live Subscription Status Strip */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+              isOnline 
+                ? 'bg-[#006233]/30 text-[#2ECC71] border-[#006233]/50' 
+                : 'bg-rose-950/60 text-rose-300 border-rose-500/40 animate-pulse'
             }`}>
-              {isSubscriptionExpired ? 'منتهي' : subscriptionRemainingLabel}
-            </span>
+              {isOnline ? <Wifi className="w-3 h-3 text-[#2ECC71]" /> : <WifiOff className="w-3 h-3" />}
+              <span>{isOnline ? 'متصل' : 'أوفلاين'}</span>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border bg-[#D4AF37]/20 text-[#F5C84C] border-[#D4AF37]/50 shadow-sm">
+              <ShieldCheck className="w-3 h-3 text-[#F5C84C]" />
+              <span>☁️ مزامنة سحابية نشطة</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={onOpenPaywall}
-              className="px-3 py-1.5 rounded-xl bg-[#F5C84C] text-[#111111] text-[11px] font-black transition active:scale-95 cursor-pointer flex items-center gap-1"
-            >
-              <Crown className="w-3.5 h-3.5" />
-              <span>الباقات</span>
-            </button>
-          </div>
+          <span className={`px-2.5 py-1 rounded-full font-mono text-[10px] font-black border ${
+            isSubscriptionExpired
+              ? 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+              : daysUntilExpiry <= 3
+              ? 'bg-amber-950/80 text-[#F5C84C] border-[#F5C84C]/50'
+              : 'bg-[#F5C84C]/20 text-[#F5C84C] border-[#F5C84C]/40'
+          }`}>
+            ⏳ {isSubscriptionExpired ? 'الاشتراك منتهي' : subscriptionRemainingLabel}
+          </span>
         </div>
       </div>
 
-      {/* 1.5 قسم موحد ومنظم للـ Admin لإدارة المحطات والعمال في مكان واحد (بطونة واحدة واضحة: + إضافة محطة + عمالها) */}
+      {/* Platform Owner Panel Launcher (Super Admin only) */}
+      {userRole === 'platform_owner' && onOpenPlatformOwner && (
+        <div className="luxury-card rounded-[22px] p-4 space-y-2.5 border border-[#006233]/60">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-[#006233] text-white flex items-center justify-center font-black shrink-0">
+                <Crown className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-white">
+                  لوحة تحكم مالك المنصة (Super)
+                </h3>
+                <p className="text-[10px] text-white/75">
+                  متابعة وتفعيل اشتراكات جميع الوكالات والأدمينات
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenPlatformOwner}
+              className="btn-add px-3.5 py-2 rounded-xl font-black text-xs shadow-md active:scale-95 transition cursor-pointer shrink-0"
+            >
+              فتح اللوحة
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* القسم 1: محطاتي وعمالي */}
       <div ref={teamSectionRef} className="luxury-card rounded-[22px] p-4 space-y-3 border-2 border-[#D4AF37]/55 shadow-lg">
           <div
             role="button"
@@ -620,12 +556,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <h3 className="text-sm sm:text-base font-black text-white truncate">
-                    🏪👥 المحطات والعمال ({stations.length} محطات • {activeWorkersList.length} عمال)
+                    1. 🏪 محطاتي وعمالي ({stations.length} محطات • {activeWorkersList.length} عمال)
                   </h3>
-                  <HelpPopover text="قسم موحد ومنظم لإضافة المحطة مع عاملها أو عامليها، تعديل السمية، إعطاء الصلاحية وكود الدخول للعامل، أو مسح المحطة نهائياً من كل مكان." />
+                  <HelpPopover text="قسم موحد لإضافة المحطات، تعيين العمال وتوليد أكواد الدخول المباشر، تعديل الأسماء أو حذف محطة." />
                 </div>
                 <p className="text-[10px] text-[#E6C37A] font-bold mt-0.5 truncate">
-                  زيد المحطة + العامل ديالها، مسح، وبدل السمية من بلاصة وحدة
+                  زيد المحطة + العامل ديالها، بدّل السمية أو ولّد كود الدخول
                 </p>
               </div>
             </div>
@@ -963,7 +899,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               type="button"
                               onClick={() => {
                                 setStationForQuickWorkerId(isAddingWorkerHere ? null : st.id);
-                                setNewWorkerStationId(st.id);
                                 setNewWorkerName('');
                                 setNewWorkerPhone('');
                               }}
@@ -1283,288 +1218,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           )}
         </div>
 
-      {/* 2. Platform Owner Panel Launcher */}
-      {userRole === 'platform_owner' && onOpenPlatformOwner && (
-        <div className="luxury-card rounded-[22px] p-4 space-y-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#006233] text-white flex items-center justify-center font-black shrink-0">
-              <Crown className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-xs font-black text-white">
-                لوحة تحكم مالك المنصة
-              </h3>
-              <p className="text-[10px] text-white/75">
-                إدارة وتفعيل اشتراكات جميع مدراء مساحات العمل
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={onOpenPlatformOwner}
-            className="w-full py-2 rounded-xl font-black text-xs shadow-md active:scale-95 transition"
-          >
-            فتح لوحة المشرف
-          </button>
-        </div>
-      )}
-
-      {/* 3. Who Can See My Data - Privacy and Collaboration Button Card */}
-      <div 
-        onClick={onOpenPrivacyModal}
-        className="luxury-card rounded-[22px] hover:border-white/30 p-4 transition cursor-pointer group active:scale-[0.99]"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#006233]/30 border border-[#006233]/50 text-[#2ECC71] flex items-center justify-center shrink-0">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <h3 className="text-sm sm:text-base font-black text-white">
-                🛡️ الخصوصية والأمان
-              </h3>
-              <HelpPopover text="إدارة المعرف القصير، طلبات انضمام العمال، وحماية بيانات محطتك من التسريب." />
-              {pendingJoinRequestsCount > 0 && (
-                <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-rose-600 text-white animate-pulse">
-                  {pendingJoinRequestsCount} طلب
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3.b Collapsible: رقم الهاتف والواتساب المعتمد للحساب (تغيير الرقم لحماية الحساب) */}
-      <div className="luxury-card rounded-[22px] p-4">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setOpenContactSection(prev => !prev)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setOpenContactSection(prev => !prev);
-            }
-          }}
-          className="flex items-center justify-between gap-2 cursor-pointer select-none"
-        >
-          <div className="flex items-center gap-1.5">
-            <MessageCircle className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h3 className="text-sm sm:text-base font-black text-white">📞 الهاتف و Gmail</h3>
-            <HelpPopover text="رقم الهاتف، الواتساب، وبريد Gmail المعتمدة لتسجيل الدخول واستعادة كلمة المرور." />
-          </div>
-          <ChevronDown
-            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
-              openContactSection ? 'rotate-180' : ''
-            }`}
-          />
-        </div>
-
-        {openContactSection && (
-          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs">
-
-            {contactSuccessSummary && (
-              <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs font-bold flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <div>{contactSuccessSummary}</div>
-                </div>
-              </div>
-            )}
-
-            {contactOtpStep === 'form' ? (
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  setContactSuccessSummary(null);
-                  const cleanMail = contactEmailInput.trim().toLowerCase();
-                  if (!cleanMail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanMail)) {
-                    showToast('يرجى إدخال عنوان بريد إلكتروني (Gmail) صحيح', 'error');
-                    return;
-                  }
-                  if (!contactPhoneInput.trim() || contactPhoneInput.trim().length < 8) {
-                    showToast('يرجى إدخال رقم هاتف صحيح (8 أرقام على الأقل)', 'error');
-                    return;
-                  }
-
-                  setIsUpdatingContact(true);
-                  try {
-                    const otpRes = await sendRegistrationEmailOtp(cleanMail, currentUser?.name || 'مدير المحطة');
-                    if (otpRes.success) {
-                      setContactPreviewCode(otpRes.previewCode);
-                      setContactOtpInput('');
-                      setContactOtpStep('verify');
-                      showToast(`تم إرسال رسالة التأكيد (كود من 6 أرقام) إلى بريدك ${cleanMail}`, 'info');
-                    } else {
-                      // If email server is not reachable, still allow direct update if valid
-                      const res = await updateUserContactNumbers(
-                        contactPhoneInput,
-                        contactWhatsappInput,
-                        undefined,
-                        cleanMail
-                      );
-                      if (res.success) {
-                        setContactSuccessSummary(
-                          `تم تأكيد وتحديث بيانات الحساب بنجاح ✓ — الهاتف: ${contactPhoneInput.trim()} | Gmail: ${cleanMail}`
-                        );
-                      }
-                    }
-                  } finally {
-                    setIsUpdatingContact(false);
-                  }
-                }}
-                className="space-y-3"
-              >
-                <div>
-                  <label className="block text-white/90 font-bold mb-1">
-                    رقم الهاتف المعتمد لتسجيل الدخول *
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={contactPhoneInput}
-                    onChange={e => setContactPhoneInput(e.target.value)}
-                    placeholder="مثال: 0612345678 أو 212612345678"
-                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs"
-                    dir="ltr"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-white/90 font-bold mb-1">
-                    رقم الواتساب المعتمد للحساب *
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={contactWhatsappInput}
-                    onChange={e => setContactWhatsappInput(e.target.value)}
-                    placeholder="مثال: 212612345678"
-                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs"
-                    dir="ltr"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-white/90 font-bold mb-1 flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-[#F5C84C]" />
-                    <span>البريد الإلكتروني (Gmail) المعتمد للحساب *</span>
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={contactEmailInput}
-                    onChange={e => setContactEmailInput(e.target.value)}
-                    placeholder="example@gmail.com"
-                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2.5 text-white font-mono text-xs text-left"
-                    dir="ltr"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isUpdatingContact}
-                  className="w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
-                >
-                  {isUpdatingContact
-                    ? 'جاري إرسال رسالة التأكيد...'
-                    : 'حفظ وتحديث رقم الهاتف وبريد Gmail (مع رسالة التأكيد)'}
-                </button>
-              </form>
-            ) : (
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const cleanCode = contactOtpInput.trim();
-                  if (cleanCode.length !== 6) {
-                    showToast('يرجى إدخال رمز التأكيد المكون من 6 أرقام', 'error');
-                    return;
-                  }
-                  setIsUpdatingContact(true);
-                  try {
-                    const cleanMail = contactEmailInput.trim().toLowerCase();
-                    const verifyRes = await verifyRegistrationEmailOtp(cleanMail, cleanCode);
-                    if (!verifyRes.success) {
-                      showToast(verifyRes.error || 'رمز التأكيد غير صحيح', 'error');
-                      return;
-                    }
-                    const res = await updateUserContactNumbers(
-                      contactPhoneInput,
-                      contactWhatsappInput,
-                      undefined,
-                      cleanMail
-                    );
-                    if (res.success) {
-                      setContactOtpStep('form');
-                      setContactSuccessSummary(
-                        `تم تأكيد وتحديث بيانات حسابك بنجاح ✓ — رقم الهاتف: ${contactPhoneInput.trim()} | الواتساب: ${contactWhatsappInput.trim()} | بريد Gmail: ${cleanMail}`
-                      );
-                    }
-                  } finally {
-                    setIsUpdatingContact(false);
-                  }
-                }}
-                className="p-3.5 rounded-2xl bg-black/60 border border-[#F5C84C]/40 space-y-3"
-              >
-                <div className="text-center space-y-1.5">
-                  <div className="w-9 h-9 mx-auto rounded-full bg-[#F5C84C]/20 border border-[#F5C84C]/40 flex items-center justify-center text-[#F5C84C]">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <p className="font-black text-white text-xs">
-                    تم إرسال رسالة التأكيد إلى بريدك الإلكتروني:
-                  </p>
-                  <p className="font-mono text-[#F5C84C] text-xs font-bold" dir="ltr">
-                    {contactEmailInput.trim().toLowerCase()}
-                  </p>
-                  <p className="text-[11px] text-white/75">
-                    أدخل رمز التأكيد المكون من 6 أرقام لتأكيد تغيير رقم الهاتف أو بريد Gmail المعتمد للحساب:
-                  </p>
-                  {contactPreviewCode && (
-                    <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-200 text-[11px] font-bold">
-                      رمز التأكيد الفوري: <span className="font-mono text-sm text-white">{contactPreviewCode}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    required
-                    value={contactOtpInput}
-                    onChange={e => setContactOtpInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                    placeholder="• • • • • •"
-                    className="w-full bg-black/80 border-2 border-[#F5C84C] rounded-xl px-3 py-2.5 text-white font-mono text-base font-black tracking-widest text-center"
-                    dir="ltr"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="submit"
-                    disabled={isUpdatingContact}
-                    className="flex-1 py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
-                  >
-                    {isUpdatingContact ? 'جاري التأكيد والحفظ...' : 'تأكيد الرمز وحفظ التعديلات ✓'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setContactOtpStep('form')}
-                    className="px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition cursor-pointer"
-                  >
-                    رجوع
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 4 & 5. تم دمج إدارة المحطات والعمال في القسم (1.5) ومعلومات وهوية مساحة العمل في قسم الخصوصية والأمان (3) لمنع التكرار */}
-
-      {/* 5.b Collapsible: تخصيص اسم وشعار المحطة في الملصق الحراري وبونات الـ PDF (Custom Branding) */}
+      {/* القسم 2: شعار وكالتي والتييكت */}
       <div className="luxury-card rounded-[22px] p-4">
         <div
           role="button"
@@ -1578,12 +1232,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           }}
           className="flex items-center justify-between gap-2 cursor-pointer select-none"
         >
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <Store className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h3 className="text-sm sm:text-base font-black text-white">
-              🏷️ شعار التيكيت والـ PDF
-            </h3>
-            <HelpPopover text="تخصيص اسم وشعار وكالتك ليظهرا في الملصقات الحرارية (10×10) وجميع بونات الـ PDF." />
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-[#F5C84C]/20 border border-[#F5C84C]/45 text-[#F5C84C] flex items-center justify-center shrink-0">
+              <ImagePlus className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3 className="text-sm sm:text-base font-black text-white">
+                  2. 🎨 شعار وكالتي والتييكت
+                </h3>
+                <HelpPopover text="تخصيص اسم وشعار وكالتك ليظهرا في الملصقات الحرارية (10×10) وجميع بونات الـ PDF." />
+              </div>
+              <p className="text-[10px] text-white/70 font-bold truncate">
+                الاسم واللوغو ورقم الهاتف على التييكت والبونات
+              </p>
+            </div>
           </div>
           <ChevronDown
             className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
@@ -1608,7 +1271,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 setIsSavingBranding(false);
               }
             }}
-            className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs"
+            className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs animate-fadeIn"
           >
             {isBrandingLockedToApp ? (
               <div className="p-3.5 rounded-2xl bg-amber-950/60 border border-[#F5C84C]/50 space-y-2.5 text-xs">
@@ -1620,11 +1283,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   />
                   <div>
                     <div className="text-xs font-black text-white" dir="ltr">{OFFICIAL_APP_BRAND_NAME}</div>
-                    <div className="text-[11px] text-[#F5C84C]">الفترة التجريبية والباك الأول (149 درهم): لوغو واسم التطبيق الرسمي ثابت في كل المطبوعات</div>
+                    <div className="text-[11px] text-[#F5C84C]">الباك الأول: لوغو واسم التطبيق الرسمي ثابت في كل المطبوعات</div>
                   </div>
                 </div>
                 <p className="text-[11px] text-white/85 leading-relaxed">
-                  في <strong>الفترة التجريبية (30 يوم)</strong> وفي <strong>الباك الأول (149 درهم)</strong> تخرج جميع الملصقات الحرارية والتقارير وجميع الـ PDF باسم التطبيق الرسمي <strong dir="ltr">{OFFICIAL_APP_BRAND_NAME}</strong> ولوغو التطبيق الرسمي المعتمد أعلاه ولا يمكن تغييرهما. لتغيير السمية والتصويرة ديال الشركة ديالك وتعميمها فالبلاصة على كلشي، قم بتفعيل <strong>الباك الثاني (299 درهم)</strong>.
+                  لتخصيص اسم الوكالة والشعار الخاص بك في كل الملصقات الحرارية والتقارير وملفات PDF، قم بالترقية إلى <strong>الباك الثاني</strong>.
                 </p>
                 <button
                   type="button"
@@ -1638,14 +1301,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="btn-gold w-full py-2.5 rounded-xl font-black text-xs cursor-pointer"
                 >
                   {userRole === 'platform_owner'
-                    ? '👑 تفعيل الباك الثاني (299 درهم) لفتح تخصيص اللوغو والاسم'
-                    : '👑 طلب تفعيل الباك الثاني (299 درهم) لفتح تخصيص اللوغو والاسم'}
+                    ? '👑 تفعيل الباك الثاني لفتح تخصيص اللوغو والاسم'
+                    : '👑 طلب تفعيل الباك الثاني لفتح تخصيص اللوغو والاسم'}
                 </button>
               </div>
             ) : (
               <>
                 <p className="text-[11px] text-white/80 leading-relaxed">
-                  أنت على <strong>الباك الثاني (299 درهم)</strong>: أي تغيير في اسم شركتك أو صورتها يتعمم فوراً في البلاصة على <strong>الملصقات الحرارية، التقارير، وجميع ملفات الـ PDF</strong>.
+                  أي تغيير في اسم شركتك أو شعارها يتعمم فوراً على <strong>الملصقات الحرارية، التقارير، وجميع ملفات الـ PDF</strong>.
                 </p>
 
                 <div>
@@ -1767,7 +1430,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <button
                   type="submit"
                   disabled={isSavingBranding}
-                  className="btn-gold w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50"
+                  className="btn-gold w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
                 >
                   {isSavingBranding ? 'جاري التعميم والحفظ...' : 'حفظ وتعميم الاسم واللوغو في كل الملصقات والتقارير والـ PDF'}
                 </button>
@@ -1777,92 +1440,458 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         )}
       </div>
 
-      {/* 6. Collapsible: تصدير ونسخ بيانات مساحة العمل */}
+      {/* القسم 3: اشتراكي، الأمان والنسخ الاحتياطي */}
       <div className="luxury-card rounded-[22px] p-4">
         <div
           role="button"
           tabIndex={0}
-          onClick={() => setOpenExportSection(prev => !prev)}
+          onClick={() => setOpenSubscriptionSection(prev => !prev)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              setOpenExportSection(prev => !prev);
+              setOpenSubscriptionSection(prev => !prev);
             }
           }}
           className="flex items-center justify-between gap-2 cursor-pointer select-none"
         >
-          <div className="flex items-center gap-1.5">
-            <Download className="w-4 h-4 text-[#F5C84C] shrink-0" />
-            <h3 className="text-sm sm:text-base font-black text-white">📥 التصدير والنسخ (PDF)</h3>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-emerald-950/70 border border-emerald-500/45 text-emerald-400 flex items-center justify-center shrink-0">
+              <Crown className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3 className="text-sm sm:text-base font-black text-white">
+                  3. 💳 اشتراكي والنسخ الاحتياطي
+                </h3>
+                {pendingJoinRequestsCount > 0 && (
+                  <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-rose-600 text-white animate-pulse">
+                    {pendingJoinRequestsCount} طلب
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-white/70 font-bold truncate">
+                الباقات، الخصوصية، رقم الهاتف و Gmail، وتحميل نسخ PDF
+              </p>
+            </div>
           </div>
           <ChevronDown
             className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
-              openExportSection ? 'rotate-180' : ''
+              openSubscriptionSection ? 'rotate-180' : ''
             }`}
           />
         </div>
 
-        {openExportSection && (
-          <div className="mt-3.5 pt-3 border-t border-white/15 grid grid-cols-1 gap-2">
-
-            {/* Export Cash Transactions PDF */}
-            <button
-              onClick={() => {
-                if (transactions.length === 0) {
-                  showToast('لا توجد معاملات نقدية لتصديرها حالياً', 'info');
-                  return;
-                }
-                exportService.exportTransactionsToPDF(transactions, currentWorkspace?.name || 'Sahara📦 Express');
-                showToast('تم فتح وتحميل تقرير سجل الصندوق بصيغة PDF', 'success');
-              }}
-              className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
-            >
-              <Download className="w-4 h-4 shrink-0" />
-              <div>
-                <span className="font-bold text-xs block">تقرير سجلات الصندوق والمعاملات (PDF)</span>
+        {openSubscriptionSection && (
+          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs animate-fadeIn">
+            {/* حالة الاشتراك والباقات */}
+            <div className="p-3 rounded-2xl bg-black/55 border border-[#F5C84C]/35 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-black">
+                <Clock className={`w-4 h-4 ${isSubscriptionExpired ? 'text-rose-400' : 'text-[#F5C84C]'}`} />
+                <span className="text-white/90">حالة الاشتراك:</span>
+                <span className="text-[#F5C84C]">
+                  {isSubscriptionExpired ? 'منتهي' : subscriptionRemainingLabel}
+                </span>
               </div>
-            </button>
+              <button
+                type="button"
+                onClick={onOpenPaywall}
+                className="btn-gold px-3.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1 cursor-pointer"
+              >
+                <Crown className="w-3.5 h-3.5" />
+                <span>عرض وتغيير الباقة</span>
+              </button>
+            </div>
 
-            {/* Export Parcels PDF */}
-            <button
-              onClick={() => {
-                if (parcels.length === 0) {
-                  showToast('لا توجد سجلات كوليات لتصديرها حالياً', 'info');
-                  return;
-                }
-                exportService.exportParcelsToPDF(parcels, currentWorkspace?.name || 'Sahara📦 Express');
-                showToast('تم فتح وتحميل تقرير سجلات الكوليات بصيغة PDF', 'success');
-              }}
-              className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
-            >
-              <Download className="w-4 h-4 shrink-0" />
-              <div>
-                <span className="font-bold text-xs block">تقرير سجلات الكوليات والشحنات (PDF)</span>
-              </div>
-            </button>
+            {/* الخصوصية والأمان */}
+            {onOpenPrivacyModal && (
+              <button
+                type="button"
+                onClick={onOpenPrivacyModal}
+                className="w-full p-3 rounded-2xl bg-black/50 border border-white/15 hover:border-emerald-500/45 flex items-center justify-between gap-2 text-right transition cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-[#2ECC71] shrink-0" />
+                  <div>
+                    <span className="font-black text-white block">🛡️ الخصوصية والأمان</span>
+                    <span className="text-[10px] text-white/70">إدارة المعرف القصير وطلبات انضمام العمال</span>
+                  </div>
+                </div>
+                {pendingJoinRequestsCount > 0 && (
+                  <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-rose-600 text-white">
+                    {pendingJoinRequestsCount} طلب
+                  </span>
+                )}
+              </button>
+            )}
 
-            {/* Export Full Workspace Backup PDF */}
-            <button
-              onClick={() => {
-                if (!currentWorkspace) {
-                  showToast('تعذر تصدير النسخة الاحتياطية', 'error');
-                  return;
-                }
-                exportService.exportFullWorkspacePDF(currentWorkspace, transactions, parcels);
-                showToast('تم فتح وتحميل النسخة الاحتياطية الشاملة لبيانات مساحة العمل (PDF)', 'success');
-              }}
-              className="flex items-center gap-3 p-3 rounded-xl transition text-right active:scale-95"
-            >
-              <Download className="w-4 h-4 shrink-0" />
-              <div>
-                <span className="font-bold text-xs block">نسخة احتياطية شاملة لبيانات مساحة العمل (PDF)</span>
+            {/* تحديث الهاتف و Gmail */}
+            <div className="rounded-2xl bg-black/45 border border-white/15 p-3 space-y-2.5">
+              <button
+                type="button"
+                onClick={() => setOpenContactSection(prev => !prev)}
+                className="w-full flex items-center justify-between gap-2 cursor-pointer text-right"
+              >
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="w-4 h-4 text-[#F5C84C] shrink-0" />
+                  <span className="font-black text-white">📞 الهاتف، الواتساب وبريد Gmail</span>
+                </div>
+                <ChevronDown
+                  className={`w-4 h-4 text-[#F5C84C] transition-transform duration-200 ${
+                    openContactSection ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {openContactSection && (
+                <div className="pt-2.5 border-t border-white/10 space-y-3">
+                  {contactSuccessSummary && (
+                    <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs font-bold flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <div>{contactSuccessSummary}</div>
+                    </div>
+                  )}
+
+                  {contactOtpStep === 'form' ? (
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        setContactSuccessSummary(null);
+                        const cleanMail = contactEmailInput.trim().toLowerCase();
+                        if (!cleanMail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanMail)) {
+                          showToast('يرجى إدخال عنوان بريد إلكتروني (Gmail) صحيح', 'error');
+                          return;
+                        }
+                        if (!contactPhoneInput.trim() || contactPhoneInput.trim().length < 8) {
+                          showToast('يرجى إدخال رقم هاتف صحيح (8 أرقام على الأقل)', 'error');
+                          return;
+                        }
+
+                        setIsUpdatingContact(true);
+                        try {
+                          const otpRes = await sendRegistrationEmailOtp(cleanMail, currentUser?.name || 'مدير المحطة');
+                          if (otpRes.success) {
+                            setContactPreviewCode(otpRes.previewCode);
+                            setContactOtpInput('');
+                            setContactOtpStep('verify');
+                            showToast(`تم إرسال رسالة التأكيد (كود من 6 أرقام) إلى بريدك ${cleanMail}`, 'info');
+                          } else {
+                            const res = await updateUserContactNumbers(
+                              contactPhoneInput,
+                              contactWhatsappInput,
+                              undefined,
+                              cleanMail
+                            );
+                            if (res.success) {
+                              setContactSuccessSummary(
+                                `تم تأكيد وتحديث بيانات الحساب بنجاح ✓ — الهاتف: ${contactPhoneInput.trim()} | Gmail: ${cleanMail}`
+                              );
+                            }
+                          }
+                        } finally {
+                          setIsUpdatingContact(false);
+                        }
+                      }}
+                      className="space-y-2.5"
+                    >
+                      <div>
+                        <label className="block text-white/90 font-bold mb-1">رقم الهاتف المعتمد لتسجيل الدخول *</label>
+                        <input
+                          type="tel"
+                          required
+                          value={contactPhoneInput}
+                          onChange={e => setContactPhoneInput(e.target.value)}
+                          placeholder="0612345678 أو 212612345678"
+                          className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs"
+                          dir="ltr"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-white/90 font-bold mb-1">رقم الواتساب المعتمد للحساب *</label>
+                        <input
+                          type="tel"
+                          required
+                          value={contactWhatsappInput}
+                          onChange={e => setContactWhatsappInput(e.target.value)}
+                          placeholder="212612345678"
+                          className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs"
+                          dir="ltr"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-white/90 font-bold mb-1 flex items-center gap-1.5">
+                          <Mail className="w-3.5 h-3.5 text-[#F5C84C]" />
+                          <span>البريد الإلكتروني (Gmail) المعتمد للحساب *</span>
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={contactEmailInput}
+                          onChange={e => setContactEmailInput(e.target.value)}
+                          placeholder="example@gmail.com"
+                          className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-white font-mono text-xs text-left"
+                          dir="ltr"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isUpdatingContact}
+                        className="btn-gold w-full py-2.5 rounded-xl font-black text-xs shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
+                      >
+                        {isUpdatingContact
+                          ? 'جاري إرسال رسالة التأكيد...'
+                          : 'حفظ وتحديث رقم الهاتف وبريد Gmail'}
+                      </button>
+                    </form>
+                  ) : (
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const cleanCode = contactOtpInput.trim();
+                        if (cleanCode.length !== 6) {
+                          showToast('يرجى إدخال رمز التأكيد المكون من 6 أرقام', 'error');
+                          return;
+                        }
+                        setIsUpdatingContact(true);
+                        try {
+                          const cleanMail = contactEmailInput.trim().toLowerCase();
+                          const verifyRes = await verifyRegistrationEmailOtp(cleanMail, cleanCode);
+                          if (!verifyRes.success) {
+                            showToast(verifyRes.error || 'رمز التأكيد غير صحيح', 'error');
+                            return;
+                          }
+                          const res = await updateUserContactNumbers(
+                            contactPhoneInput,
+                            contactWhatsappInput,
+                            undefined,
+                            cleanMail
+                          );
+                          if (res.success) {
+                            setContactOtpStep('form');
+                            setContactSuccessSummary(
+                              `تم تأكيد وتحديث بيانات حسابك بنجاح ✓ — الهاتف: ${contactPhoneInput.trim()} | Gmail: ${cleanMail}`
+                            );
+                          }
+                        } finally {
+                          setIsUpdatingContact(false);
+                        }
+                      }}
+                      className="p-3 rounded-xl bg-black/60 border border-[#F5C84C]/40 space-y-2.5"
+                    >
+                      <p className="font-black text-white text-center text-xs">
+                        أدخل رمز التأكيد المرسل إلى {contactEmailInput.trim().toLowerCase()}:
+                      </p>
+                      {contactPreviewCode && (
+                        <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-200 text-[11px] font-bold text-center">
+                          رمز التأكيد الفوري: <span className="font-mono text-sm text-white">{contactPreviewCode}</span>
+                        </div>
+                      )}
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        required
+                        value={contactOtpInput}
+                        onChange={e => setContactOtpInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                        placeholder="• • • • • •"
+                        className="w-full bg-black/80 border-2 border-[#F5C84C] rounded-xl px-3 py-2 text-white font-mono text-base font-black tracking-widest text-center"
+                        dir="ltr"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          disabled={isUpdatingContact}
+                          className="btn-gold flex-1 py-2 rounded-xl font-black text-xs cursor-pointer"
+                        >
+                          {isUpdatingContact ? 'جاري الحفظ...' : 'تأكيد وحفظ ✓'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setContactOtpStep('form')}
+                          className="btn-cancel px-3 py-2 rounded-xl text-xs font-bold cursor-pointer"
+                        >
+                          رجوع
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* النسخ الاحتياطي PDF */}
+            <div className="space-y-2 pt-1">
+              <span className="text-[11px] font-black text-[#F5C84C] block">
+                📥 النسخ الاحتياطي وتصدير التقارير (PDF):
+              </span>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (transactions.length === 0) {
+                      showToast('لا توجد معاملات نقدية لتصديرها حالياً', 'info');
+                      return;
+                    }
+                    exportService.exportTransactionsToPDF(transactions, currentWorkspace?.name || 'Sahara📦 Express');
+                    showToast('تم فتح وتحميل تقرير سجل الصندوق بصيغة PDF', 'success');
+                  }}
+                  className="btn-cancel flex items-center gap-2.5 p-2.5 rounded-xl text-right font-bold text-xs cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-[#F5C84C] shrink-0" />
+                  <span>تقرير سجلات الصندوق والمعاملات (PDF)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (parcels.length === 0) {
+                      showToast('لا توجد سجلات كوليات لتصديرها حالياً', 'info');
+                      return;
+                    }
+                    exportService.exportParcelsToPDF(parcels, currentWorkspace?.name || 'Sahara📦 Express');
+                    showToast('تم فتح وتحميل تقرير سجلات الكوليات بصيغة PDF', 'success');
+                  }}
+                  className="btn-cancel flex items-center gap-2.5 p-2.5 rounded-xl text-right font-bold text-xs cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-[#F5C84C] shrink-0" />
+                  <span>تقرير سجلات الكوليات والشحنات (PDF)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!currentWorkspace) {
+                      showToast('تعذر تصدير النسخة الاحتياطية', 'error');
+                      return;
+                    }
+                    exportService.exportFullWorkspacePDF(currentWorkspace, transactions, parcels);
+                    showToast('تم فتح وتحميل النسخة الاحتياطية الشاملة لبيانات مساحة العمل (PDF)', 'success');
+                  }}
+                  className="btn-gold flex items-center gap-2.5 p-2.5 rounded-xl text-right font-black text-xs cursor-pointer"
+                >
+                  <Download className="w-4 h-4 shrink-0" />
+                  <span>نسخة احتياطية شاملة لبيانات وكالتي (PDF)</span>
+                </button>
               </div>
-            </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* 7. تغيير اللغة متاح مباشرة عبر أيقونة الكرة الأرضية 🌐 في الشريط العلوي */}
+      {/* القسم 4: اللغة والمظهر */}
+      <div className="luxury-card rounded-[22px] p-4">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpenLangThemeSection(prev => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpenLangThemeSection(prev => !prev);
+            }
+          }}
+          className="flex items-center justify-between gap-2 cursor-pointer select-none"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-sky-950/60 border border-sky-400/40 text-sky-300 flex items-center justify-center shrink-0">
+              <Languages className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-black text-white">
+                4. 🌐 اللغة والمظهر
+              </h3>
+              <p className="text-[10px] text-white/70 font-bold truncate">
+                لغة التطبيق، وضع النهار / الليل، وجولة الشرح السريعة
+              </p>
+            </div>
+          </div>
+          <ChevronDown
+            className={`w-5 h-5 text-[#F5C84C] shrink-0 transition-transform duration-200 ${
+              openLangThemeSection ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+
+        {openLangThemeSection && (
+          <div className="mt-3.5 pt-3 border-t border-white/15 space-y-3 text-xs animate-fadeIn">
+            {/* Theme Mode */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-black text-[#F5C84C] block">
+                {t('appAppearance', 'مظهر التطبيق')}:
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  data-btn-role="info"
+                  data-btn-role-fixed="true"
+                  data-btn-active={themeMode === 'light' ? 'true' : 'false'}
+                  data-btn-active-fixed="true"
+                  onClick={() => setThemeMode('light')}
+                  className={`py-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                    themeMode === 'light' ? 'btn-gold' : 'btn-cancel'
+                  }`}
+                >
+                  ☀️ {t('dayMode', 'وضع النهار')}
+                </button>
+                <button
+                  type="button"
+                  data-btn-role="info"
+                  data-btn-role-fixed="true"
+                  data-btn-active={themeMode === 'dark' ? 'true' : 'false'}
+                  data-btn-active-fixed="true"
+                  onClick={() => setThemeMode('dark')}
+                  className={`py-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                    themeMode === 'dark' ? 'btn-gold' : 'btn-cancel'
+                  }`}
+                >
+                  🌙 {t('nightMode', 'وضع الليل')}
+                </button>
+              </div>
+            </div>
+
+            {/* Language Selector */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-black text-[#F5C84C] block">
+                لغة التطبيق:
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {SUPPORTED_LANGUAGES.map((langOpt: LanguageOption) => {
+                  const active = language === langOpt.code;
+                  return (
+                    <button
+                      key={langOpt.code}
+                      type="button"
+                      onClick={() => setLanguage(langOpt.code)}
+                      className={`py-2 px-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 border transition cursor-pointer ${
+                        active
+                          ? 'btn-gold border-[#F5C84C]'
+                          : 'bg-black/50 border-white/15 text-white/85 hover:border-white/30'
+                      }`}
+                    >
+                      <span>{langOpt.flag}</span>
+                      <span>{langOpt.nativeName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Guided Setup Tour Launcher (Kept intact!) */}
+            {onOpenGuidedTour && (
+              <button
+                type="button"
+                onClick={onOpenGuidedTour}
+                className="btn-cancel w-full py-2.5 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 cursor-pointer border border-[#F5C84C]/35 text-[#F5C84C]"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>إعادة فتح جولة الشرح والترحيب</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Password Reset Requests Admin Modal */}
       <ForgotPasswordModal
@@ -1871,34 +1900,62 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         isAdminView={true}
       />
 
-      {/* 9. مسح البيانات وإرجاع التطبيق جديد (Admin Only) */}
+      {/* إعدادات متقدمة وخطيرة (مطوية افتراضياً لحماية البيانات من المسح الغلط) */}
       {(userRole === 'owner' || userRole === 'platform_owner') && (
-        <div className="luxury-card rounded-[22px] p-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0">
-              <Trash2 className="w-4 h-4" />
-            </div>
-            <div className="flex items-center gap-1.5 min-w-0">
-              <h3 className="text-sm font-black text-white truncate">🗑️ مسح البيانات</h3>
-              <HelpPopover text="مسح كافة البيانات والتجارب وإرجاع التطبيق فارغاً من الصفر (مع خيار تحميل نسخة احتياطية PDF أولاً)." />
-            </div>
-          </div>
-
+        <div className="luxury-card rounded-[22px] p-3.5 border border-rose-500/30">
           <button
             type="button"
-            onClick={() => setShowDeleteDemoConfirm(true)}
-            className="btn-delete px-4 py-2 rounded-xl font-black text-xs shadow-md active:scale-95 transition shrink-0 cursor-pointer"
+            onClick={() => setOpenDangerousSettings(prev => !prev)}
+            className="w-full flex items-center justify-between gap-2 text-right cursor-pointer"
           >
-            مسح الكل
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span className="text-xs font-black text-rose-300">
+                ⚠️ إعدادات متقدمة وخطيرة
+              </span>
+            </div>
+            <ChevronDown
+              className={`w-4 h-4 text-rose-300 shrink-0 transition-transform duration-200 ${
+                openDangerousSettings ? 'rotate-180' : ''
+              }`}
+            />
           </button>
+
+          {openDangerousSettings && (
+            <div className="mt-3 pt-3 border-t border-rose-500/25 space-y-2.5 text-xs animate-fadeIn">
+              <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="font-black text-white block">🗑️ مسح جميع البيانات وإرجاع التطبيق جديداً</span>
+                  <span className="text-[10px] text-rose-200/80">
+                    يمسح المحطات والكوليات والرحلات والسندات (مع خيار نسخة PDF أولاً)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteDemoConfirm(true)}
+                  className="btn-delete px-3.5 py-2 rounded-xl font-black text-xs shadow-md active:scale-95 transition shrink-0 cursor-pointer"
+                >
+                  مسح الكل
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={startFiveMinuteSubscriptionTest}
+                className="btn-cancel w-full py-2 px-3 rounded-xl text-[11px] font-bold text-amber-200 border border-amber-500/30 cursor-pointer"
+              >
+                🧪 محاكاة تنبيه انتهاء الاشتراك (تجربة 5 دقائق)
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* 10. Logout */}
+      {/* Logout */}
       <div className="text-center pt-1">
         <button
           onClick={logout}
-          className="btn-cancel w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition"
+          className="btn-cancel w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
         >
           <LogOut className="w-4 h-4" />
           <span>تسجيل الخروج من الحساب</span>

@@ -63,6 +63,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
   const [driverCommission, setDriverCommission] = useState('0');
   const [otherExpense, setOtherExpense] = useState('0');
   const [expenseCurrency, setExpenseCurrency] = useState<'MAD' | 'MRU'>('MAD');
+  const [deductFromCashbox, setDeductFromCashbox] = useState(false);
 
   const trip = trips.find(t => t.id === tripProp?.id) || tripProp;
 
@@ -73,6 +74,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
       setDriverCommission(String(trip.driver_commission ?? 0));
       setOtherExpense(String(trip.other_expense ?? 0));
       setExpenseCurrency((trip.expense_currency as 'MAD' | 'MRU') || 'MAD');
+      setDeductFromCashbox(Boolean(trip.deduct_from_cashbox));
       setShowExpensesEditor(false);
     }
   }, [trip?.id]);
@@ -158,6 +160,7 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
       driverCommission: Math.max(0, parseFloat(driverCommission) || 0),
       otherExpense: Math.max(0, parseFloat(otherExpense) || 0),
       expenseCurrency,
+      deductFromCashbox,
     });
     setShowExpensesEditor(false);
   };
@@ -377,13 +380,23 @@ export const TripDispatchModal: React.FC<TripDispatchModalProps> = ({
                     <option value="MAD">MAD</option>
                     <option value="MRU">MRU</option>
                   </select>
-                  <button
-                    type="submit"
-                    className="btn-gold flex-1 py-1.5 rounded-lg font-black text-xs"
-                  >
-                    ✅ حفظ مصاريف الطريق
-                  </button>
+                  <label className="flex items-center gap-1.5 text-[10px] font-bold text-white/90 cursor-pointer flex-1">
+                    <input
+                      type="checkbox"
+                      checked={deductFromCashbox}
+                      disabled={Boolean(trip.deduct_from_cashbox)}
+                      onChange={e => setDeductFromCashbox(e.target.checked)}
+                      className="accent-[#D4AF37] w-3.5 h-3.5 rounded"
+                    />
+                    <span>{trip.deduct_from_cashbox ? '✓ مخصوم من الصندوق' : 'خصم من صندوق الانطلاق'}</span>
+                  </label>
                 </div>
+                <button
+                  type="submit"
+                  className="btn-gold w-full py-1.5 rounded-lg font-black text-xs"
+                >
+                  ✅ حفظ مصاريف الطريق
+                </button>
               </form>
             )}
           </div>

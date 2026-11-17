@@ -42,6 +42,7 @@ import {
   LogOut,
   Edit3,
   LogIn,
+  Unlock,
 } from 'lucide-react';
 
 interface PlatformOwnerDashboardProps {
@@ -50,7 +51,7 @@ interface PlatformOwnerDashboardProps {
   isEmbeddedPage?: boolean;
 }
 
-type FilterTab = 'all' | 'active' | 'expiring_soon' | 'stopped';
+type FilterTab = 'all' | 'active' | 'needs_followup' | 'expiring_soon' | 'stopped' | 'deleted';
 type MainViewTab = 'companies' | 'live_activity';
 type CompanyDetailTab =
   | 'subscription'
@@ -79,6 +80,7 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
     updateWorkspaceNotes,
     switchWorkspacePlan,
     deleteWorkspaceFromPlatform,
+    unlockDeletedAccountCredentials,
     refreshPlatformWorkspaces,
     logout,
     showToast,
@@ -95,6 +97,15 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [busyWorkspaceId, setBusyWorkspaceId] = useState<string | null>(null);
   const [confirmDeleteWsId, setConfirmDeleteWsId] = useState<string | null>(null);
+
+  // Super Admin 1-click unlock tool for old deleted accounts (Gmail / Phone)
+  const [showUnlockPanel, setShowUnlockPanel] = useState(false);
+  const [unlockIdentifierInput, setUnlockIdentifierInput] = useState('');
+  const [isUnlockingCredentials, setIsUnlockingCredentials] = useState(false);
+  const [unlockResultBanner, setUnlockResultBanner] = useState<{
+    type: 'success' | 'warning' | 'error';
+    text: string;
+  } | null>(null);
 
   // Exact date & custom days adjustment state
   const [customDaysInput, setCustomDaysInput] = useState<number>(30);
@@ -152,6 +163,7 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
   }, [allWorkspaces]);
 
   const getWorkspaceStatusInfo = (ws: Workspace) => {
+    const isDeleted = Boolean(ws.deleted);
     const sub = allSubscriptions?.find((s: Subscription) => s.workspace_id === ws.id);
     const endDateStr =
       ws.subscription_end_date ||
@@ -164,38 +176,46 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
     const diffMs = endMs - Date.now();
     const daysLeft = Math.max(0, Math.ceil(diffMs / 86400000));
     const rawStatus = ws.subscription_status || sub?.status || 'active';
-    const isSuspended = rawStatus === 'suspended';
-    const isExpired = !isSuspended && diffMs <= 0;
-    const isExpiringSoon = !isSuspended && !isExpired && daysLeft <= 3;
+    const isSuspended = !isDeleted && rawStatus === 'suspended';
+    const isExpired = !isDeleted && !isSuspended && diffMs <= 0;
+    const isExpiringSoon = !isDeleted && !isSuspended && !isExpired && daysLeft <= 3;
 
     return {
       endDateStr,
       daysLeft,
+      isDeleted,
       isSuspended,
       isExpired,
       isExpiringSoon,
-      isActive: !isSuspended && !isExpired,
+      isActive: !isDeleted && !isSuspended && !isExpired,
     };
   };
 
   const stats = useMemo(() => {
     let activeCount = 0;
+    let needsFollowupCount = 0;
     let expiringSoonCount = 0;
     let stoppedCount = 0;
+    let deletedCount = 0;
     mergedWorkspaces.forEach((ws) => {
       const info = getWorkspaceStatusInfo(ws);
-      if (info.isSuspended || info.isExpired) {
+      if (info.isDeleted) {
+        deletedCount++;
+      } else if (info.isSuspended || info.isExpired) {
         stoppedCount++;
       } else {
         activeCount++;
+        if ((ws.stations_count ?? 0) === 0) needsFollowupCount++;
         if (info.isExpiringSoon) expiringSoonCount++;
       }
     });
     return {
       total: mergedWorkspaces.length,
       activeCount,
+      needsFollowupCount,
       expiringSoonCount,
       stoppedCount,
+      deletedCount,
     };
   }, [mergedWorkspaces, allSubscriptions]);
 
@@ -258,8 +278,10 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
   const filteredWorkspaces = mergedWorkspaces.filter((ws: Workspace, index: number) => {
     const info = getWorkspaceStatusInfo(ws);
     if (filterTab === 'active' && !info.isActive) return false;
+    if (filterTab === 'needs_followup' && !(info.isActive && (ws.stations_count ?? 0) === 0)) return false;
     if (filterTab === 'expiring_soon' && !info.isExpiringSoon) return false;
     if (filterTab === 'stopped' && !info.isSuspended && !info.isExpired) return false;
+    if (filterTab === 'deleted' && !info.isDeleted) return false;
 
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
@@ -413,14 +435,39 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
     try {
       const res = await deleteWorkspaceFromPlatform(ws.id);
       if (!res.success) {
-        showToast(res.error || 'تعذر حذف الشركة من Firebase', 'error');
+        showToast(res.error || 'تعذر حذف الحساب من السحابة', 'error');
       } else {
         setConfirmDeleteWsId(null);
         setSelectedWorkspaceId(null);
-        showToast(`تم حذف حساب المدير "${ws.name}" نهائياً`, 'info');
+        setFilterTab('deleted');
       }
     } finally {
       setBusyWorkspaceId(null);
+    }
+  };
+
+  const handleUnlockCredentials = async (
+    identifiers: { email?: string; phone?: string },
+    targetWsId?: string
+  ) => {
+    setIsUnlockingCredentials(true);
+    setUnlockResultBanner(null);
+    try {
+      const res = await unlockDeletedAccountCredentials(identifiers, targetWsId);
+      setUnlockResultBanner({
+        type: res.status === 'active_conflict' ? 'warning' : res.success ? 'success' : 'error',
+        text: res.message,
+      });
+      showToast(res.message, res.status === 'active_conflict' ? 'error' : res.success ? 'success' : 'error');
+      if (res.success && !targetWsId) {
+        setUnlockIdentifierInput('');
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'حدث خطأ أثناء فك الحظر';
+      setUnlockResultBanner({ type: 'error', text: msg });
+      showToast(msg, 'error');
+    } finally {
+      setIsUnlockingCredentials(false);
     }
   };
 
@@ -525,6 +572,42 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
         `السلام عليكم، إشعار من إدارة *Sahara📦 Express* 🚚\n\n` +
         `🔒 انتهت مدة اشتراك حساب *${ws.name}* (${ws.short_id}) وأصبح الحساب في *وضع المشاهدة فقط* (بياناتكم القديمة محفوظة للمشاهدة).\n` +
         `لإعادة تفعيل الإضافة والتعديل، المرجو تجديد الاشتراك (149 درهم للباك الأول أو 299 درهم للباك الثاني).`;
+    }
+
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const sendFollowUpWhatsApp = (ws: Workspace) => {
+    const phone = formatPhoneForWhatsApp(ws.owner_whatsapp || ws.owner_phone);
+    if (!phone) {
+      showToast('رقم هاتف أو واتساب مدير هذه الشركة غير مسجل', 'error');
+      return;
+    }
+    const info = getWorkspaceStatusInfo(ws);
+    const ownerLabel = ws.owner_name || 'أخي المدير';
+    const agencyLabel = ws.name || 'وكالتك';
+    const stationsCount = ws.stations_count ?? 0;
+
+    let message = '';
+    if (info.isExpired || info.isSuspended) {
+      message =
+        `السلام عليكم سي ${ownerLabel}، تحية طيبة من إدارة *Sahara📦 Express* 🚚\n\n` +
+        `لاحظنا أن اشتراك وكالة *${agencyLabel}* انتهت مدته (${info.daysLeft === 0 ? 'في وضع المشاهدة فقط' : 'موقف'}). واش نجددو ليك الباك اللي بغيتي باش ترجع تخدم بشكل عادي؟\n` +
+        `• الباك الأول (149 درهم)\n• الباك الثاني (299 درهم)`;
+    } else if (stationsCount === 0) {
+      message =
+        `السلام عليكم سي ${ownerLabel}، مرحباً بك في *Sahara📦 Express* 🚚\n\n` +
+        `شفناك تسجلتي بوكالة *${agencyLabel}* (وعندك الباك الثاني مفتوح فابور لمدة شهر كامل 🎁)، ولكن باقي ما زدتيش المحطات ديالك!\n\n` +
+        `واش بغيتي نعاونك دابا باش تضيف محطة الانطلاق ومحطة الوصول وتبدا تقيّد أول كولية في أقل من دقيقتين؟`;
+    } else if (info.isExpiringSoon) {
+      message =
+        `السلام عليكم سي ${ownerLabel}، تذكير ودي من *Sahara📦 Express* 🚚\n` +
+        `باقي غير *${info.daysLeft} أيام* فالاشتراك ديال وكالة *${agencyLabel}*. واش نبداو التمديد باش ما يوقفش العمل عند العمال؟`;
+    } else {
+      message =
+        `السلام عليكم سي ${ownerLabel}، كيداير مع الخدمة في *${agencyLabel}* على *Sahara📦 Express*؟ 🚚\n` +
+        `بغينا غير نطمنو واش كلشي غادي مزيان مع المحطات والعمال، وإلى احتاجيتي أي مساعدة أنا رهن الإشارة.`;
     }
 
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
@@ -641,8 +724,8 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
       {/* ========================================================================= */}
       {!selectedWorkspace && mainTab === 'companies' && (
         <>
-          {/* Summary Counters */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0">
+          {/* Summary Counters (6 categories: All, Active, Needs Follow-up, Expiring Soon, Stopped, Deleted) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setFilterTab('all')}
@@ -679,6 +762,24 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
 
             <button
               type="button"
+              onClick={() => setFilterTab('needs_followup')}
+              className={`p-2.5 rounded-2xl border text-right transition ${
+                filterTab === 'needs_followup'
+                  ? 'bg-yellow-500/20 border-yellow-400 text-white'
+                  : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-yellow-300 font-bold">🟡 سجّل وما كملش</span>
+                <AlertTriangle className="w-4 h-4 text-yellow-400" />
+              </div>
+              <p className="text-lg font-black text-yellow-300 mt-0.5 font-mono">
+                {stats.needsFollowupCount}
+              </p>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setFilterTab('expiring_soon')}
               className={`p-2.5 rounded-2xl border text-right transition ${
                 filterTab === 'expiring_soon'
@@ -700,37 +801,120 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
               onClick={() => setFilterTab('stopped')}
               className={`p-2.5 rounded-2xl border text-right transition ${
                 filterTab === 'stopped'
-                  ? 'bg-rose-500/15 border-rose-500 text-white'
+                  ? 'bg-amber-600/20 border-rose-500 text-white'
                   : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="text-[11px] text-rose-300 font-bold">متوقفة (مشاهدة فقط)</span>
-                <AlertTriangle className="w-4 h-4 text-rose-400" />
+                <span className="text-[11px] text-rose-300 font-bold">موقفين / منتهيين</span>
+                <Ban className="w-4 h-4 text-rose-400" />
               </div>
               <p className="text-lg font-black text-rose-400 mt-0.5 font-mono">
                 {stats.stoppedCount}
               </p>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterTab('deleted')}
+              className={`p-2.5 rounded-2xl border text-right transition ${
+                filterTab === 'deleted'
+                  ? 'bg-slate-700/40 border-rose-400 text-white'
+                  : 'bg-[#0B1220] border-slate-800 text-slate-300 hover:border-slate-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-slate-300 font-bold">ممسوحين (الأرشيف)</span>
+                <Trash2 className="w-4 h-4 text-rose-400" />
+              </div>
+              <p className="text-lg font-black text-slate-200 mt-0.5 font-mono">
+                {stats.deletedCount}
+              </p>
+            </button>
           </div>
 
-          {/* Search Bar */}
-          <div className="relative shrink-0">
-            <input
-              type="text"
-              placeholder="ابحث باسم المدير، اسم الوكالة، رقم الهاتف، أو البريد..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#0B1220] border border-slate-700 rounded-2xl px-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 pl-10"
-            />
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          {/* Search Bar + Super Admin Credential Unlock Toggle */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="ابحث باسم المدير، اسم الوكالة، رقم الهاتف، أو البريد..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[#0B1220] border border-slate-700 rounded-2xl px-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 pl-10"
+              />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowUnlockPanel(!showUnlockPanel);
+                setUnlockResultBanner(null);
+              }}
+              className={`flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-2xl border text-xs font-black transition shrink-0 ${
+                showUnlockPanel
+                  ? 'bg-amber-500 text-slate-950 border-amber-400'
+                  : 'bg-[#0B1220] text-amber-300 border-amber-500/40 hover:bg-amber-500/10'
+              }`}
+            >
+              <Unlock className="w-4 h-4" />
+              <span>فك حظر Gmail أو رقم قديم</span>
+            </button>
           </div>
+
+          {/* Super Admin 1-Click Tool: Unlock Previously Deleted Gmail or Phone Without Opening Firebase */}
+          {showUnlockPanel && (
+            <div className="bg-[#0B1220] border border-amber-500/40 rounded-2xl p-3 space-y-2 shrink-0">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-[11px] font-bold text-amber-300">
+                  🔓 إلى تمسح شي حساب من قبل ومازال كيقول ليك &quot;مسجل بالفعل&quot;، حط هنا الـ Gmail أو رقم الهاتف ديالو باش تفك ليه البلوك بلا ما تقيس حسابات وحدين آخرين:
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  type="text"
+                  dir="ltr"
+                  placeholder="example@gmail.com أو 0612345678"
+                  value={unlockIdentifierInput}
+                  onChange={(e) => setUnlockIdentifierInput(e.target.value)}
+                  className="flex-1 bg-[#0F172A] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-amber-500 text-left"
+                />
+                <button
+                  type="button"
+                  disabled={isUnlockingCredentials || !unlockIdentifierInput.trim()}
+                  onClick={() => {
+                    const val = unlockIdentifierInput.trim();
+                    handleUnlockCredentials(
+                      val.includes('@') ? { email: val } : { phone: val }
+                    );
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition disabled:opacity-50 shrink-0"
+                >
+                  {isUnlockingCredentials ? 'جارِ الفحص والفك...' : 'فك البلوك الآن'}
+                </button>
+              </div>
+              {unlockResultBanner && (
+                <div
+                  className={`p-2.5 rounded-xl text-[11px] font-bold border ${
+                    unlockResultBanner.type === 'success'
+                      ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                      : unlockResultBanner.type === 'warning'
+                      ? 'bg-amber-950/50 border-amber-500/40 text-amber-200'
+                      : 'bg-rose-950/50 border-rose-500/40 text-rose-300'
+                  }`}
+                >
+                  {unlockResultBanner.text}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Numbered Managers / Subscriptions List */}
           <div className="flex-1 overflow-y-auto pr-1 space-y-2.5">
             {filteredWorkspaces.length === 0 ? (
               <div className="p-8 text-center text-slate-400 bg-[#0B1220] rounded-2xl border border-slate-800 text-xs">
-                لا توجد حسابات مدراء مسجلة مطابقة للبحث حالياً.
+                لا توجد حسابات مدراء مسجلة مطابقة للبحث أو التصنيف حالياً.
               </div>
             ) : (
               filteredWorkspaces.map((ws: Workspace) => {
@@ -742,7 +926,9 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
                   <div
                     key={ws.id}
                     className={`p-3.5 rounded-2xl border transition flex flex-col gap-3 ${
-                      info.isSuspended || info.isExpired
+                      info.isDeleted
+                        ? 'bg-slate-900/60 border-slate-700/80'
+                        : info.isSuspended || info.isExpired
                         ? 'bg-rose-950/20 border-rose-500/40'
                         : info.isExpiringSoon
                         ? 'bg-amber-950/20 border-amber-500/40'
@@ -753,7 +939,9 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
                       <div className="flex items-start gap-2.5 min-w-0 flex-1">
                         <div
                           className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center font-black shadow-md shrink-0 border ${
-                            info.isSuspended || info.isExpired
+                            info.isDeleted
+                              ? 'bg-slate-800 border-slate-600 text-slate-300'
+                              : info.isSuspended || info.isExpired
                               ? 'bg-rose-500/20 border-rose-500/50 text-rose-300'
                               : 'bg-amber-500/20 border-amber-500/40 text-amber-400'
                           }`}
@@ -785,23 +973,43 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
                                 <span>{ws.owner_phone}</span>
                               </span>
                             )}
+                            {ws.owner_email && (
+                              <span className="flex items-center gap-1 font-mono text-sky-400">
+                                <Mail className="w-3 h-3" />
+                                <span>{ws.owner_email}</span>
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                            <span
-                              className={`text-[10px] px-2 py-0.5 rounded-full font-black border ${
-                                isPlan2
-                                  ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-                                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              }`}
-                            >
-                              {isPlan2
-                                ? 'الباك الأول: 149 درهم (2 محطات + 2 عمال + التيكيت بسمية التطبيق)'
-                                : 'الباك الثاني: 299 درهم (بزاف ديال المحطات والعمال + التيكيت بسميتو)'}
-                            </span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-bold">
-                              🏢 المحطات المفتوحة: {ws.stations_count ?? 0}
-                            </span>
+                            {info.isDeleted ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-black border bg-slate-800 text-slate-300 border-slate-600">
+                                🧹 بياناته ممسوحة — يقدر يعاود يسجل بنفس النمرة و Gmail
+                              </span>
+                            ) : (
+                              <>
+                                {(ws.stations_count ?? 0) === 0 ? (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-yellow-500/20 text-yellow-300 border border-yellow-400/50">
+                                    🟡 سجّل وما كملش (0 محطات)
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/45">
+                                    🟢 خدام مزيان ({ws.stations_count} محطات)
+                                  </span>
+                                )}
+                                <span
+                                  className={`text-[10px] px-2 py-0.5 rounded-full font-black border ${
+                                    isPlan2
+                                      ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  }`}
+                                >
+                                  {isPlan2
+                                    ? 'الباك الأول: 149 درهم (2 محطات + 2 عمال + التيكيت بسمية التطبيق)'
+                                    : 'الباك الثاني: 299 درهم (بزاف ديال المحطات والعمال + التيكيت بسميتو)'}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -810,7 +1018,9 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
                       <div className="text-left shrink-0">
                         <div
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-black border ${
-                            info.isSuspended
+                            info.isDeleted
+                              ? 'bg-slate-800 text-rose-300 border-rose-500/40'
+                              : info.isSuspended
                               ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                               : info.isExpired
                               ? 'bg-rose-950/60 text-rose-300 border-rose-500/40'
@@ -819,35 +1029,68 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
                               : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                           }`}
                         >
-                          {info.isSuspended ? (
-                            <span>⛔ متوقف</span>
+                          {info.isDeleted ? (
+                            <span>🗑️ ممسوح</span>
+                          ) : info.isSuspended ? (
+                            <span>⛔ موقف من الإدارة</span>
                           ) : info.isExpired ? (
-                            <span>🔒 انتهت 30 يوم (مشاهدة فقط)</span>
+                            <span>🔒 منتهي (مشاهدة فقط)</span>
                           ) : (
                             <span>✅ نشط ({info.daysLeft} يوم)</span>
                           )}
                         </div>
                         <p className="text-[10px] text-slate-400 font-mono mt-1">
-                          ينتهي: {new Date(info.endDateStr).toLocaleDateString('ar-MA')}
+                          {info.isDeleted
+                            ? `تمسح: ${new Date(ws.deleted_at || ws.last_active_at || ws.created_at).toLocaleDateString('ar-MA')}`
+                            : `ينتهي: ${new Date(info.endDateStr).toLocaleDateString('ar-MA')}`}
                         </p>
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 flex-wrap">
                       <span className="text-[10px] text-slate-400">
                         آخر نشاط: {formatRelativeTime(ws.last_active_at || ws.created_at)}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedWorkspaceId(ws.id);
-                          setCompanyDetailTab('subscription');
-                        }}
-                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition"
-                      >
-                        <span>إدارة الاشتراك والنشاط</span>
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {!info.isDeleted && (ws.owner_whatsapp || ws.owner_phone) && (
+                          <button
+                            type="button"
+                            onClick={() => sendFollowUpWhatsApp(ws)}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/45 font-black text-xs transition cursor-pointer"
+                            title="متابعة المدير عبر واتساب برسالة جاهزة"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span>متابعة واتساب</span>
+                          </button>
+                        )}
+                        {info.isDeleted && (ws.owner_email || ws.owner_phone) && (
+                          <button
+                            type="button"
+                            disabled={isUnlockingCredentials}
+                            onClick={() =>
+                              handleUnlockCredentials(
+                                { email: ws.owner_email, phone: ws.owner_phone },
+                                ws.id
+                              )
+                            }
+                            className="flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 font-black text-xs transition"
+                          >
+                            <Unlock className="w-3.5 h-3.5" />
+                            <span>فك البلوك (Gmail/الرقم)</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedWorkspaceId(ws.id);
+                            setCompanyDetailTab(info.isDeleted ? 'owner_security' : 'subscription');
+                          }}
+                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition"
+                        >
+                          <span>{info.isDeleted ? 'تفاصيل الأرشيف' : 'إدارة الاشتراك والنشاط'}</span>
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -958,6 +1201,39 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
             <div className="space-y-3.5">
               {(() => {
                 const info = getWorkspaceStatusInfo(selectedWorkspace);
+                if (info.isDeleted) {
+                  return (
+                    <div className="bg-slate-900/80 p-4 rounded-2xl border border-rose-500/40 space-y-3">
+                      <div className="flex items-center gap-2 text-rose-300 font-black text-xs">
+                        <Trash2 className="w-4 h-4" />
+                        <span>حساب ممسوح (محفوظ في الأرشيف فقط)</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        تم حذف بيانات هذا الحساب (المحطات، الكوليات، الصناديق، العمال، وبيانات الدخول) نهائياً، وبقي مسجلاً هنا في الأرشيف فقط. يمكن لصاحبه الآن التسجيل من جديد بنفس رقم الهاتف و Gmail بحساب جديد وفارغ.
+                      </p>
+                      {(selectedWorkspace.owner_email || selectedWorkspace.owner_phone) && (
+                        <button
+                          type="button"
+                          disabled={isUnlockingCredentials}
+                          onClick={() =>
+                            handleUnlockCredentials(
+                              {
+                                email: selectedWorkspace.owner_email,
+                                phone: selectedWorkspace.owner_phone,
+                              },
+                              selectedWorkspace.id
+                            )
+                          }
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition"
+                        >
+                          <Unlock className="w-3.5 h-3.5" />
+                          <span>فك حظر البريد والرقم والتأكد من تنظيف البقايا</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
                 return (
                   <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
                     <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1017,8 +1293,10 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
               })()}
 
               {/* Package Switcher: Pack 1 (149 DH) vs Pack 2 (299 DH) */}
-              <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
-                <div className="flex items-center gap-2 text-amber-400 font-black text-xs">
+              {!selectedWorkspace.deleted && (
+                <>
+                  <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2 text-amber-400 font-black text-xs">
                   <Layers className="w-4 h-4" />
                   <span>اختيار وتفعيل الباك لهذا المدير:</span>
                 </div>
@@ -1167,6 +1445,8 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
                   </div>
                 </div>
               </div>
+                </>
+              )}
             </div>
           )}
 
@@ -1283,57 +1563,83 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800 flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => sendWhatsAppNotification(selectedWorkspace, 'activated')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    <span>إشعار تفعيل الاشتراك</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => sendWhatsAppNotification(selectedWorkspace, 'expiring')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold transition"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>تذكير انتهاء 30 يوم</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => sendWhatsAppNotification(selectedWorkspace, 'suspended')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-bold transition"
-                  >
-                    <ShieldAlert className="w-3.5 h-3.5" />
-                    <span>إشعار توقف الحساب</span>
-                  </button>
-                </div>
+                {!selectedWorkspace.deleted && (
+                  <div className="pt-2 border-t border-slate-800 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => sendWhatsAppNotification(selectedWorkspace, 'activated')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>إشعار تفعيل الاشتراك</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendWhatsAppNotification(selectedWorkspace, 'expiring')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold transition"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>تذكير انتهاء 30 يوم</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendWhatsAppNotification(selectedWorkspace, 'suspended')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-bold transition"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                      <span>إشعار توقف الحساب</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-2.5">
-                <div className="flex items-center gap-2 text-amber-400 font-black text-xs">
-                  <Lock className="w-4 h-4" />
-                  <span>تعيين كلمة مرور جديدة للمدير (مشفرة بـ bcrypt):</span>
+              {selectedWorkspace.deleted ? (
+                <div className="bg-slate-900/70 p-4 rounded-2xl border border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs text-slate-300 font-bold">
+                    تم مسح بيانات الدخول القديمة لهذا الحساب؛ يمكنه إنشاء كلمة سر جديدة عند إعادة التسجيل.
+                  </span>
+                  {(selectedWorkspace.owner_email || selectedWorkspace.owner_phone) && (
+                    <button
+                      type="button"
+                      disabled={isUnlockingCredentials}
+                      onClick={() =>
+                        handleUnlockCredentials(
+                          { email: selectedWorkspace.owner_email, phone: selectedWorkspace.owner_phone },
+                          selectedWorkspace.id
+                        )
+                      }
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition"
+                    >
+                      <Unlock className="w-3.5 h-3.5" />
+                      <span>فك البلوك عن الإيميل/الرقم</span>
+                    </button>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="كلمة المرور الجديدة للمدير (6 أحرف أو أرقام على الأقل)..."
-                    value={newOwnerPassword}
-                    onChange={(e) => setNewOwnerPassword(e.target.value)}
-                    className="bg-[#0F172A] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white flex-1 font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleResetOwnerPassword(selectedWorkspace)}
-                    disabled={isResettingPassword || !newOwnerPassword.trim()}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shrink-0 disabled:opacity-50"
-                  >
-                    {isResettingPassword ? 'جارِ الحفظ...' : 'حفظ الكلمة'}
-                  </button>
+              ) : (
+                <div className="bg-[#0B1220] p-4 rounded-2xl border border-slate-800 space-y-2.5">
+                  <div className="flex items-center gap-2 text-amber-400 font-black text-xs">
+                    <Lock className="w-4 h-4" />
+                    <span>تعيين كلمة مرور جديدة للمدير (مشفرة بـ bcrypt):</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="كلمة المرور الجديدة للمدير (6 أحرف أو أرقام على الأقل)..."
+                      value={newOwnerPassword}
+                      onChange={(e) => setNewOwnerPassword(e.target.value)}
+                      className="bg-[#0F172A] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white flex-1 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleResetOwnerPassword(selectedWorkspace)}
+                      disabled={isResettingPassword || !newOwnerPassword.trim()}
+                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition shrink-0 disabled:opacity-50"
+                    >
+                      {isResettingPassword ? 'جارِ الحفظ...' : 'حفظ الكلمة'}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -1378,20 +1684,46 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
             <div className="bg-rose-950/20 border border-rose-500/40 p-4 rounded-2xl space-y-3">
               <div className="flex items-center gap-2 text-rose-400 font-black text-xs">
                 <AlertTriangle className="w-4 h-4" />
-                <span>حذف حساب المدير نهائياً من التطبيق:</span>
+                <span>حذف حساب المدير وبياناته (مع إبقائه في الأرشيف):</span>
               </div>
-              {confirmDeleteWsId === selectedWorkspace.id ? (
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                عند الحذف، يتم مسح بيانات هذه الشركة فقط (المحطات، الكوليات، الصناديق، العمال، وسجل الدخول الخاص بها) ولا يُمس أي حساب آخر. يمكن لهذا المدير بعدها إعادة التسجيل بنفس رقم الهاتف و Gmail بحساب جديد فارغ، وسيبقى اسمه ظاهراً عندك في قائمة &quot;ممسوحين&quot;.
+              </p>
+              {selectedWorkspace.deleted ? (
+                <div className="p-3 bg-slate-900/70 border border-slate-700 rounded-xl flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-300">
+                    ✅ تم حذف بيانات هذا الحساب مسبقاً وهو محفوظ في أرشيف الممسوحين.
+                  </span>
+                  {(selectedWorkspace.owner_email || selectedWorkspace.owner_phone) && (
+                    <button
+                      type="button"
+                      disabled={isUnlockingCredentials}
+                      onClick={() =>
+                        handleUnlockCredentials(
+                          { email: selectedWorkspace.owner_email, phone: selectedWorkspace.owner_phone },
+                          selectedWorkspace.id
+                        )
+                      }
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition"
+                    >
+                      <Unlock className="w-3.5 h-3.5" />
+                      <span>فك حظر البريد والرقم الآن</span>
+                    </button>
+                  )}
+                </div>
+              ) : confirmDeleteWsId === selectedWorkspace.id ? (
                 <div className="p-3 bg-rose-500/20 border border-rose-500/50 rounded-xl space-y-2">
                   <p className="text-xs font-bold text-rose-300">
-                    هل أنت متأكد من حذف حساب "{selectedWorkspace.name}" نهائياً؟
+                    هل أنت متأكد من حذف بيانات حساب &quot;{selectedWorkspace.name}&quot; نهائياً؟ (سيبقى في لائحة الممسوحين ويمكنه التسجيل من جديد)
                   </p>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      disabled={busyWorkspaceId === selectedWorkspace.id}
                       onClick={() => handleDeleteWorkspacePermanently(selectedWorkspace)}
-                      className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition"
+                      className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition disabled:opacity-50"
                     >
-                      نعم، احذف نهائياً
+                      {busyWorkspaceId === selectedWorkspace.id ? 'جارِ المسح...' : 'نعم، احذف بياناته نهائياً'}
                     </button>
                     <button
                       type="button"
@@ -1409,7 +1741,7 @@ export const PlatformOwnerDashboard: React.FC<PlatformOwnerDashboardProps> = ({
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-black text-xs transition"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>حذف حساب "{selectedWorkspace.name}" نهائياً</span>
+                  <span>حذف بيانات &quot;{selectedWorkspace.name}&quot; نهائياً</span>
                 </button>
               )}
             </div>

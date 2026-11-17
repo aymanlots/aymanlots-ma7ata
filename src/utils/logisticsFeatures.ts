@@ -59,6 +59,12 @@ export function formatTrackingCodeNumeric(code?: string | null, parcelNumber?: n
   return raw || '0000101';
 }
 
+export function buildPublicTrackingUrl(code?: string | null, parcelNumber?: number): string {
+  const numericCode = formatTrackingCodeNumeric(code, parcelNumber);
+  const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
+  return `${origin}/?track=${encodeURIComponent(numericCode)}`;
+}
+
 export function extractTrackingQueryCode(rawInput: string): string {
   const raw = String(rawInput || '').trim();
   if (!raw) return '';
@@ -105,6 +111,19 @@ export interface ParcelSourceOwnershipInfo {
   shortBadgeLabel: string;
   fullBannerTitle: string;
   workerScanAlert: string;
+}
+
+export function isRealPartnershipParcel(
+  parcel: Parcel,
+  currentWorkspaceId?: string | null
+): boolean {
+  const myWsId = currentWorkspaceId || '';
+  return Boolean(
+    parcel.is_partnership_parcel ||
+      parcel.is_collaborator_data ||
+      (parcel.partner_workspace_id && parcel.partner_workspace_id !== myWsId) ||
+      (parcel.partner_origin_workspace_id && parcel.partner_origin_workspace_id !== myWsId)
+  );
 }
 
 /**
@@ -187,6 +206,7 @@ export function canAcceptOrRejectPartnerParcel(
   userRole?: string,
   userAssignedStationId?: string | null
 ): boolean {
+  if (!isRealPartnershipParcel(parcel, currentWorkspaceId)) return false;
   if (parcel.partner_acceptance_status !== 'pending_approval') return false;
 
   // القاعدة 1: العامل ممنوع نهائياً من القبول أو الرفض في غرفة الشراكة! المدير فقط من يقبل أو يرفض.
@@ -248,7 +268,9 @@ export function getPartnershipSixStepInfo(parcel: Parcel, trip?: Trip | null): P
   let stepLabelAr = '2. مقبول (بانتظار الرحلة)';
   let nextActionLabelAr: string | null = '🚚 3. إرسال في رحلة';
 
-  const isPendingPartner = parcel.partner_acceptance_status === 'pending_approval';
+  const isPendingPartner = Boolean(
+    parcel.partner_acceptance_status === 'pending_approval' && isRealPartnershipParcel(parcel)
+  );
   const hasTripArrived =
     Boolean(parcel.trip_arrived_at) ||
     Boolean(trip && (trip.status === 'arrived' || trip.status === 'closed'));
@@ -764,26 +786,13 @@ export function isPack2CustomBrandingAllowed(ws?: {
   }
   const pName = (ws.plan_name || '').trim();
   if (
-    pName.includes('تجريبي') ||
-    pName.includes('30 يوم') ||
-    pName.includes('مجاناً') ||
     pName.includes('149') ||
     pName.includes('99') ||
     pName.includes('الباك الأول')
   ) {
     return false;
   }
-  // Check if subscription is currently marked as a trial
-  try {
-    const sub = JSON.parse(localStorage.getItem('aman_subscription') || 'null');
-    if (sub && sub.is_trial && !pName.includes('299') && !pName.includes('الباك الثاني')) {
-      return false;
-    }
-  } catch {}
-  return (
-    ws.plan_tier === 'plan_1_full' &&
-    (pName.includes('299') || pName.includes('الباك الثاني'))
-  );
+  return true;
 }
 
 export function resolveOfficialPrintBranding(input?: {
@@ -1082,7 +1091,7 @@ export async function printOfficialParcelBonPDF(
   const numericCode = formatTrackingCodeNumeric(parcel.tracking_code, parcel.parcel_number);
   let qrDataUrl = '';
   try {
-    qrDataUrl = await QRCode.toDataURL(numericCode, {
+    qrDataUrl = await QRCode.toDataURL(buildPublicTrackingUrl(parcel.tracking_code, parcel.parcel_number), {
       width: 150,
       margin: 1,
     });

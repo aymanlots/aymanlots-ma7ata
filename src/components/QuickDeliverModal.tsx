@@ -46,6 +46,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     currentWorkspace,
     hideAmounts,
     updateParcelStatus, 
+    confirmParcelTripArrived,
     recordParcelPayment, 
     userRole,
     userAssignedStationId,
@@ -53,7 +54,11 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     showToast 
   } = useApp();
 
-  const workerStationId = userRole === 'worker' ? (userAssignedStationId || selectedStationId || '') : '';
+  const workerStationId = userRole === 'worker' ? (userAssignedStationId || '') : '';
+  const permissionStationId =
+    userRole === 'worker'
+      ? (userAssignedStationId || '')
+      : (selectedStationId && selectedStationId !== 'all' ? selectedStationId : 'all');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedParcels, setSelectedParcels] = useState<Parcel[]>([]);
@@ -73,7 +78,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     const activeStation = workerStationId || (selectedStationId && selectedStationId !== 'all' ? selectedStationId : '');
     return parcels.filter(p => {
       if (p.status !== 'arrived') return false;
-      if (!canControlParcelDestination(p, currentWorkspace?.id, userRole, activeStation)) {
+      if (!canControlParcelDestination(p, currentWorkspace?.id, userRole, permissionStationId)) {
         return false;
       }
       if (
@@ -86,7 +91,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
       if (selectedParcels.some(sel => sel.id === p.id)) return false;
       return true;
     });
-  }, [parcels, currentWorkspace?.id, userRole, workerStationId, selectedStationId, selectedParcels]);
+  }, [parcels, currentWorkspace?.id, userRole, workerStationId, permissionStationId, selectedStationId, selectedParcels]);
 
   const getNonArrivedErrorMessage = (found: Parcel): string => {
     if (found.status === 'delivered') {
@@ -116,7 +121,10 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
           setDeliveredTo('');
           setPaymentAmount('');
           setErrorMessage(getNonArrivedErrorMessage(initialParcel));
-          if (initialParcel.status === 'in_transit') {
+          if (
+            initialParcel.status === 'in_transit' &&
+            canControlParcelDestination(initialParcel, currentWorkspace?.id, userRole, permissionStationId)
+          ) {
             setPendingArrivalParcel(initialParcel);
           }
         } else {
@@ -172,6 +180,14 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
   if (!isOpen) return null;
 
   const handleConfirmQuickStockArrival = async (targetParcel: Parcel) => {
+    if (targetParcel.status === 'in_transit' && !targetParcel.trip_arrived_at) {
+      const stage4Res = await confirmParcelTripArrived(targetParcel.id);
+      if (!stage4Res.success) {
+        playErrorBeep();
+        setErrorMessage(stage4Res.error || 'تعذر تأكيد وصول الرحلة لمحطة الوجهة');
+        return;
+      }
+    }
     const res = await updateParcelStatus(targetParcel.id, 'arrived', {
       notes: 'تم تأكيد وصول الكولي للستوك مباشرة عند التسليم',
     });
@@ -207,7 +223,7 @@ export const QuickDeliverModal: React.FC<QuickDeliverModalProps> = ({
     }
 
     // Strict destination & partner check (المشكل 2 + المشكل 4)
-    if (!canControlParcelDestination(found, currentWorkspace?.id, userRole, workerStationId)) {
+    if (!canControlParcelDestination(found, currentWorkspace?.id, userRole, permissionStationId)) {
       playErrorBeep();
       const isOutgoingPartner = Boolean(
         found.partner_workspace_id &&
